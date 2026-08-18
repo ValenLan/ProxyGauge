@@ -877,24 +877,103 @@ struct ResultView: View {
 
 }
 
-private struct ActionTriggerLabel: View {
+private struct DiagnosticActionButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.78 : 1)
+    }
+}
+
+private struct DiagnosticActionCard: View {
     let title: String
+    let detail: String
     let symbol: String
+    let actionSymbol: String
+    let tint: Color
     var isRunning = false
+    var isDisabled = false
+    var showsProgress = false
+    let action: () -> Void
+
+    @State private var isHovering = false
 
     var body: some View {
-        HStack(spacing: 6) {
-            if isRunning {
-                ProgressView()
-                    .controlSize(.mini)
-            } else {
-                Image(systemName: symbol)
-                    .font(.system(size: 10, weight: .bold))
+        Button(action: action) {
+            VStack(spacing: 7) {
+                HStack(spacing: 9) {
+                    ZStack {
+                        Circle()
+                            .fill(tint.opacity(0.14))
+                        Image(systemName: symbol)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(tint)
+                    }
+                    .frame(width: 30, height: 30)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(title)
+                            .font(CloudTypography.actionTitle)
+                        Text(detail)
+                            .font(CloudTypography.actionDetail)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(isHovering ? tint.opacity(0.14) : Color.primary.opacity(0.05))
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .stroke(isHovering ? tint.opacity(0.42) : Color.primary.opacity(0.10), lineWidth: 1)
+
+                        if isRunning {
+                            ProgressView()
+                                .controlSize(.mini)
+                                .tint(tint)
+                        } else {
+                            Image(systemName: actionSymbol)
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(isHovering ? tint : Color.secondary)
+                        }
+                    }
+                    .frame(width: 32, height: 28)
+                }
+
+                if showsProgress && isRunning {
+                    ProgressView()
+                        .progressViewStyle(.linear)
+                        .tint(tint)
+                        .controlSize(.small)
+                        .accessibilityLabel("\(title)正在运行")
+                }
             }
-            Text(title)
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, minHeight: 72)
+            .contentShape(Rectangle())
         }
-        .font(.system(size: 12, weight: .semibold))
-        .frame(minWidth: 72)
+        .buttonStyle(DiagnosticActionButtonStyle())
+        .background(
+            isHovering && !isDisabled
+                ? tint.opacity(0.055)
+                : Color(nsColor: .controlBackgroundColor),
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(
+                    isHovering && !isDisabled ? tint.opacity(0.32) : Color.primary.opacity(0.07),
+                    lineWidth: 1
+                )
+        }
+        .opacity(isDisabled && !isRunning ? 0.58 : 1)
+        .allowsHitTesting(!isDisabled)
+        .accessibilityValue(isRunning ? "正在运行" : "")
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.12)) {
+                isHovering = hovering
+            }
+        }
     }
 }
 
@@ -902,41 +981,15 @@ struct AdvancedCheckCard: View {
     let action: () -> Void
 
     var body: some View {
-        HStack(spacing: 9) {
-            ZStack {
-                Circle()
-                    .fill(CloudPalette.reviewCyan.opacity(0.15))
-                Image(systemName: "scope")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(CloudPalette.reviewCyan)
-            }
-            .frame(width: 30, height: 30)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text("高级检测")
-                    .font(CloudTypography.actionTitle)
-                Text("浏览器泄漏与 IP 风险")
-                    .font(CloudTypography.actionDetail)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
-
-            Spacer(minLength: 0)
-
-            Button(action: action) {
-                ActionTriggerLabel(title: "开始", symbol: "arrow.up.right")
-            }
-            .buttonStyle(.bordered)
-            .tint(CloudPalette.reviewCyan)
-            .controlSize(.regular)
-        }
-        .padding(.horizontal, 11)
-        .frame(maxWidth: .infinity, minHeight: 72)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.primary.opacity(0.07), lineWidth: 1)
-        }
+        DiagnosticActionCard(
+            title: "高级检测",
+            detail: "浏览器泄漏与 IP 风险",
+            symbol: "scope",
+            actionSymbol: "arrow.up.right",
+            tint: CloudPalette.reviewCyan,
+            action: action
+        )
+        .accessibilityLabel("打开高级检测")
         .help("按需打开隔离浏览器检测；结果不计入健康检查")
     }
 }
@@ -1385,58 +1438,19 @@ struct ContentView: View {
 
     private var actionArea: some View {
         VStack(spacing: 10) {
-            VStack(spacing: 7) {
-                HStack(spacing: 9) {
-                    ZStack {
-                        Circle()
-                            .fill(CloudPalette.networkBlue.opacity(0.15))
-                        Image(systemName: "stethoscope")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(CloudPalette.networkBlue)
-                    }
-                    .frame(width: 30, height: 30)
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("健康检查")
-                            .font(CloudTypography.actionTitle)
-                        Text(isHealthCheckRunning ? "正在检查代理链路…" : "检查双出口、IP 风险与分流")
-                            .font(CloudTypography.actionDetail)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-
-                    Spacer(minLength: 0)
-
-                    Button {
-                        model.runHealthCheck()
-                    } label: {
-                        ActionTriggerLabel(
-                            title: isHealthCheckRunning ? "检查中" : "开始",
-                            symbol: "play.fill",
-                            isRunning: isHealthCheckRunning
-                        )
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(CloudPalette.networkBlue)
-                    .controlSize(.regular)
-                    .disabled(model.isBusy)
-                }
-
-                if isHealthCheckRunning {
-                    ProgressView()
-                        .progressViewStyle(.linear)
-                        .tint(CloudPalette.networkBlue)
-                        .controlSize(.small)
-                        .accessibilityLabel("健康检查正在运行")
-                }
-            }
-            .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity, minHeight: 72)
-            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color.primary.opacity(0.07), lineWidth: 1)
-            }
+            DiagnosticActionCard(
+                title: "健康检查",
+                detail: isHealthCheckRunning ? "正在检查代理链路…" : "检查双出口、IP 风险与分流",
+                symbol: "stethoscope",
+                actionSymbol: "play.fill",
+                tint: CloudPalette.networkBlue,
+                isRunning: isHealthCheckRunning,
+                isDisabled: model.isBusy,
+                showsProgress: true,
+                action: model.runHealthCheck
+            )
+            .accessibilityLabel(isHealthCheckRunning ? "健康检查正在运行" : "开始健康检查")
+            .help(isHealthCheckRunning ? "正在检查代理链路" : "开始健康检查")
 
             HStack(spacing: 10) {
                 AdvancedCheckCard { showingAdvanced = true }

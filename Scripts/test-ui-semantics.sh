@@ -21,10 +21,13 @@ WINDOWS_MAIN="$PROJECT_ROOT/Windows/MainWindow.xaml"
 /usr/bin/grep -Fq '.frame(maxWidth: .infinity, minHeight: 72)' "$APP_SOURCE"
 /usr/bin/grep -Fq 'static let actionTitle = Font.system(size: 14, weight: .semibold)' "$APP_SOURCE"
 /usr/bin/grep -Fq '.tint(CloudPalette.statusGreen)' "$APP_SOURCE"
-/usr/bin/grep -Fq 'private struct ActionTriggerLabel: View' "$APP_SOURCE"
-/usr/bin/grep -Fq 'ActionTriggerLabel(title: "开始", symbol: "arrow.up.right")' "$APP_SOURCE"
-/usr/bin/grep -Fq 'symbol: "play.fill"' "$APP_SOURCE"
-/usr/bin/grep -Fq '.tint(CloudPalette.reviewCyan)' "$APP_SOURCE"
+/usr/bin/grep -Fq 'private struct DiagnosticActionCard: View' "$APP_SOURCE"
+/usr/bin/grep -Fq 'actionSymbol: "arrow.up.right"' "$APP_SOURCE"
+/usr/bin/grep -Fq 'actionSymbol: "play.fill"' "$APP_SOURCE"
+/usr/bin/grep -Fq 'private struct DiagnosticActionButtonStyle: ButtonStyle' "$APP_SOURCE"
+/usr/bin/grep -Fq '.buttonStyle(DiagnosticActionButtonStyle())' "$APP_SOURCE"
+/usr/bin/grep -Fq '.allowsHitTesting(!isDisabled)' "$APP_SOURCE"
+/usr/bin/grep -Fq 'showsProgress: true' "$APP_SOURCE"
 
 if /usr/bin/grep -q 'MetricCard(metric: .*accent:' "$APP_SOURCE"; then
   echo "Read-only status cards must not use per-card accent colors." >&2
@@ -38,6 +41,11 @@ fi
 
 if /usr/bin/grep -Fq '.frame(width: 276)' "$APP_SOURCE"; then
   echo "The health action must stay on its own row in the 4:3 main window." >&2
+  exit 1
+fi
+
+if /usr/bin/grep -Fq 'ActionTriggerLabel' "$APP_SOURCE"; then
+  echo "Diagnostic actions must not regress to standalone pill buttons." >&2
   exit 1
 fi
 
