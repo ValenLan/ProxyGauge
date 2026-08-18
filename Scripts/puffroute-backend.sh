@@ -2,8 +2,8 @@
 
 CHECK="$HOME/.local/bin/puffroute-check"
 ADMIN_HELPER_DIR="$HOME/.local/share/puffroute"
-ADMIN_RESULT="/var/run/puffroute/admin-result"
-KILL_TOKEN="/var/run/puffroute-killswitch.pf-token"
+ADMIN_RESULT="${PUFFROUTE_ADMIN_RESULT:-/var/run/puffroute/admin-result}"
+KILL_TOKEN="${PUFFROUTE_KILL_TOKEN:-/var/run/puffroute-killswitch.pf-token}"
 CONFIG_FILE="${PUFFROUTE_CONFIG:-$HOME/.config/puffroute/config}"
 [ -r "$CONFIG_FILE" ] && . "$CONFIG_FILE"
 MIXED="${PUFFROUTE_MIXED:-127.0.0.1:7890}"
@@ -23,11 +23,11 @@ kill_switch_snapshot() {
   if [ -r "$ADMIN_RESULT" ]; then
     action_status=$(/usr/bin/sed -n 's/^__STATUS__=//p' "$ADMIN_RESULT" | /usr/bin/tail -1)
     if [ "$action_status" = "0" ]; then
-      if /usr/bin/grep -qE 'Kill Switch(:| ) (Enabled|已开启)' "$ADMIN_RESULT"; then
+      if /usr/bin/grep -qE 'Kill Switch([:：][[:space:]]*|[[:space:]]+)(Enabled|已开启)([[:space:]]|$)' "$ADMIN_RESULT"; then
         /usr/bin/printf '已开启\tok\n'
         return
       fi
-      if /usr/bin/grep -qE 'Kill Switch(:| ) (Disabled|已关闭)' "$ADMIN_RESULT"; then
+      if /usr/bin/grep -qE 'Kill Switch([:：][[:space:]]*|[[:space:]]+)(Disabled|已关闭)([[:space:]]|$)' "$ADMIN_RESULT"; then
         /usr/bin/printf '已关闭\twarning\n'
         return
       fi
