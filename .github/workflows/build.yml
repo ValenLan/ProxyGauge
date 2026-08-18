@@ -1,0 +1,21 @@
+name: build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build PuffRoute
+        run: |
+          chmod +x Scripts/*.sh
+          Scripts/build.sh
+      - name: Verify bundle
+        run: codesign --verify --deep --strict --verbose=2 build/PuffRoute.app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PuffRoute-unsigned
+          path: build/PuffRoute.app

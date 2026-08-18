@@ -1,0 +1,107 @@
+#!/bin/bash
+# puffroute-killswitch — 代理防泄漏开关 (PF 独立 anchor)
+#   on      只加载 puffroute anchor 并持有一个 PF enable reference
+#   off     只清空 puffroute anchor 并释放本工具的 reference
+#   status  同时检查 PF 与 anchor 真实状态
+
+PFCTL=/sbin/pfctl
+MAIN_CONF=/etc/pf.conf
+ANCHOR_CONF=/etc/pf.anchors/puffroute
+ANCHOR=puffroute
+TOKEN_FILE=/var/run/puffroute-killswitch.pf-token
+
+if [ "$(/usr/bin/id -u)" -ne 0 ]; then
+  exec /usr/bin/sudo "$0" "$@"
+fi
+
+pf_enabled() {
+  "$PFCTL" -s info 2>/dev/null | /usr/bin/grep -q 'Status: Enabled'
+}
+
+anchor_rules() {
+  "$PFCTL" -a "$ANCHOR" -sr 2>/dev/null
+}
+
+anchor_enabled() {
+  pf_enabled && [ -n "$(anchor_rules)" ]
+}
+
+release_owned_reference() {
+  local token
+  [ -s "$TOKEN_FILE" ] || return 0
+  token=$(/bin/cat "$TOKEN_FILE")
+  if [ -n "$token" ]; then
+    "$PFCTL" -X "$token" >/dev/null 2>&1 || true
+  fi
+  /bin/rm -f "$TOKEN_FILE"
+}
+
+case "${1:-status}" in
+  on)
+    if ! /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"puffroute"' "$MAIN_CONF"; then
+      echo "❌ $MAIN_CONF 缺少 puffroute anchor 入口，未做改动"
+      exit 1
+    fi
+    if ! "$PFCTL" -a "$ANCHOR" -nf "$ANCHOR_CONF" >/dev/null 2>&1; then
+      echo "❌ $ANCHOR_CONF 语法校验失败，未做改动"
+      exit 1
+    fi
+    if ! "$PFCTL" -a "$ANCHOR" -f "$ANCHOR_CONF" >/dev/null 2>&1; then
+      echo "❌ Kill Switch anchor 加载失败"
+      exit 1
+    fi
+
+    if [ ! -s "$TOKEN_FILE" ]; then
+      enable_output=$("$PFCTL" -E 2>&1)
+      enable_status=$?
+      token=$(printf '%s\n' "$enable_output" | /usr/bin/awk '/Token[[:space:]]*:/ {print $NF; exit}')
+      if [ "$enable_status" -ne 0 ]; then
+        "$PFCTL" -a "$ANCHOR" -F rules >/dev/null 2>&1 || true
+        echo "❌ PF 启用失败: $enable_output"
+        exit 1
+      fi
+      if [ -n "$token" ]; then
+        printf '%s\n' "$token" > "$TOKEN_FILE"
+        /bin/chmod 600 "$TOKEN_FILE"
+      fi
+    fi
+
+    if anchor_enabled; then
+      echo "🛡️ Kill Switch 已开启 — 仅 puffroute anchor 生效，不会覆盖其他 PF 规则"
+    else
+      release_owned_reference
+      echo "❌ Kill Switch 启用后验证失败"
+      exit 1
+    fi
+    ;;
+
+  off)
+    if ! "$PFCTL" -a "$ANCHOR" -F rules >/dev/null 2>&1; then
+      echo "❌ Kill Switch anchor 清空失败"
+      exit 1
+    fi
+    release_owned_reference
+    echo "🔓 Kill Switch 已关闭 — 仅已清空 puffroute anchor，未全局关闭 PF"
+    echo "⚠️ 现在真实 IP 无 Kill Switch 保护，代理恢复后请重新开启"
+    ;;
+
+  status)
+    pf_line=$("$PFCTL" -s info 2>/dev/null | /usr/bin/head -1)
+    if anchor_enabled; then
+      rule_count=$(anchor_rules | /usr/bin/awk 'NF {count++} END {print count+0}')
+      echo "✅ Kill Switch: Enabled ($rule_count 条 anchor 规则)"
+      echo "  $pf_line"
+    elif pf_enabled; then
+      echo "⚪️ Kill Switch: Disabled (anchor 为空，PF 由其他系统组件保持启用)"
+      echo "  $pf_line"
+    else
+      echo "⚪️ Kill Switch: Disabled (PF 当前未启用)"
+      [ -n "$pf_line" ] && echo "  $pf_line"
+    fi
+    ;;
+
+  *)
+    echo "用法: puffroute-killswitch on | off | status"
+    exit 2
+    ;;
+esac
