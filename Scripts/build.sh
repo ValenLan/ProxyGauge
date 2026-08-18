@@ -17,6 +17,7 @@ fi
   "$BUILD_DIR/module-cache"
 
 /usr/bin/xcrun swiftc \
+  -target arm64-apple-macosx26.0 \
   -module-cache-path "$BUILD_DIR/module-cache" \
   -parse-as-library \
   "$PROJECT_ROOT/Sources/PuffRouteApp.swift" \

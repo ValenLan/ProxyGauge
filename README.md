@@ -27,7 +27,7 @@ Mihomo/Clash Verge 的核心、混合端口和流量入口状态，并提供结�
 
 | 平台 | 状态面板 | 健康检查 | Kill Switch | 构建产物 |
 |---|---:|---:|---:|---|
-| macOS 13+ | ✓ | ✓ | PF anchor（可选） | `PuffRoute.app` |
+| macOS 26（Apple Silicon） | ✓ | ✓ | PF anchor（可选） | `PuffRoute.app` |
 | Windows 10/11 x64 | ✓ | ✓ | 暂不提供 | 单文件 `PuffRoute.exe` |
 | Windows 11 ARM64 | ✓ | ✓ | 暂不提供 | 单文件 `PuffRoute.exe` |
 
@@ -50,20 +50,45 @@ Verge Rev 中新建并启用 `Merge` 配置，再刷新当前订阅。这样规�
 
 ### 系统要求
 
-- macOS 13 或更高版本
-- Xcode Command Line Tools
+- 最新版 macOS 26，Apple Silicon Mac
 - 使用 Mihomo 核心的代理客户端（默认进程名 `verge-mihomo`）
 - 默认 mixed 端口：`127.0.0.1:7890`
 
 ### 构建
 
+构建需要 Xcode Command Line Tools；仅运行预编译版本不需要。
+
 ```bash
 chmod +x Scripts/*.sh
 Scripts/build.sh
+Scripts/package-macos.sh
 open build/PuffRoute.app
 ```
 
-构建结果位于 `build/PuffRoute.app`，采用本机 ad-hoc 签名。
+构建结果位于 `build/PuffRoute.app`，分享包位于
+`dist/PuffRoute-<版本>-macOS-arm64.zip`。应用采用 ad-hoc 签名，尚未使用 Developer ID
+签名或 Apple 公证。
+
+### 分享预编译版本
+
+推荐从 GitHub Releases 分享三个按版本命名的 ZIP，而不是分享源码或 `Scripts/` 目录：
+
+- `PuffRoute-<版本>-macOS-arm64.zip`
+- `PuffRoute-<版本>-win-x64.zip`
+- `PuffRoute-<版本>-win-arm64.zip`
+
+当前 GitHub 仓库是私有仓库：只有仓库协作者能直接下载 Release。分享给非协作者时，由维护
+者先下载对应 ZIP 和 `SHA256SUMS.txt`，再通过可信文件传输渠道发送；不要为了方便下载就
+直接把仓库改成公开。
+
+Mac 用户解压后把 `PuffRoute.app` 移到“应用程序”即可；正常图形功能所需的检查脚本、规则
+和管理员助手已包含在 App 内，不需要运行 `install.sh`。由于当前版本没有 Apple 公证，首次
+打开可能被 Gatekeeper 拦截；只应在确认下载来源与 `SHA256SUMS.txt` 校验值后，到“系统
+设置 → 隐私与安全性”选择“仍要打开”。面向更广泛用户公开分发前，应补齐 Developer ID
+签名与公证。
+
+分享包不包含代理客户端、订阅、节点、服务器地址或个人配置。朋友仍需自行安装并配置
+Mihomo/Clash Verge；PF Kill Switch 也不会随普通分享包自动安装。
 
 ### 安装
 
@@ -143,8 +168,8 @@ Windows 版位于 [`Windows/`](Windows/)，使用 .NET 8 WPF，不依赖第三�
 
 ### 使用预编译版本
 
-1. 在 GitHub Actions 的最新成功构建中下载 `PuffRoute-win-x64`；ARM Windows
-   下载 `PuffRoute-win-arm64`
+1. 仓库协作者在 GitHub Releases 下载 `PuffRoute-<版本>-win-x64.zip`；ARM Windows 下载
+   `PuffRoute-<版本>-win-arm64.zip`。非协作者使用维护者转发的同一 ZIP
 2. 解压后运行 `PuffRoute.exe`
 3. 点击标题栏的设置按钮，确认 mixed 地址与端口
 
@@ -171,6 +196,16 @@ Windows 配置保存在：
 
 Windows 版没有照搬 macOS Kill Switch。可靠的 Windows 等价方案需要修改全局
 Firewall/WFP 策略，误配置可能让整台电脑断网；当前分享版刻意保持只读。
+
+## 发布
+
+每次 push 与 pull request 都会构建并测试 macOS、Windows x64 和 Windows ARM64，并把
+三个 ZIP 原样保存为 Actions artifacts。只有推送与应用版本完全一致的 `v<版本>` 标签时，
+工作流才会创建 GitHub Release，同时上传三个 ZIP 与 `SHA256SUMS.txt`。例如当前版本的
+发布标签是 `v1.2.7`。
+
+创建标签会产生供仓库授权用户下载的正式发布结果，必须在全部本地测试和普通 push CI
+通过后由维护者明确执行；构建脚本本身不会自动创建标签。
 
 ## 隐私与安全
 
