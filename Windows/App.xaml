@@ -14,6 +14,8 @@
         <Color x:Key="WarningColor">#F3BC64</Color>
         <Color x:Key="ErrorColor">#FF7D84</Color>
         <Color x:Key="IdleColor">#718096</Color>
+        <Color x:Key="RulesColor">#A78BFA</Color>
+        <Color x:Key="RulesSurfaceColor">#2B2442</Color>
 
         <SolidColorBrush x:Key="CanvasBrush" Color="{StaticResource CanvasColor}" />
         <SolidColorBrush x:Key="SurfaceBrush" Color="{StaticResource SurfaceColor}" />
@@ -27,6 +29,8 @@
         <SolidColorBrush x:Key="WarningBrush" Color="{StaticResource WarningColor}" />
         <SolidColorBrush x:Key="ErrorBrush" Color="{StaticResource ErrorColor}" />
         <SolidColorBrush x:Key="IdleBrush" Color="{StaticResource IdleColor}" />
+        <SolidColorBrush x:Key="RulesBrush" Color="{StaticResource RulesColor}" />
+        <SolidColorBrush x:Key="RulesSurfaceBrush" Color="{StaticResource RulesSurfaceColor}" />
 
         <Style TargetType="TextBlock">
             <Setter Property="FontFamily" Value="Segoe UI Variable Text, Segoe UI" />

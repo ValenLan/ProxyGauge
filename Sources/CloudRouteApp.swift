@@ -11,10 +11,10 @@ enum HealthLevel: String, Sendable {
 
     var color: Color {
         switch self {
-        case .ok: return .green
-        case .warning: return .orange
-        case .error: return .red
-        case .idle: return .secondary
+        case .ok: return CloudPalette.statusGreen
+        case .warning: return CloudPalette.statusOrange
+        case .error: return CloudPalette.statusRed
+        case .idle: return CloudPalette.statusGray
         }
     }
 
@@ -186,25 +186,22 @@ final class ProxyModel: ObservableObject {
 }
 
 private enum CloudPalette {
-    static let coreMint = Color(red: 0.22, green: 0.82, blue: 0.48)
-    static let portSky = Color(red: 0.29, green: 0.66, blue: 1.00)
-    static let tunnelLilac = Color(red: 0.61, green: 0.48, blue: 1.00)
+    static let statusGreen = Color(red: 0.20, green: 0.78, blue: 0.35)
+    static let statusGray = Color.secondary
+    static let statusOrange = Color.orange
+    static let statusRed = Color.red
+    static let networkBlue = Color(red: 0.13, green: 0.55, blue: 1.00)
+    static let googleViolet = Color(red: 0.61, green: 0.48, blue: 1.00)
     static let guardTeal = Color(red: 0.20, green: 0.78, blue: 0.69)
-    static let healthAzure = Color(red: 0.13, green: 0.55, blue: 1.00)
     static let reviewCyan = Color(red: 0.20, green: 0.72, blue: 0.82)
     static let rulesViolet = Color(red: 0.54, green: 0.42, blue: 0.96)
 }
 
 struct MetricCard: View {
     let metric: MetricState
-    let accent: Color
 
     private var iconColor: Color {
-        switch metric.level {
-        case .error: return metric.level.color
-        case .warning: return .orange
-        case .ok, .idle: return accent
-        }
+        metric.level.color
     }
 
     var body: some View {
@@ -949,7 +946,7 @@ struct AdvancedCheckView: View {
                     detail: "BrowserLeaks · IPhey · IPQS",
                     note: "使用本地 mixed 入口",
                     symbol: "network",
-                    tint: CloudPalette.portSky,
+                    tint: CloudPalette.networkBlue,
                     route: .defaultExit
                 )
                 routeButton(
@@ -957,7 +954,7 @@ struct AdvancedCheckView: View {
                     detail: "复核专用链式出口",
                     note: "需已配置专用入口",
                     symbol: "point.3.connected.trianglepath.dotted",
-                    tint: CloudPalette.tunnelLilac,
+                    tint: CloudPalette.googleViolet,
                     route: .googleChain
                 )
             }
@@ -1258,9 +1255,9 @@ struct ContentView: View {
                 columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 2),
                 spacing: 12
             ) {
-                MetricCard(metric: model.core, accent: CloudPalette.coreMint)
-                MetricCard(metric: model.port, accent: CloudPalette.portSky)
-                MetricCard(metric: model.tun, accent: CloudPalette.tunnelLilac)
+                MetricCard(metric: model.core)
+                MetricCard(metric: model.port)
+                MetricCard(metric: model.tun)
                 KillSwitchCard(metric: model.killSwitch, isBusy: model.isBusy) { enabled in
                     if enabled {
                         model.enableKillSwitch()
@@ -1332,13 +1329,13 @@ struct ContentView: View {
                         .frame(width: 18, height: 18)
                 } else {
                     Image(systemName: "arrow.clockwise")
-                        .foregroundStyle(CloudPalette.portSky)
+                        .foregroundStyle(CloudPalette.networkBlue)
                         .frame(width: 18, height: 18)
                 }
             }
             .buttonStyle(.borderless)
             .padding(8)
-            .background(CloudPalette.portSky.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .background(CloudPalette.networkBlue.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
             .disabled(model.isBusy || model.isRefreshing)
             .help("刷新状态")
         }
@@ -1350,10 +1347,10 @@ struct ContentView: View {
                 HStack(spacing: 9) {
                     ZStack {
                         Circle()
-                            .fill(CloudPalette.healthAzure.opacity(0.15))
+                            .fill(CloudPalette.networkBlue.opacity(0.15))
                         Image(systemName: "stethoscope")
                             .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(CloudPalette.healthAzure)
+                            .foregroundStyle(CloudPalette.networkBlue)
                     }
                     .frame(width: 30, height: 30)
 
@@ -1380,7 +1377,7 @@ struct ContentView: View {
                 if isHealthCheckRunning {
                     ProgressView()
                         .progressViewStyle(.linear)
-                        .tint(CloudPalette.healthAzure)
+                        .tint(CloudPalette.networkBlue)
                         .controlSize(.small)
                         .accessibilityLabel("健康检查正在运行")
                 }

@@ -269,8 +269,8 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <Border Width="40" Height="40" CornerRadius="12" Background="#233F5D">
-                                <TextBlock Text="&#xE8A5;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Foreground="{StaticResource AccentBrush}" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            <Border Width="40" Height="40" CornerRadius="12" Background="{StaticResource RulesSurfaceBrush}">
+                                <TextBlock Text="&#xE8A5;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Foreground="{StaticResource RulesBrush}" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center" />
                             </Border>
                             <StackPanel Grid.Column="1" Margin="12,-1,14,0" VerticalAlignment="Center">
                                 <TextBlock Text="规则管理" FontSize="15" FontWeight="SemiBold" />

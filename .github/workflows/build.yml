@@ -22,6 +22,7 @@ jobs:
           Scripts/test-chain-check.sh
           Scripts/test-low-risk-health.sh
           Scripts/test-private-browser.sh
+          Scripts/test-ui-semantics.sh
           Scripts/build.sh
       - name: Verify bundle
         run: codesign --verify --deep --strict --verbose=2 build/CloudRoute.app
