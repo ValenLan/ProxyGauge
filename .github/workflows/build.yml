@@ -19,3 +19,35 @@ jobs:
         with:
           name: PuffRoute-unsigned
           path: build/PuffRoute.app
+
+  windows:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        runtime: [win-x64, win-arm64]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+      - name: Publish PuffRoute for Windows
+        shell: pwsh
+        run: |
+          dotnet publish Windows/PuffRoute.Windows.csproj `
+            --configuration Release `
+            --runtime ${{ matrix.runtime }} `
+            --self-contained true `
+            --output "publish/${{ matrix.runtime }}" `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:PublishTrimmed=false `
+            -p:DebugType=None `
+            -p:DebugSymbols=false
+          Copy-Item Windows/README.md "publish/${{ matrix.runtime }}/使用说明.md"
+          Compress-Archive `
+            -Path "publish/${{ matrix.runtime }}/*" `
+            -DestinationPath "PuffRoute-${{ matrix.runtime }}.zip"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: PuffRoute-${{ matrix.runtime }}
+          path: PuffRoute-${{ matrix.runtime }}.zip

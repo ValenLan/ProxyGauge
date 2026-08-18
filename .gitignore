@@ -7,3 +7,6 @@ DerivedData/
 *.xcuserstate
 config
 *.local
+Windows/bin/
+Windows/obj/
+Windows/publish/

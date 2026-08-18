@@ -1,0 +1,73 @@
+using System.Windows;
+using System.Windows.Input;
+using PuffRoute.Services;
+using PuffRoute.ViewModels;
+
+namespace PuffRoute;
+
+public partial class MainWindow : Window
+{
+    private readonly MainViewModel _viewModel;
+
+    public MainWindow()
+    {
+        InitializeComponent();
+
+        var configService = new ConfigService();
+        var probeService = new ProxyProbeService();
+        var healthCheckService = new HealthCheckService(probeService);
+        _viewModel = new MainViewModel(configService, probeService, healthCheckService);
+        DataContext = _viewModel;
+
+        Loaded += async (_, _) => await _viewModel.RefreshAsync();
+    }
+
+    private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.LeftButton == MouseButtonState.Pressed)
+        {
+            DragMove();
+        }
+    }
+
+    private async void RefreshButton_Click(object sender, RoutedEventArgs e) =>
+        await _viewModel.RefreshAsync();
+
+    private async void HealthButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var report = await _viewModel.RunHealthCheckAsync();
+            if (report is not null)
+            {
+                new HealthReportWindow(report) { Owner = this }.ShowDialog();
+            }
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(
+                this,
+                $"健康检查没有完成。\n\n{exception.Message}",
+                "PuffRoute",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+    }
+
+    private async void SettingsButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new SettingsWindow(_viewModel.GetEditableConfig()) { Owner = this };
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        _viewModel.SaveConfig(dialog.Config);
+        await _viewModel.RefreshAsync();
+    }
+
+    private void MinimizeButton_Click(object sender, RoutedEventArgs e) =>
+        WindowState = WindowState.Minimized;
+
+    private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();
+}
