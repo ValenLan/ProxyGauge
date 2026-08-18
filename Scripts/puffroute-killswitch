@@ -9,6 +9,16 @@ MAIN_CONF=/etc/pf.conf
 ANCHOR_CONF=/etc/pf.anchors/puffroute
 ANCHOR=puffroute
 TOKEN_FILE=/var/run/puffroute-killswitch.pf-token
+SCRIPT_DIR=$(/usr/bin/dirname "$0")
+LEGACY_HELPER="$SCRIPT_DIR/killswitch"
+
+# Preserve existing installations while the application name migrates from
+# Proxy Tools to PuffRoute. New installations use the PuffRoute-owned anchor.
+if ! /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"puffroute"' "$MAIN_CONF" 2>/dev/null \
+  && /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"killswitch"' "$MAIN_CONF" 2>/dev/null \
+  && [ -x "$LEGACY_HELPER" ]; then
+  exec "$LEGACY_HELPER" "$@"
+fi
 
 if [ "$(/usr/bin/id -u)" -ne 0 ]; then
   exec /usr/bin/sudo "$0" "$@"

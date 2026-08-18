@@ -92,6 +92,10 @@ Scripts/install-pf.sh
 
 安装规则后，可在 PuffRoute 界面中开启或关闭 Kill Switch。
 
+从旧版 Proxy Tools 升级时，如果系统仍注册旧的 `killswitch` anchor，PuffRoute 会
+继续调用原有规则，避免仅因应用改名而失去保护。全新安装始终使用 `puffroute`
+anchor。
+
 ## Windows
 
 Windows 版位于 [`Windows/`](Windows/)，使用 .NET 8 WPF，不依赖第三方 UI 框架。
