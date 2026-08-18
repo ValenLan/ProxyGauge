@@ -12,6 +12,14 @@ TOKEN_FILE=/var/run/puffroute-killswitch.pf-token
 SCRIPT_DIR=$(/usr/bin/dirname "$0")
 LEGACY_HELPER="$SCRIPT_DIR/killswitch"
 
+if [ ! -x "$LEGACY_HELPER" ]; then
+  CONSOLE_USER=$(/usr/bin/stat -f%Su /dev/console 2>/dev/null || true)
+  if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ] && [ "$CONSOLE_USER" != "loginwindow" ]; then
+    CONSOLE_HOME=$(/usr/bin/dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory 2>/dev/null | /usr/bin/awk '{print $2}')
+    [ -n "$CONSOLE_HOME" ] && LEGACY_HELPER="$CONSOLE_HOME/.local/bin/killswitch"
+  fi
+fi
+
 # Preserve existing installations while the application name migrates from
 # Proxy Tools to PuffRoute. New installations use the PuffRoute-owned anchor.
 if ! /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"puffroute"' "$MAIN_CONF" 2>/dev/null \

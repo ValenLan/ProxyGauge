@@ -14,6 +14,7 @@ Mihomo/Clash Verge 的核心、混合端口和流量入口状态，并提供结�
 - 检查代理出口 IP、常用 AI 站点和外网连通性
 - macOS 可选用独立 PF anchor 实现防泄漏 Kill Switch
 - Windows 版只做只读网络检测，不修改全局防火墙策略
+- macOS 健康检查、Kill Switch 脚本和管理员助手均内置于 App Bundle
 
 ## 平台支持
 
@@ -53,6 +54,9 @@ Scripts/install.sh
 - `~/.local/bin/puffroute-check`
 - `~/.local/bin/puffroute-killswitch`
 - `~/.local/share/puffroute/`
+
+这些外部脚本用于命令行调用和旧版兼容；图形应用正常运行会优先使用 App Bundle
+内置副本，因此单独移动 `PuffRoute.app` 不会丢失健康检查或管理员助手。
 
 ### 配置
 

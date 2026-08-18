@@ -1,7 +1,10 @@
 #!/bin/bash
 
-CHECK="$HOME/.local/bin/puffroute-check"
-ADMIN_HELPER_DIR="$HOME/.local/share/puffroute"
+RESOURCE_DIR=$(/usr/bin/dirname "$0")
+CHECK="$RESOURCE_DIR/puffroute-check.sh"
+[ -x "$CHECK" ] || CHECK="$HOME/.local/bin/puffroute-check"
+ADMIN_HELPER_DIR="$RESOURCE_DIR/AdminHelpers"
+[ -d "$ADMIN_HELPER_DIR" ] || ADMIN_HELPER_DIR="$HOME/.local/share/puffroute"
 ADMIN_RESULT="${PUFFROUTE_ADMIN_RESULT:-/var/run/puffroute/admin-result}"
 KILL_TOKEN="${PUFFROUTE_KILL_TOKEN:-/var/run/puffroute-killswitch.pf-token}"
 CONFIG_FILE="${PUFFROUTE_CONFIG:-$HOME/.config/puffroute/config}"
