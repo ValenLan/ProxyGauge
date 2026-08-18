@@ -17,7 +17,7 @@ output=$(/usr/bin/osascript -l JavaScript \
 /usr/bin/grep -q '风险分: 42/100（中） · 置信度 96%' <<< "$output"
 /usr/bin/grep -q '地址风险标签: 数据中心 / 滥用记录' <<< "$output"
 /usr/bin/grep -q '滥用指标: 组织 0.014 (Elevated) · ASN 0.0072 (Low)' <<< "$output"
-/usr/bin/grep -q '不能判断 Claude / ChatGPT 登录账户是否已被封禁' <<< "$output"
+/usr/bin/grep -q '第三方 IP 情报仅供参考，不代表浏览器环境或具体服务可用性' <<< "$output"
 
 asn=$(/usr/bin/osascript -l JavaScript \
   "$PROJECT_ROOT/Scripts/cloudroute-ip-risk.jxa" \
@@ -55,11 +55,11 @@ fallback_output=$(/usr/bin/osascript -l JavaScript \
 /usr/bin/grep -Fq '个查询源确认出口一致' "$PROJECT_ROOT/Scripts/cloudroute-check.sh"
 /usr/bin/grep -Fq '触发 Cloudflare challenge' "$PROJECT_ROOT/Scripts/cloudroute-check.sh"
 /usr/bin/grep -Fq 'TUN DNS 返回 Fake-IP' "$PROJECT_ROOT/Scripts/cloudroute-check.sh"
-/usr/bin/grep -Fq '登录账户状态: 未验证' "$PROJECT_ROOT/Scripts/cloudroute-check.sh"
+/usr/bin/grep -Fq '第三方 IP 情报仅供参考' "$PROJECT_ROOT/Scripts/cloudroute-ip-risk.jxa"
 /usr/bin/grep -Fq 'Google / Gemini 链式代理' "$PROJECT_ROOT/Scripts/cloudroute-check.sh"
-/usr/bin/grep -Fq 'https://browserleaks.com/ip' "$PROJECT_ROOT/Scripts/cloudroute-check.sh"
-/usr/bin/grep -Fq 'https://iphey.com/' "$PROJECT_ROOT/Scripts/cloudroute-check.sh"
-/usr/bin/grep -Fq 'https://scamalytics.com/ip/$EXT' "$PROJECT_ROOT/Scripts/cloudroute-check.sh"
+/usr/bin/grep -Fq 'https://browserleaks.com/ip' "$PROJECT_ROOT/Scripts/cloudroute-private-browser.sh"
+/usr/bin/grep -Fq 'https://iphey.com/' "$PROJECT_ROOT/Scripts/cloudroute-private-browser.sh"
+/usr/bin/grep -Fq 'https://scamalytics.com/ip/$EXIT_IP' "$PROJECT_ROOT/Scripts/cloudroute-private-browser.sh"
 
 /usr/bin/grep -q '^prepend-rules:' "$PROJECT_ROOT/Rules/CloudRoute-Merge.yaml"
 if /usr/bin/grep -qE '^[[:space:]]*(proxies|proxy-providers):' "$PROJECT_ROOT/Rules/CloudRoute-Merge.yaml"; then

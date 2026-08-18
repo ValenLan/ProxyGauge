@@ -157,6 +157,6 @@ function run(argv) {
     if (lines.length === 1) {
         lines.push("  ℹ️ IP 风险画像暂不可用；不影响代理链路检查结果");
     }
-    lines.push("  ℹ️ 第三方 IP 情报不能判断 Claude / ChatGPT 登录账户是否已被封禁");
+    lines.push("  ℹ️ 第三方 IP 情报仅供参考，不代表浏览器环境或具体服务可用性");
     return lines.join("\n");
 }

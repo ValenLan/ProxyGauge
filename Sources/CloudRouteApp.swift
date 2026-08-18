@@ -191,6 +191,7 @@ private enum CloudPalette {
     static let tunnelLilac = Color(red: 0.61, green: 0.48, blue: 1.00)
     static let guardTeal = Color(red: 0.20, green: 0.78, blue: 0.69)
     static let healthAzure = Color(red: 0.13, green: 0.55, blue: 1.00)
+    static let reviewCyan = Color(red: 0.20, green: 0.72, blue: 0.82)
     static let rulesViolet = Color(red: 0.54, green: 0.42, blue: 0.96)
 }
 
@@ -376,18 +377,6 @@ struct HealthReport {
     let warningCount: Int
     let failCount: Int
 
-    var defaultExitIP: String? {
-        firstIPv4(in: sections.first { $0.number == "4" })
-    }
-
-    var googleExitIP: String? {
-        guard let chainSection = sections.first(where: { $0.number == "6" }) else { return nil }
-        for item in chainSection.items where item.text.contains("确认 Google / Gemini 出口一致") {
-            if let address = Self.ipv4(in: item.text) { return address }
-        }
-        return nil
-    }
-
     init(output: String) {
         var timestamp: String?
         var parsedSections: [HealthCheckSection] = []
@@ -486,24 +475,6 @@ struct HealthReport {
         failCount = failed
     }
 
-    private func firstIPv4(in section: HealthCheckSection?) -> String? {
-        guard let section else { return nil }
-        for item in section.items {
-            if let address = Self.ipv4(in: item.text) { return address }
-        }
-        return nil
-    }
-
-    private static func ipv4(in text: String) -> String? {
-        let pattern = #"(?<![0-9])(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?![0-9])"#
-        guard let expression = try? NSRegularExpression(pattern: pattern),
-              let match = expression.firstMatch(
-                in: text,
-                range: NSRange(text.startIndex..., in: text)
-              ),
-              let range = Range(match.range, in: text) else { return nil }
-        return String(text[range])
-    }
 }
 
 struct HealthItemRow: View {
@@ -551,18 +522,6 @@ struct HealthItemRow: View {
 
 struct HealthSectionCard: View {
     let section: HealthCheckSection
-    let isolationMessage: String?
-    let launchIsolatedBrowser: ((IsolatedBrowserRoute) -> Void)?
-
-    init(
-        section: HealthCheckSection,
-        isolationMessage: String? = nil,
-        launchIsolatedBrowser: ((IsolatedBrowserRoute) -> Void)? = nil
-    ) {
-        self.section = section
-        self.isolationMessage = isolationMessage
-        self.launchIsolatedBrowser = launchIsolatedBrowser
-    }
 
     private var accent: Color {
         if section.hasFailure { return Color(red: 0.91, green: 0.31, blue: 0.29) }
@@ -574,10 +533,6 @@ struct HealthSectionCard: View {
         if section.hasFailure { return "xmark.circle.fill" }
         if section.hasWarning { return "exclamationmark.circle.fill" }
         return "checkmark.circle.fill"
-    }
-
-    private var offersIsolation: Bool {
-        section.title.contains("社区深度复核") && launchIsolatedBrowser != nil
     }
 
     var body: some View {
@@ -597,10 +552,6 @@ struct HealthSectionCard: View {
                         .foregroundStyle(accent)
                 }
 
-                if offersIsolation {
-                    isolatedBrowserPanel
-                }
-
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(section.items) { item in
                         HealthItemRow(item: item)
@@ -615,91 +566,12 @@ struct HealthSectionCard: View {
                 .stroke(section.hasFailure || section.hasWarning ? accent.opacity(0.22) : Color.primary.opacity(0.06), lineWidth: 1)
         }
     }
-
-
-    private var isolatedBrowserPanel: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack(alignment: .top, spacing: 10) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(CloudPalette.portSky.opacity(0.14))
-                    Image(systemName: "safari.fill")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(CloudPalette.portSky)
-                }
-                .frame(width: 32, height: 32)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("隔离浏览器检测")
-                        .font(.system(size: 13, weight: .semibold))
-                    Text("临时 Chrome 资料 · 无现有登录和扩展 · 不改变系统代理")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            HStack(spacing: 8) {
-                isolationButton(
-                    "默认出口",
-                    symbol: "network",
-                    tint: CloudPalette.portSky,
-                    route: .defaultExit
-                )
-                isolationButton(
-                    "Google 链路",
-                    symbol: "point.3.connected.trianglepath.dotted",
-                    tint: CloudPalette.tunnelLilac,
-                    route: .googleChain
-                )
-                Spacer(minLength: 0)
-            }
-
-            if let isolationMessage, !isolationMessage.isEmpty {
-                Label(isolationMessage, systemImage: "checkmark.circle")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                Text("检测网站仍会看到所选出口 IP；账号状态必须在你的已登录会话中确认。")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(11)
-        .background(CloudPalette.portSky.opacity(0.055), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .stroke(CloudPalette.portSky.opacity(0.13), lineWidth: 1)
-        }
-    }
-
-    private func isolationButton(
-        _ title: String,
-        symbol: String,
-        tint: Color,
-        route: IsolatedBrowserRoute
-    ) -> some View {
-        Button {
-            launchIsolatedBrowser?(route)
-        } label: {
-            Label(title, systemImage: symbol)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(tint)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(tint.opacity(0.11), in: Capsule())
-        }
-        .buttonStyle(.plain)
-        .help("用\(title)打开独立的临时 Chrome 检测窗口")
-    }
 }
 
 struct ResultView: View {
     let result: ResultSheet
     let close: () -> Void
     @State private var copied = false
-    @State private var isolationMessage = ""
-    @State private var isolatedBrowserProcesses: [Process] = []
 
     @ViewBuilder
     var body: some View {
@@ -775,13 +647,7 @@ struct ResultView: View {
             ScrollView {
                 LazyVStack(spacing: 10) {
                     ForEach(report.sections) { section in
-                        HealthSectionCard(
-                            section: section,
-                            isolationMessage: isolationMessage.isEmpty ? nil : isolationMessage,
-                            launchIsolatedBrowser: section.title.contains("社区深度复核")
-                                ? launchIsolatedBrowser
-                                : nil
-                        )
+                        HealthSectionCard(section: section)
                     }
                 }
                 .padding(.vertical, 1)
@@ -926,6 +792,178 @@ struct ResultView: View {
         copied = true
     }
 
+}
+
+struct AdvancedCheckCard: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                ZStack {
+                    Circle()
+                        .fill(CloudPalette.reviewCyan.opacity(0.15))
+                    Image(systemName: "scope")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(CloudPalette.reviewCyan)
+                }
+                .frame(width: 30, height: 30)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("高级检测")
+                        .font(.callout.weight(.semibold))
+                    Text("浏览器泄漏与 IP 风险")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+
+                Spacer(minLength: 0)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 11)
+            .frame(maxWidth: .infinity, minHeight: 68)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+        }
+        .help("按需打开隔离浏览器检测；结果不计入健康检查")
+    }
+}
+
+struct AdvancedCheckView: View {
+    let close: () -> Void
+    @State private var message = ""
+    @State private var browserProcesses: [Process] = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .top, spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(CloudPalette.reviewCyan.opacity(0.14))
+                    Image(systemName: "scope")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(CloudPalette.reviewCyan)
+                }
+                .frame(width: 50, height: 50)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("高级检测")
+                        .font(.system(size: 21, weight: .semibold, design: .rounded))
+                    Text("按需复核浏览器泄漏与 IP 风险")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Text("不计入健康结果")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(CloudPalette.reviewCyan)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(CloudPalette.reviewCyan.opacity(0.11), in: Capsule())
+            }
+
+            HStack(spacing: 12) {
+                routeButton(
+                    title: "默认出口",
+                    detail: "BrowserLeaks · IPhey · IPQS",
+                    note: "使用本地 mixed 入口",
+                    symbol: "network",
+                    tint: CloudPalette.portSky,
+                    route: .defaultExit
+                )
+                routeButton(
+                    title: "Google 链路",
+                    detail: "复核专用链式出口",
+                    note: "需已配置专用入口",
+                    symbol: "point.3.connected.trianglepath.dotted",
+                    tint: CloudPalette.tunnelLilac,
+                    route: .googleChain
+                )
+            }
+
+            VStack(alignment: .leading, spacing: 7) {
+                Label("使用临时 Chrome 资料，不加载现有登录、扩展或同步数据。", systemImage: "person.crop.circle.badge.minus")
+                Label("不会改变系统代理；检测网站仍会看到所选出口 IP。", systemImage: "lock.shield")
+                Label("关闭临时窗口后，浏览器资料会自动清理。", systemImage: "trash")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            if !message.isEmpty {
+                Label(message, systemImage: "checkmark.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack {
+                Spacer()
+                Button("完成", action: close)
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(22)
+        .frame(width: 560, height: 400)
+    }
+
+    private func routeButton(
+        title: String,
+        detail: String,
+        note: String,
+        symbol: String,
+        tint: Color,
+        route: IsolatedBrowserRoute
+    ) -> some View {
+        Button {
+            launchIsolatedBrowser(route)
+        } label: {
+            VStack(alignment: .leading, spacing: 9) {
+                HStack {
+                    Image(systemName: symbol)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(tint)
+                    Spacer()
+                    Image(systemName: "arrow.up.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(tint.opacity(0.75))
+                }
+                Text(title)
+                    .font(.headline)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(note)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(tint)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, minHeight: 116, alignment: .leading)
+            .background(tint.opacity(0.075), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .stroke(tint.opacity(0.18), lineWidth: 1)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("用\(title)打开独立的临时 Chrome 检测窗口")
+    }
+
     private func launchIsolatedBrowser(_ route: IsolatedBrowserRoute) {
         let bundledPath = Bundle.main.path(forResource: "cloudroute-private-browser", ofType: "sh")
         let fallbackPath = FileManager.default.homeDirectoryForCurrentUser
@@ -933,30 +971,22 @@ struct ResultView: View {
         let scriptPath = bundledPath ?? fallbackPath
 
         guard FileManager.default.isExecutableFile(atPath: scriptPath) else {
-            isolationMessage = "隔离浏览器组件不可用，请重新安装 CloudRoute。"
+            message = "高级检测组件不可用，请重新安装 CloudRoute。"
             return
-        }
-
-        let exitIP: String?
-        switch route {
-        case .defaultExit:
-            exitIP = report.defaultExitIP
-        case .googleChain:
-            exitIP = report.googleExitIP
         }
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = [scriptPath, route.rawValue, exitIP ?? ""]
+        process.arguments = [scriptPath, route.rawValue, ""]
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
 
         do {
             try process.run()
-            isolatedBrowserProcesses.append(process)
-            isolationMessage = "已用\(route.label)打开隔离窗口；关闭窗口后会自动清理临时资料。"
+            browserProcesses.append(process)
+            message = "已用\(route.label)打开临时窗口；关闭窗口后会自动清理资料。"
         } catch {
-            isolationMessage = "无法打开隔离窗口：\(error.localizedDescription)"
+            message = "无法打开临时窗口：\(error.localizedDescription)"
         }
     }
 }
@@ -979,7 +1009,7 @@ struct RulePackCard: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("规则管理")
                         .font(.callout.weight(.semibold))
-                    Text("12 条规则 · 版本 2026.08")
+                    Text("12 条 · 2026.08")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -987,12 +1017,9 @@ struct RulePackCard: View {
 
                 Spacer(minLength: 0)
 
-                Text("管理")
-                    .font(.callout.weight(.medium))
-                    .foregroundStyle(CloudPalette.rulesViolet)
-                    .padding(.horizontal, 11)
-                    .padding(.vertical, 6)
-                    .background(CloudPalette.rulesViolet.opacity(0.11), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 12)
             .frame(maxWidth: .infinity, minHeight: 68)
@@ -1151,6 +1178,7 @@ struct RulePackView: View {
 
 struct ContentView: View {
     @StateObject private var model = ProxyModel()
+    @State private var showingAdvanced = false
     @State private var showingRules = false
 
     var body: some View {
@@ -1186,6 +1214,11 @@ struct ContentView: View {
         .sheet(isPresented: $showingRules) {
             RulePackView {
                 showingRules = false
+            }
+        }
+        .sheet(isPresented: $showingAdvanced) {
+            AdvancedCheckView {
+                showingAdvanced = false
             }
         }
         .alert("关闭 Kill Switch？", isPresented: $model.showDisableConfirmation) {
@@ -1278,16 +1311,16 @@ struct ContentView: View {
                 .disabled(model.isBusy)
             }
             .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity, minHeight: 68)
+            .frame(width: 292)
+            .frame(minHeight: 68)
             .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .stroke(Color.primary.opacity(0.07), lineWidth: 1)
             }
 
-            RulePackCard {
-                showingRules = true
-            }
+            AdvancedCheckCard { showingAdvanced = true }
+            RulePackCard { showingRules = true }
         }
     }
 }

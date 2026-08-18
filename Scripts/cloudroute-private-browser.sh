@@ -18,6 +18,7 @@ EXIT_IP="${2:-}"
 DEFAULT_MIXED="${CLOUDROUTE_MIXED:-${PUFFROUTE_MIXED:-127.0.0.1:7890}}"
 GOOGLE_MIXED="${CLOUDROUTE_GOOGLE_MIXED:-${PUFFROUTE_GOOGLE_MIXED:-127.0.0.1:7891}}"
 CHROME="${CLOUDROUTE_CHROME:-${PUFFROUTE_CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}}"
+DRY_RUN="${CLOUDROUTE_PRIVATE_BROWSER_DRY_RUN:-${PUFFROUTE_PRIVATE_BROWSER_DRY_RUN:-}}"
 
 case "$ROUTE" in
   default)
@@ -44,6 +45,15 @@ if [ ! -x "$CHROME" ]; then
   exit 1
 fi
 
+if ! printf '%s' "$EXIT_IP" | /usr/bin/grep -qE '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' \
+  && [ "$DRY_RUN" != "1" ]; then
+  candidate=$(/usr/bin/curl -sS --proxy "http://$PROXY" --max-time 8 \
+    https://api.ipify.org 2>/dev/null || true)
+  if printf '%s' "$candidate" | /usr/bin/grep -qE '^[0-9]{1,3}(\.[0-9]{1,3}){3}$'; then
+    EXIT_IP="$candidate"
+  fi
+fi
+
 URLS=(
   "https://browserleaks.com/ip"
   "https://iphey.com/"
@@ -57,7 +67,7 @@ if printf '%s' "$EXIT_IP" | /usr/bin/grep -qE '^[0-9]{1,3}(\.[0-9]{1,3}){3}$'; t
   )
 fi
 
-if [ "${CLOUDROUTE_PRIVATE_BROWSER_DRY_RUN:-${PUFFROUTE_PRIVATE_BROWSER_DRY_RUN:-}}" = "1" ]; then
+if [ "$DRY_RUN" = "1" ]; then
   echo "route=$ROUTE_LABEL"
   echo "proxy=$PROXY"
   echo "url_count=${#URLS[@]}"

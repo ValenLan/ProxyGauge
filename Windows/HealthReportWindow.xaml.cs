@@ -21,13 +21,13 @@ public partial class HealthReportWindow : Window
     public string Headline => Report.FailedCount > 0
         ? "发现需要处理的项目"
         : Report.WarningCount > 0
-            ? "网络可用，仍有未验证或需留意的项目"
+            ? "网络可用，仍有需要留意的项目"
             : "网络检查通过";
     public string Subtitle => Report.FailedCount > 0
         ? "失败项目保留了具体原因，建议从上到下处理。"
         : Report.WarningCount > 0
-            ? "网络可达不代表登录账户未被封禁，请区分链路、IP 情报和账户状态。"
-            : "网络与公开入口检查通过；登录账户状态仍需在真实浏览器中确认。";
+            ? "网络可用；请按提示复查实际链路或配置。"
+            : "本地代理、出口与自动风险检查通过。";
     public string CheckedAtText => $"检查时间 {Report.CheckedAt:yyyy-MM-dd HH:mm:ss}";
     public string PassedText => $"{Report.PassedCount} 通过";
     public string WarningText => $"{Report.WarningCount} 提示";

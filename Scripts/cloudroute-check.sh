@@ -85,7 +85,7 @@ render_risk_profile() {
     extract-asn "$IPAPI_JSON" "$PROXYCHECK_JSON" "$risk_ip" 2>/dev/null || true)
   if printf '%s' "$ASN_NUMBER" | /usr/bin/grep -qE '^[0-9]+$'; then
     /usr/bin/curl -sS --retry 1 --retry-all-errors --retry-delay 1 \
-      -A "CloudRoute/1.3.1 (+https://github.com/ValenLan/CloudRoute)" \
+      -A "CloudRoute/1.3.2 (+https://github.com/ValenLan/CloudRoute)" \
       --proxy "http://$risk_proxy" --max-time "$METADATA_TIMEOUT" \
       "https://www.peeringdb.com/api/net?asn=$ASN_NUMBER" \
       -o "$PEERINGDB_JSON" 2>/dev/null || true
@@ -311,24 +311,6 @@ else
   fi
 fi
 
-echo "===== 7. 社区深度复核 (按需在浏览器打开) ====="
-echo "  ⚠️ 登录账户状态: 未验证；公开入口可达和 IP 低风险都不代表 Claude / ChatGPT 账户未被封禁"
-echo "  ℹ️ Claude 登录会话验证: https://claude.ai/"
-echo "  ℹ️ ChatGPT 登录会话验证: https://chatgpt.com/"
-echo "  ℹ️ DNS / WebRTC / IPv6 泄漏: https://browserleaks.com/ip"
-echo "  ℹ️ 浏览器指纹与位置一致性: https://iphey.com/"
-if [ -n "$EXT" ]; then
-  echo "  ℹ️ IPQS 风险与代理识别: https://www.ipqualityscore.com/free-ip-lookup-proxy-vpn-test"
-  echo "  ℹ️ 默认出口 Scamalytics 欺诈分: https://scamalytics.com/ip/$EXT"
-  echo "  ℹ️ 默认出口 AbuseIPDB 滥用记录: https://www.abuseipdb.com/check/$EXT"
-else
-  echo "  ℹ️ IP 风险复核需要先取得出口 IP"
-fi
-if [ -n "$GOOGLE_EXT" ] && [ "$GOOGLE_EXT" != "$EXT" ]; then
-  echo "  ℹ️ Google / Gemini 出口 Scamalytics 欺诈分: https://scamalytics.com/ip/$GOOGLE_EXT"
-  echo "  ℹ️ Google / Gemini 出口 AbuseIPDB 滥用记录: https://www.abuseipdb.com/check/$GOOGLE_EXT"
-fi
-
 check_site() {
   name="$1"
   url="$2"
@@ -366,7 +348,7 @@ check_site() {
   /bin/rm -f "$headers" "$body"
 }
 
-echo "===== 8. AI 路由确认 (默认低风险模式) ====="
+echo "===== 7. AI 路由确认 (默认低风险模式) ====="
 if [ -n "$GOOGLE_EXT" ]; then
   check ok "Gemini 已绑定独立 Google / Gemini 出口 ($GOOGLE_EXT)"
 elif [ -n "$CHAIN_CONFIGURED" ]; then
@@ -375,7 +357,6 @@ else
   echo "  ℹ️ 未启用独立 Google / Gemini 链式出口；跳过可选出口确认"
 fi
 echo "  ℹ️ 默认不请求 Claude、ChatGPT、Gemini 网页或 API，避免健康检查制造机器人式访问记录"
-echo "  ℹ️ 账号可用性只在你的正常登录会话中确认；CloudRoute 不代替账号登录"
 
 if [ "$ACTIVE_AI_PROBES" = "1" ]; then
   echo "  ⚠️ 已手动启用主动 AI API 探测；请求会到达对应平台"
@@ -384,7 +365,7 @@ if [ "$ACTIVE_AI_PROBES" = "1" ]; then
   check_site "Gemini API" "https://generativelanguage.googleapis.com/v1beta/models" "gemini" "$GOOGLE_MIXED"
 fi
 
-echo "===== 9. 双出口结论 (不新增外部请求) ====="
+echo "===== 8. 双出口结论 (不新增外部请求) ====="
 if [ -n "$EXT" ]; then
   check ok "默认出口已由多个 IP 查询源确认 ($EXT)"
 fi

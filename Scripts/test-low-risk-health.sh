@@ -11,6 +11,13 @@ CHECK="$PROJECT_ROOT/Scripts/cloudroute-check.sh"
 /usr/bin/grep -q 'dscacheutil -q host -a name www.cloudflare.com' "$CHECK"
 /usr/bin/grep -Fq '未启用 Google / Gemini 链式策略组；跳过可选链式出口探针' "$CHECK"
 /usr/bin/grep -Fq '未启用独立 Google / Gemini 链式出口；跳过可选出口确认' "$CHECK"
+/usr/bin/grep -Fq '===== 7. AI 路由确认 (默认低风险模式) =====' "$CHECK"
+/usr/bin/grep -Fq '===== 8. 双出口结论 (不新增外部请求) =====' "$CHECK"
+
+if /usr/bin/grep -q '社区深度复核\|Claude 登录会话验证\|ChatGPT 登录会话验证' "$CHECK"; then
+  echo "Manual browser and account checks must stay outside the routine health report." >&2
+  exit 1
+fi
 
 if /usr/bin/grep -q 'check_site "\(ChatGPT\|Claude\) ' "$CHECK"; then
   echo "Account-facing web probes must not run from the health check." >&2
