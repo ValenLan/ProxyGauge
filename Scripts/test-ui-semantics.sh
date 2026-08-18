@@ -21,6 +21,10 @@ WINDOWS_MAIN="$PROJECT_ROOT/Windows/MainWindow.xaml"
 /usr/bin/grep -Fq '.frame(maxWidth: .infinity, minHeight: 72)' "$APP_SOURCE"
 /usr/bin/grep -Fq 'static let actionTitle = Font.system(size: 14, weight: .semibold)' "$APP_SOURCE"
 /usr/bin/grep -Fq '.tint(CloudPalette.statusGreen)' "$APP_SOURCE"
+/usr/bin/grep -Fq 'private struct ActionTriggerLabel: View' "$APP_SOURCE"
+/usr/bin/grep -Fq 'ActionTriggerLabel(title: "开始", symbol: "arrow.up.right")' "$APP_SOURCE"
+/usr/bin/grep -Fq 'symbol: "play.fill"' "$APP_SOURCE"
+/usr/bin/grep -Fq '.tint(CloudPalette.reviewCyan)' "$APP_SOURCE"
 
 if /usr/bin/grep -q 'MetricCard(metric: .*accent:' "$APP_SOURCE"; then
   echo "Read-only status cards must not use per-card accent colors." >&2

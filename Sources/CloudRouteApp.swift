@@ -877,41 +877,61 @@ struct ResultView: View {
 
 }
 
+private struct ActionTriggerLabel: View {
+    let title: String
+    let symbol: String
+    var isRunning = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if isRunning {
+                ProgressView()
+                    .controlSize(.mini)
+            } else {
+                Image(systemName: symbol)
+                    .font(.system(size: 10, weight: .bold))
+            }
+            Text(title)
+        }
+        .font(.system(size: 12, weight: .semibold))
+        .frame(minWidth: 72)
+    }
+}
+
 struct AdvancedCheckCard: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 9) {
-                ZStack {
-                    Circle()
-                        .fill(CloudPalette.reviewCyan.opacity(0.15))
-                    Image(systemName: "scope")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(CloudPalette.reviewCyan)
-                }
-                .frame(width: 30, height: 30)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("高级检测")
-                        .font(CloudTypography.actionTitle)
-                    Text("浏览器泄漏与 IP 风险")
-                        .font(CloudTypography.actionDetail)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-
-                Spacer(minLength: 0)
-
-                Image(systemName: "chevron.right")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(.tertiary)
+        HStack(spacing: 9) {
+            ZStack {
+                Circle()
+                    .fill(CloudPalette.reviewCyan.opacity(0.15))
+                Image(systemName: "scope")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(CloudPalette.reviewCyan)
             }
-            .padding(.horizontal, 11)
-            .frame(maxWidth: .infinity, minHeight: 72)
-            .contentShape(Rectangle())
+            .frame(width: 30, height: 30)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("高级检测")
+                    .font(CloudTypography.actionTitle)
+                Text("浏览器泄漏与 IP 风险")
+                    .font(CloudTypography.actionDetail)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 0)
+
+            Button(action: action) {
+                ActionTriggerLabel(title: "开始", symbol: "arrow.up.right")
+            }
+            .buttonStyle(.bordered)
+            .tint(CloudPalette.reviewCyan)
+            .controlSize(.regular)
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 11)
+        .frame(maxWidth: .infinity, minHeight: 72)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -1390,9 +1410,15 @@ struct ContentView: View {
                     Button {
                         model.runHealthCheck()
                     } label: {
-                        Text(isHealthCheckRunning ? "检查中" : "开始")
+                        ActionTriggerLabel(
+                            title: isHealthCheckRunning ? "检查中" : "开始",
+                            symbol: "play.fill",
+                            isRunning: isHealthCheckRunning
+                        )
                     }
                     .buttonStyle(.borderedProminent)
+                    .tint(CloudPalette.networkBlue)
+                    .controlSize(.regular)
                     .disabled(model.isBusy)
                 }
 
