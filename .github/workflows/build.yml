@@ -8,14 +8,14 @@ jobs:
   macos:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Build PuffRoute
         run: |
           chmod +x Scripts/*.sh
           Scripts/build.sh
       - name: Verify bundle
         run: codesign --verify --deep --strict --verbose=2 build/PuffRoute.app
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: PuffRoute-unsigned
           path: build/PuffRoute.app
