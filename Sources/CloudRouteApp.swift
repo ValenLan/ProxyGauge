@@ -244,7 +244,7 @@ struct MetricCard: View {
                 .shadow(color: metric.level.color.opacity(0.25), radius: 3)
         }
         .padding(.horizontal, 16)
-        .frame(maxWidth: .infinity, minHeight: 74)
+        .frame(maxWidth: .infinity, minHeight: 66)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -303,7 +303,7 @@ struct KillSwitchCard: View {
             .help(metric.level == .ok ? "关闭防泄漏保护" : "开启防泄漏保护")
         }
         .padding(.horizontal, 16)
-        .frame(maxWidth: .infinity, minHeight: 74)
+        .frame(maxWidth: .infinity, minHeight: 66)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -895,7 +895,7 @@ struct AdvancedCheckCard: View {
                     .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 11)
-            .frame(maxWidth: .infinity, minHeight: 74)
+            .frame(maxWidth: .infinity, minHeight: 66)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1091,7 +1091,7 @@ struct RulePackCard: View {
                     .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity, minHeight: 74)
+            .frame(maxWidth: .infinity, minHeight: 66)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1251,7 +1251,7 @@ struct ContentView: View {
     @State private var showingRules = false
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 12) {
             header
 
             LazyVGrid(
@@ -1272,8 +1272,8 @@ struct ContentView: View {
 
             actionArea
         }
-        .padding(22)
-        .frame(width: 760, height: 380)
+        .padding(18)
+        .frame(width: 700, height: 340)
         .background(Color(nsColor: .windowBackgroundColor))
         .sheet(item: $model.resultSheet) { result in
             ResultView(result: result) {
@@ -1344,7 +1344,7 @@ struct ContentView: View {
     }
 
     private var actionArea: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             VStack(spacing: 7) {
                 HStack(spacing: 9) {
                     ZStack {
@@ -1359,7 +1359,7 @@ struct ContentView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("健康检查")
                             .font(.callout.weight(.semibold))
-                        Text(isHealthCheckRunning ? "正在检查代理链路…" : "检查双出口、IP 风险与域名分流")
+                        Text(isHealthCheckRunning ? "正在检查代理链路…" : "检查双出口、IP 风险与分流")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -1385,8 +1385,8 @@ struct ContentView: View {
                 }
             }
             .padding(.horizontal, 12)
-            .frame(width: 316)
-            .frame(minHeight: 74)
+            .frame(width: 276)
+            .frame(minHeight: 66)
             .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
