@@ -244,7 +244,7 @@ struct MetricCard: View {
                 .shadow(color: metric.level.color.opacity(0.25), radius: 3)
         }
         .padding(.horizontal, 16)
-        .frame(maxWidth: .infinity, minHeight: 66)
+        .frame(maxWidth: .infinity, minHeight: 72)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -303,7 +303,7 @@ struct KillSwitchCard: View {
             .help(metric.level == .ok ? "关闭防泄漏保护" : "开启防泄漏保护")
         }
         .padding(.horizontal, 16)
-        .frame(maxWidth: .infinity, minHeight: 66)
+        .frame(maxWidth: .infinity, minHeight: 72)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -895,7 +895,7 @@ struct AdvancedCheckCard: View {
                     .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 11)
-            .frame(maxWidth: .infinity, minHeight: 66)
+            .frame(maxWidth: .infinity, minHeight: 72)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1091,7 +1091,7 @@ struct RulePackCard: View {
                     .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity, minHeight: 66)
+            .frame(maxWidth: .infinity, minHeight: 72)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1251,7 +1251,7 @@ struct ContentView: View {
     @State private var showingRules = false
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
             header
 
             LazyVGrid(
@@ -1272,8 +1272,9 @@ struct ContentView: View {
 
             actionArea
         }
-        .padding(18)
-        .frame(width: 700, height: 340)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 22)
+        .frame(width: 700, height: 380)
         .background(Color(nsColor: .windowBackgroundColor))
         .sheet(item: $model.resultSheet) { result in
             ResultView(result: result) {
@@ -1386,7 +1387,7 @@ struct ContentView: View {
             }
             .padding(.horizontal, 12)
             .frame(width: 276)
-            .frame(minHeight: 66)
+            .frame(minHeight: 72)
             .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
