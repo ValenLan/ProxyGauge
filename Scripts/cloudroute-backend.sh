@@ -28,10 +28,22 @@ MIXED_HOST="${MIXED%:*}"
 MIXED_PORT="${MIXED##*:}"
 
 has_tun_route() {
+  case "${CLOUDROUTE_TUN_ACTIVE:-}" in
+    1|true|yes) return 0 ;;
+    0|false|no) return 1 ;;
+  esac
   if /sbin/ifconfig 2>/dev/null | /usr/bin/grep -qE 'inet 198\.18\.'; then
     return 0
   fi
   /usr/sbin/netstat -rn -f inet 2>/dev/null | /usr/bin/grep -qE '^198\.18\..*[[:space:]]utun[0-9]+'
+}
+
+system_proxy_active() {
+  case "${CLOUDROUTE_SYSTEM_PROXY_ACTIVE:-}" in
+    1|true|yes) return 0 ;;
+    0|false|no) return 1 ;;
+  esac
+  /usr/sbin/scutil --proxy 2>/dev/null | /usr/bin/grep -qE '(HTTP|SOCKS)Enable : 1'
 }
 
 kill_switch_snapshot() {
@@ -72,7 +84,8 @@ kill_switch_snapshot() {
 probe() {
   local core_count core_value core_level port_value port_level
   local system_value system_level tun_value tun_level kill_value kill_level
-  local overall headline detail entry_ok
+  local entry_value entry_level entry_title entry_symbol
+  local overall headline detail entry_ok system_active tun_active
 
   core_count=$(/usr/bin/pgrep -x verge-mihomo 2>/dev/null | /usr/bin/wc -l | /usr/bin/tr -d '[:space:]')
   case "$core_count" in
@@ -99,10 +112,12 @@ probe() {
   fi
 
   entry_ok=""
-  if /usr/sbin/scutil --proxy 2>/dev/null | /usr/bin/grep -qE '(HTTP|SOCKS)Enable : 1'; then
+  system_active=""
+  tun_active=""
+  if system_proxy_active; then
     system_value="已启用"
     system_level="ok"
-    entry_ok=1
+    system_active=1
   else
     system_value="未启用"
     system_level="idle"
@@ -111,15 +126,45 @@ probe() {
   if has_tun_route; then
     tun_value="已接管"
     tun_level="ok"
-    entry_ok=1
+    tun_active=1
   else
     tun_value="未接管"
     tun_level="idle"
   fi
 
+  if [ -n "$system_active" ] && [ -n "$tun_active" ]; then
+    entry_title="双重入口"
+    entry_value="同时开启"
+    entry_level="warning"
+    entry_symbol="exclamationmark.triangle.fill"
+    entry_ok=1
+  elif [ -n "$tun_active" ]; then
+    entry_title="TUN 路由"
+    entry_value="已接管"
+    entry_level="ok"
+    entry_symbol="arrow.triangle.2.circlepath"
+    entry_ok=1
+  elif [ -n "$system_active" ]; then
+    entry_title="系统代理"
+    entry_value="已启用"
+    entry_level="ok"
+    entry_symbol="network"
+    entry_ok=1
+  else
+    entry_title="流量入口"
+    entry_value="未启用"
+    entry_level="idle"
+    entry_symbol="arrow.triangle.branch"
+  fi
+
   IFS=$'\t' read -r kill_value kill_level < <(kill_switch_snapshot)
 
-  if [ "$core_count" = "1" ] && [ "$port_level" = "ok" ] && [ -n "$entry_ok" ]; then
+  if [ "$core_count" = "1" ] && [ "$port_level" = "ok" ] \
+    && [ -n "$system_active" ] && [ -n "$tun_active" ]; then
+    overall="warning"
+    headline="入口同时开启"
+    detail="系统代理与 TUN 均已启用"
+  elif [ "$core_count" = "1" ] && [ "$port_level" = "ok" ] && [ -n "$entry_ok" ]; then
     overall="ok"
     headline="代理已接管"
     detail="流量入口当前工作正常"
@@ -138,6 +183,8 @@ probe() {
   /usr/bin/printf 'detail\t%s\n' "$detail"
   /usr/bin/printf 'core\t%s\t%s\n' "$core_value" "$core_level"
   /usr/bin/printf 'port\t%s\t%s\n' "$port_value" "$port_level"
+  /usr/bin/printf 'entry\t%s\t%s\t%s\t%s\n' \
+    "$entry_value" "$entry_level" "$entry_title" "$entry_symbol"
   /usr/bin/printf 'system\t%s\t%s\n' "$system_value" "$system_level"
   /usr/bin/printf 'tun\t%s\t%s\n' "$tun_value" "$tun_level"
   /usr/bin/printf 'kill\t%s\t%s\n' "$kill_value" "$kill_level"

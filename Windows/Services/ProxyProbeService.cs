@@ -48,17 +48,34 @@ public sealed class ProxyProbeService
             : new MetricSnapshot("本地端口", $"{config.MixedPort} 未监听", "检查客户端端口设置", "端", HealthLevel.Error);
 
         MetricSnapshot route;
-        if (tunDetected)
+        if (tunDetected && systemProxy)
         {
-            route = new MetricSnapshot("流量入口", "TUN 已接管", "检测到活动的隧道适配器", "路", HealthLevel.Ok);
+            route = new MetricSnapshot("双重入口", "同时开启", "系统代理与 TUN 均已启用", "入", HealthLevel.Warning);
+        }
+        else if (tunDetected)
+        {
+            route = new MetricSnapshot("TUN 路由", "已接管", "检测到活动的隧道适配器", "入", HealthLevel.Ok);
         }
         else if (systemProxy)
         {
-            route = new MetricSnapshot("流量入口", "系统代理已启用", "Windows 代理入口生效", "路", HealthLevel.Ok);
+            route = new MetricSnapshot("系统代理", "已启用", "Windows 代理入口生效", "入", HealthLevel.Ok);
         }
         else
         {
-            route = new MetricSnapshot("流量入口", "尚未接管", "系统代理与 TUN 均未检测到", "路", HealthLevel.Warning);
+            route = new MetricSnapshot("流量入口", "未启用", "系统代理与 TUN 均未检测到", "入", HealthLevel.Idle);
+        }
+
+        if (coreCount == 1 && portOpen && systemProxy && tunDetected)
+        {
+            return new ProxySnapshot(
+                "入口同时开启",
+                "系统代理与 TUN 均已启用",
+                HealthLevel.Warning,
+                core,
+                port,
+                route,
+                systemProxy,
+                tunDetected);
         }
 
         if (coreCount == 1 && portOpen && routeActive)

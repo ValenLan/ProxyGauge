@@ -85,7 +85,7 @@ render_risk_profile() {
     extract-asn "$IPAPI_JSON" "$PROXYCHECK_JSON" "$risk_ip" 2>/dev/null || true)
   if printf '%s' "$ASN_NUMBER" | /usr/bin/grep -qE '^[0-9]+$'; then
     /usr/bin/curl -sS --retry 1 --retry-all-errors --retry-delay 1 \
-      -A "CloudRoute/1.3.13 (+https://github.com/ValenLan/CloudRoute)" \
+      -A "CloudRoute/1.3.14 (+https://github.com/ValenLan/CloudRoute)" \
       --proxy "http://$risk_proxy" --max-time "$METADATA_TIMEOUT" \
       "https://www.peeringdb.com/api/net?asn=$ASN_NUMBER" \
       -o "$PEERINGDB_JSON" 2>/dev/null || true
@@ -129,10 +129,12 @@ fi
 
 echo "===== 3. 代理入口 (系统代理 / TUN, 至少一个) ====="
 MODE_OK=""
+SYSTEM_ACTIVE=""
 TUN_ACTIVE=""
 if /usr/sbin/scutil --proxy 2>/dev/null | /usr/bin/grep -qE '(HTTP|SOCKS)Enable : 1'; then
   echo "  ℹ️ 系统代理: 已启用"
   MODE_OK=1
+  SYSTEM_ACTIVE=1
 else
   echo "  ℹ️ 系统代理: 未启用"
 fi
@@ -143,7 +145,9 @@ if has_tun_route; then
 else
   echo "  ℹ️ TUN: 未检测到 Fake-IP 路由接管"
 fi
-if [ -n "$MODE_OK" ]; then
+if [ -n "$SYSTEM_ACTIVE" ] && [ -n "$TUN_ACTIVE" ]; then
+  check warn "系统代理与 TUN 同时开启 — 通常只需保留一个流量入口"
+elif [ -n "$MODE_OK" ]; then
   check ok "代理入口已生效"
 else
   check no "系统代理与 TUN 都未开启 — 普通流量不会进入代理"

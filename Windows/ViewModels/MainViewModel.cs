@@ -30,7 +30,7 @@ public sealed class MainViewModel : ObservableObject
 
         Core = new MetricViewModel(new MetricSnapshot("代理核心", "检查中", "正在查找 Mihomo", "核", HealthLevel.Idle));
         Port = new MetricViewModel(new MetricSnapshot("本地端口", "检查中", $"{_config.MixedHost}:{_config.MixedPort}", "端", HealthLevel.Idle));
-        Route = new MetricViewModel(new MetricSnapshot("流量入口", "检查中", "系统代理或 TUN", "路", HealthLevel.Idle));
+        Route = new MetricViewModel(new MetricSnapshot("流量入口", "检查中", "系统代理或 TUN", "入", HealthLevel.Idle));
     }
 
     public MetricViewModel Core { get; }

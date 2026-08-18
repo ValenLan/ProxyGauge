@@ -17,6 +17,7 @@ WINDOWS_MAIN="$PROJECT_ROOT/Windows/MainWindow.xaml"
 /usr/bin/grep -Fq '未启用独立 Google / Gemini 链式出口；跳过可选出口确认' "$CHECK"
 /usr/bin/grep -Fq '===== 7. AI 路由确认 (默认低风险模式) =====' "$CHECK"
 /usr/bin/grep -Fq '===== 8. 双出口结论 (不新增外部请求) =====' "$CHECK"
+/usr/bin/grep -Fq '系统代理与 TUN 同时开启 — 通常只需保留一个流量入口' "$CHECK"
 
 if /usr/bin/grep -q '社区深度复核\|Claude 登录会话验证\|ChatGPT 登录会话验证' "$CHECK"; then
   echo "Manual browser and account checks must stay outside the routine health report." >&2
@@ -52,6 +53,7 @@ score_weight=$(/usr/bin/awk '
 /usr/bin/grep -Fq 'new HealthCheckSection("代理出口", [exitResult.Item], 30, IsCritical: true)' "$WINDOWS_SERVICE"
 /usr/bin/grep -Fq 'new HealthCheckSection("IP 风险画像", riskItems, 15)' "$WINDOWS_SERVICE"
 /usr/bin/grep -Fq 'new HealthCheckSection("AI 路由确认（默认低风险模式）"' "$WINDOWS_SERVICE"
+/usr/bin/grep -Fq 'snapshot.SystemProxyEnabled && snapshot.TunDetected' "$WINDOWS_SERVICE"
 /usr/bin/grep -Fq '                ], 10)' "$WINDOWS_SERVICE"
 /usr/bin/grep -Fq 'value = Math.Min(value, 49)' "$WINDOWS_MODEL"
 /usr/bin/grep -Fq 'Binding="{Binding IsHealthCheckRunning}"' "$WINDOWS_MAIN"

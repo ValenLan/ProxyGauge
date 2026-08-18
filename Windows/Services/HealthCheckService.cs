@@ -25,11 +25,16 @@ public sealed class HealthCheckService
     public async Task<HealthReport> RunAsync(AppConfig config, CancellationToken cancellationToken = default)
     {
         var snapshot = await _probeService.ProbeAsync(config, cancellationToken);
+        var entryLevel = snapshot.SystemProxyEnabled && snapshot.TunDetected
+            ? HealthLevel.Warning
+            : snapshot.SystemProxyEnabled || snapshot.TunDetected
+                ? HealthLevel.Ok
+                : HealthLevel.Error;
         var localItems = new List<HealthCheckItem>
         {
             new("代理核心", snapshot.Core.Value, snapshot.Core.Level == HealthLevel.Ok),
             new("本地混合端口", $"{config.MixedHost}:{config.MixedPort} · {snapshot.Port.Value}", snapshot.Port.Level == HealthLevel.Ok),
-            new("流量入口", snapshot.Route.Value, snapshot.SystemProxyEnabled || snapshot.TunDetected)
+            new("流量入口", $"{snapshot.Route.Title} · {snapshot.Route.Value}", entryLevel)
         };
         if (snapshot.TunDetected)
         {
@@ -48,7 +53,7 @@ public sealed class HealthCheckService
             // probes. Match the macOS metadata budget without changing connect timeout.
             Timeout = TimeSpan.FromSeconds(Math.Max(config.TimeoutSeconds, 12))
         };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("CloudRoute/1.3.13 (+https://github.com/ValenLan/CloudRoute)");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("CloudRoute/1.3.14 (+https://github.com/ValenLan/CloudRoute)");
 
         var exitResult = await CheckExitIpAsync(client, config, cancellationToken);
         var riskTask = CheckIpRiskAsync(client, exitResult.Address, cancellationToken);

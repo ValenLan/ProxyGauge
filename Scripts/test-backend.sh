@@ -27,6 +27,29 @@ assert_kill_state 'Kill Switch: Enabled' $'已开启\tok'
 assert_kill_state 'Kill Switch 已关闭' $'已关闭\twarning'
 assert_kill_state 'Kill Switch: Disabled' $'已关闭\twarning'
 
+assert_entry_state() {
+  local system_active tun_active expected actual
+  system_active="$1"
+  tun_active="$2"
+  expected="$3"
+
+  actual=$(CLOUDROUTE_SYSTEM_PROXY_ACTIVE="$system_active" \
+    CLOUDROUTE_TUN_ACTIVE="$tun_active" \
+    CLOUDROUTE_ADMIN_RESULT="$TEMP_DIR/missing-admin-result" \
+    CLOUDROUTE_KILL_TOKEN="$TEMP_DIR/missing-token" \
+    /bin/bash "$BACKEND" probe | /usr/bin/awk -F '\t' '$1 == "entry" { print $2 "\t" $3 "\t" $4 "\t" $5 }')
+
+  if [ "$actual" != "$expected" ]; then
+    echo "入口状态解析失败: system=$system_active tun=$tun_active => $actual (期望 $expected)" >&2
+    exit 1
+  fi
+}
+
+assert_entry_state 1 0 $'已启用\tok\t系统代理\tnetwork'
+assert_entry_state 0 1 $'已接管\tok\tTUN 路由\tarrow.triangle.2.circlepath'
+assert_entry_state 1 1 $'同时开启\twarning\t双重入口\texclamationmark.triangle.fill'
+assert_entry_state 0 0 $'未启用\tidle\t流量入口\tarrow.triangle.branch'
+
 /usr/bin/printf '%s\n__STATUS__=0\n' 'Kill Switch: Enabled' > "$TEMP_DIR/legacy-admin-result"
 legacy_actual=$(PUFFROUTE_ADMIN_RESULT="$TEMP_DIR/legacy-admin-result" \
   PUFFROUTE_KILL_TOKEN="$TEMP_DIR/legacy-token" \

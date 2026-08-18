@@ -29,8 +29,8 @@ enum HealthLevel: String, Sendable {
 }
 
 struct MetricState: Sendable {
-    let title: String
-    let symbol: String
+    var title: String
+    var symbol: String
     var value: String
     var level: HealthLevel
 }
@@ -61,7 +61,7 @@ final class ProxyModel: ObservableObject {
 
     @Published var core = MetricState(title: "代理核心", symbol: "cpu", value: "检查中", level: .idle)
     @Published var port = MetricState(title: "本地端口", symbol: "network", value: "检查中", level: .idle)
-    @Published var tun = MetricState(title: "TUN 路由", symbol: "arrow.triangle.2.circlepath", value: "检查中", level: .idle)
+    @Published var entry = MetricState(title: "流量入口", symbol: "arrow.triangle.branch", value: "检查中", level: .idle)
     @Published var killSwitch = MetricState(title: "Kill Switch", symbol: "shield.fill", value: "未确认", level: .idle)
 
     private let backendPath = Bundle.main.path(forResource: "cloudroute-backend", ofType: "sh")
@@ -149,7 +149,7 @@ final class ProxyModel: ObservableObject {
         detail = parsed["detail"]?.first ?? "请刷新后重试"
         updateMetric(&core, from: parsed["core"])
         updateMetric(&port, from: parsed["port"])
-        updateMetric(&tun, from: parsed["tun"])
+        updateMetric(&entry, from: parsed["entry"] ?? parsed["tun"])
         updateMetric(&killSwitch, from: parsed["kill"])
     }
 
@@ -157,6 +157,10 @@ final class ProxyModel: ObservableObject {
         guard let fields, fields.count >= 2 else { return }
         metric.value = fields[0]
         metric.level = HealthLevel(rawValue: fields[1]) ?? .idle
+        if fields.count >= 4 {
+            metric.title = fields[2]
+            metric.symbol = fields[3]
+        }
     }
 
     private func execute(_ action: String) async -> (status: Int32, output: String) {
@@ -1339,7 +1343,7 @@ struct ContentView: View {
             ) {
                 MetricCard(metric: model.core)
                 MetricCard(metric: model.port)
-                MetricCard(metric: model.tun)
+                MetricCard(metric: model.entry)
                 KillSwitchCard(metric: model.killSwitch, isBusy: model.isBusy) { enabled in
                     if enabled {
                         model.enableKillSwitch()
