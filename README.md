@@ -18,7 +18,7 @@ Mihomo/Clash Verge 的核心、混合端口和流量入口状态，并提供结�
 - macOS 提供独立“高级检测”入口，按需打开 BrowserLeaks、IPhey、IPQS、Scamalytics、AbuseIPDB
 - 常规健康报告只统计自动检查；高级检测与账户判断不计入通过、提示或失败
 - 健康检查运行时显示线性进度，完成后给出可解释的 0–100 健康分
-- macOS 检测入口采用整卡操作项：功能色只用于图标、悬停与运行反馈，避免长期占据界面的高饱和按钮
+- macOS 检测入口采用整卡操作项：蓝、青、紫功能色用于前导图标与紧凑动作控件，健康检查同时展示双出口、IP 风险和域名分流范围
 - macOS 可选读取 Mihomo 运行时状态，独立验证 Google/Gemini 链式策略、规则命中、中性 204 延迟与真实链式出口 IP
 - macOS 深度复核可分别用默认出口或 Google 链路启动临时 Chrome；不复用现有 Cookie、扩展或浏览器资料，也不修改系统代理
 - 内置可独立分享的 Clash Verge Rev / Mihomo 规则包，不包含订阅或节点
@@ -211,7 +211,7 @@ Firewall/WFP 策略，误配置可能让整台电脑断网；当前分享版刻�
 每次 push 与 pull request 都会构建并测试 macOS、Windows x64 和 Windows ARM64，并把
 三个 ZIP 原样保存为 Actions artifacts。只有推送与应用版本完全一致的 `v<版本>` 标签时，
 工作流才会创建 GitHub Release，同时上传三个 ZIP 与 `SHA256SUMS.txt`。例如当前版本的
-发布标签是 `v1.3.11`。
+发布标签是 `v1.3.12`。
 
 创建标签会产生供仓库授权用户下载的正式发布结果，必须在全部本地测试和普通 push CI
 通过后由维护者明确执行；构建脚本本身不会自动创建标签。

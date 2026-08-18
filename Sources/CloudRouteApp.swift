@@ -884,12 +884,14 @@ private struct DiagnosticActionButtonStyle: ButtonStyle {
     }
 }
 
-private struct DiagnosticActionCard: View {
+private struct DashboardActionCard: View {
     let title: String
     let detail: String
     let symbol: String
+    let actionLabel: String
     let actionSymbol: String
     let tint: Color
+    var scopeLabels: [String] = []
     var isRunning = false
     var isDisabled = false
     var showsProgress = false
@@ -919,14 +921,31 @@ private struct DiagnosticActionCard: View {
                             .lineLimit(1)
                     }
 
+                    if !scopeLabels.isEmpty {
+                        HStack(spacing: 8) {
+                            ForEach(Array(scopeLabels.enumerated()), id: \.offset) { index, label in
+                                if index > 0 {
+                                    Rectangle()
+                                        .fill(Color.primary.opacity(0.12))
+                                        .frame(width: 1, height: 12)
+                                }
+
+                                HStack(spacing: 4) {
+                                    Circle()
+                                        .fill(tint)
+                                        .frame(width: 4, height: 4)
+                                    Text(label)
+                                }
+                            }
+                        }
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .layoutPriority(1)
+                    }
+
                     Spacer(minLength: 0)
 
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(isHovering ? tint.opacity(0.14) : Color.primary.opacity(0.05))
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .stroke(isHovering ? tint.opacity(0.42) : Color.primary.opacity(0.10), lineWidth: 1)
-
+                    HStack(spacing: 6) {
                         if isRunning {
                             ProgressView()
                                 .controlSize(.mini)
@@ -934,10 +953,23 @@ private struct DiagnosticActionCard: View {
                         } else {
                             Image(systemName: actionSymbol)
                                 .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(isHovering ? tint : Color.secondary)
                         }
+
+                        Text(isRunning ? "检查中" : actionLabel)
                     }
-                    .frame(width: 32, height: 28)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(tint)
+                    .padding(.horizontal, 9)
+                    .frame(minWidth: 58)
+                    .frame(height: 28)
+                    .background {
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(tint.opacity(isHovering ? 0.24 : 0.14))
+                    }
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .stroke(tint.opacity(isHovering ? 0.58 : 0.30), lineWidth: 1)
+                    }
                 }
 
                 if showsProgress && isRunning {
@@ -981,10 +1013,11 @@ struct AdvancedCheckCard: View {
     let action: () -> Void
 
     var body: some View {
-        DiagnosticActionCard(
+        DashboardActionCard(
             title: "高级检测",
             detail: "浏览器泄漏与 IP 风险",
             symbol: "scope",
+            actionLabel: "打开",
             actionSymbol: "arrow.up.right",
             tint: CloudPalette.reviewCyan,
             action: action
@@ -1150,42 +1183,16 @@ struct RulePackCard: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 9) {
-                ZStack {
-                    Circle()
-                        .fill(CloudPalette.rulesViolet.opacity(0.15))
-                    Image(systemName: "list.bullet.rectangle")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(CloudPalette.rulesViolet)
-                }
-                .frame(width: 30, height: 30)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("规则管理")
-                        .font(CloudTypography.actionTitle)
-                    Text("12 条 · 2026.08")
-                        .font(CloudTypography.actionDetail)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-
-                Spacer(minLength: 0)
-
-                Image(systemName: "chevron.right")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity, minHeight: 72)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.primary.opacity(0.07), lineWidth: 1)
-        }
+        DashboardActionCard(
+            title: "规则管理",
+            detail: "12 条 · 2026.08",
+            symbol: "list.bullet.rectangle",
+            actionLabel: "管理",
+            actionSymbol: "chevron.right",
+            tint: CloudPalette.rulesViolet,
+            action: action
+        )
+        .accessibilityLabel("打开规则管理")
         .help("管理可分享的 Mihomo / Clash Verge 规则包")
     }
 }
@@ -1438,12 +1445,14 @@ struct ContentView: View {
 
     private var actionArea: some View {
         VStack(spacing: 10) {
-            DiagnosticActionCard(
+            DashboardActionCard(
                 title: "健康检查",
                 detail: isHealthCheckRunning ? "正在检查代理链路…" : "检查双出口、IP 风险与分流",
                 symbol: "stethoscope",
+                actionLabel: "检查",
                 actionSymbol: "play.fill",
                 tint: CloudPalette.networkBlue,
+                scopeLabels: ["双出口", "IP 风险", "域名分流"],
                 isRunning: isHealthCheckRunning,
                 isDisabled: model.isBusy,
                 showsProgress: true,
