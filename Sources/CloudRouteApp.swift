@@ -197,6 +197,12 @@ private enum CloudPalette {
     static let rulesViolet = Color(red: 0.54, green: 0.42, blue: 0.96)
 }
 
+private enum MainWindowLayout {
+    // The current macOS title bar adds 32 points, producing a 640×480 window.
+    static let width: CGFloat = 640
+    static let contentHeight: CGFloat = 448
+}
+
 struct MetricCard: View {
     let metric: MetricState
 
@@ -1271,7 +1277,7 @@ struct ContentView: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 22)
-        .frame(width: 700, height: 380)
+        .frame(width: MainWindowLayout.width, height: MainWindowLayout.contentHeight)
         .background(Color(nsColor: .windowBackgroundColor))
         .sheet(item: $model.resultSheet) { result in
             ResultView(result: result) {
@@ -1342,7 +1348,7 @@ struct ContentView: View {
     }
 
     private var actionArea: some View {
-        HStack(spacing: 10) {
+        VStack(spacing: 10) {
             VStack(spacing: 7) {
                 HStack(spacing: 9) {
                     ZStack {
@@ -1383,16 +1389,17 @@ struct ContentView: View {
                 }
             }
             .padding(.horizontal, 12)
-            .frame(width: 276)
-            .frame(minHeight: 72)
+            .frame(maxWidth: .infinity, minHeight: 72)
             .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .stroke(Color.primary.opacity(0.07), lineWidth: 1)
             }
 
-            AdvancedCheckCard { showingAdvanced = true }
-            RulePackCard { showingRules = true }
+            HStack(spacing: 10) {
+                AdvancedCheckCard { showingAdvanced = true }
+                RulePackCard { showingRules = true }
+            }
         }
     }
 
