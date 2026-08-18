@@ -109,15 +109,17 @@ final class ProxyModel: ObservableObject {
             guard let self else { return }
             let result = await self.execute(action)
             let cleanOutput = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+            let isHealth = action == "health"
+            let succeeded = result.status == 0 && (!isHealth || !cleanOutput.isEmpty)
             self.isBusy = false
             self.busyLabel = ""
             self.resultSheet = ResultSheet(
-                kind: action == "health" ? .health : .standard,
-                title: action == "health" ? title : (result.status == 0 ? title : "操作失败"),
+                kind: isHealth ? .health : .standard,
+                title: isHealth ? title : (succeeded ? title : "操作失败"),
                 output: cleanOutput.isEmpty
-                    ? (result.status == 0 ? "操作已完成。" : "没有收到操作结果。")
+                    ? (isHealth ? "健康检查没有返回详情，请重新运行。" : (succeeded ? "操作已完成。" : "没有收到操作结果。"))
                     : cleanOutput,
-                success: result.status == 0
+                success: succeeded
             )
             await self.refresh()
         }
@@ -427,75 +429,99 @@ struct ResultView: View {
     }
 
     private var healthTitle: String {
+        if report.sections.isEmpty { return "未收到检查详情" }
         if report.failCount > 0 { return "发现 \(report.failCount) 项问题" }
-        if !result.success && report.sections.isEmpty { return "检查未完成" }
         return "代理链路正常"
     }
 
-    private var healthSubtitle: String {
-        guard !report.sections.isEmpty else { return result.output }
-        return "\(report.passCount) 项通过 · \(report.failCount) 项未通过"
+    @ViewBuilder
+    private var healthResult: some View {
+        if report.sections.isEmpty {
+            emptyHealthResult
+        } else {
+            detailedHealthResult
+        }
     }
 
-    private var healthResult: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 14) {
+    private var detailedHealthResult: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 13) {
                 ZStack {
-                    Circle()
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
                         .fill(healthColor.opacity(0.13))
                     Image(systemName: report.failCount == 0 && result.success ? "checkmark" : "exclamationmark")
-                        .font(.system(size: 19, weight: .bold))
+                        .font(.system(size: 17, weight: .bold))
                         .foregroundStyle(healthColor)
                 }
-                .frame(width: 46, height: 46)
+                .frame(width: 42, height: 42)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(healthTitle)
-                        .font(.system(size: 21, weight: .semibold, design: .rounded))
-                    Text(healthSubtitle)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                        .font(.system(size: 20, weight: .semibold, design: .rounded))
+                    if let checkedAt = report.checkedAt {
+                        Text(checkedAt)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 Spacer()
 
-                if let checkedAt = report.checkedAt {
-                    Text(checkedAt)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 5)
-                        .background(Color.primary.opacity(0.05), in: Capsule())
+                HStack(spacing: 7) {
+                    summaryBadge("\(report.passCount) 通过", color: Color(red: 0.17, green: 0.66, blue: 0.43))
+                    summaryBadge("\(report.failCount) 失败", color: report.failCount == 0 ? .secondary : healthColor)
                 }
-            }
-            .padding(16)
-            .background(healthColor.opacity(0.07), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(healthColor.opacity(0.16), lineWidth: 1)
             }
 
             ScrollView {
-                if report.sections.isEmpty {
-                    Text(result.output)
-                        .font(.system(.body, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(14)
-                        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                } else {
-                    LazyVStack(spacing: 10) {
-                        ForEach(report.sections) { section in
-                            HealthSectionCard(section: section)
-                        }
+                LazyVStack(spacing: 10) {
+                    ForEach(report.sections) { section in
+                        HealthSectionCard(section: section)
                     }
-                    .padding(.vertical, 1)
+                }
+                .padding(.vertical, 1)
+            }
+
+            HStack {
+                Button(copied ? "已复制" : "复制报告", action: copyResult)
+                    .controlSize(.small)
+                Spacer()
+                Button("完成", action: close)
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 610, height: 490)
+    }
+
+    private var emptyHealthResult: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .top, spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color.orange.opacity(0.13))
+                    Image(systemName: "waveform.path.ecg.rectangle")
+                        .font(.system(size: 19, weight: .semibold))
+                        .foregroundStyle(.orange)
+                }
+                .frame(width: 48, height: 48)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("未收到检查详情")
+                        .font(.system(size: 20, weight: .semibold, design: .rounded))
+                    Text("健康检查没有返回可解析的项目。请关闭弹窗后重新运行；如果反复出现，请检查本地脚本。")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
 
             HStack {
-                Button(copied ? "已复制" : "复制完整报告", action: copyResult)
+                if shouldOfferHealthCopy {
+                    Button(copied ? "已复制" : "复制详情", action: copyResult)
+                        .controlSize(.small)
+                }
                 Spacer()
                 Button("完成", action: close)
                     .buttonStyle(.borderedProminent)
@@ -503,31 +529,82 @@ struct ResultView: View {
             }
         }
         .padding(22)
-        .frame(width: 640, height: 540)
+        .frame(width: 480, height: 210)
+    }
+
+    private var shouldOfferHealthCopy: Bool {
+        let output = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !output.isEmpty && output != "操作已完成。" && !output.hasPrefix("健康检查没有返回详情")
+    }
+
+    private func summaryBadge(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(color)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(color.opacity(0.10), in: Capsule())
+    }
+
+    private var standardAccent: Color {
+        if !result.success { return Color(red: 0.91, green: 0.31, blue: 0.29) }
+        if result.title.contains("关闭") { return .orange }
+        return Color(red: 0.17, green: 0.66, blue: 0.43)
+    }
+
+    private var standardSymbol: String {
+        if !result.success { return "xmark" }
+        if result.title.contains("关闭") { return "shield.slash.fill" }
+        if result.title.contains("Kill Switch") { return "shield.checkered" }
+        return "checkmark"
+    }
+
+    private var standardSubtitle: String {
+        if !result.success { return "操作没有完成，请查看下面的具体原因。" }
+        if result.title.contains("关闭") { return "保护已关闭，应用可能通过真实 IP 直接连接网络。" }
+        if result.title.contains("Kill Switch") { return "防泄漏保护正在工作，代理中断时会阻止真实 IP 直连。" }
+        return "操作已经完成。"
     }
 
     private var standardResult: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 10) {
-                Image(systemName: result.success ? "checkmark.circle.fill" : "xmark.octagon.fill")
-                    .font(.title2)
-                    .foregroundStyle(result.success ? Color.green : Color.red)
-                Text(result.title)
-                    .font(.title2.weight(.semibold))
-                Spacer()
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .top, spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(standardAccent.opacity(0.13))
+                    Image(systemName: standardSymbol)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(standardAccent)
+                }
+                .frame(width: 48, height: 48)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(result.title)
+                        .font(.system(size: 20, weight: .semibold, design: .rounded))
+                    Text(standardSubtitle)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
-            ScrollView {
-                Text(result.output)
-                    .font(.system(.body, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(14)
+            if !result.success {
+                ScrollView {
+                    Text(result.output)
+                        .font(.system(size: 12, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                }
+                .frame(maxHeight: 104)
+                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
             }
-            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
 
             HStack {
-                Button(copied ? "已复制" : "复制结果", action: copyResult)
+                if !result.success {
+                    Button(copied ? "已复制" : "复制错误", action: copyResult)
+                        .controlSize(.small)
+                }
                 Spacer()
                 Button("完成", action: close)
                     .buttonStyle(.borderedProminent)
@@ -535,7 +612,7 @@ struct ResultView: View {
             }
         }
         .padding(22)
-        .frame(width: 560, height: 420)
+        .frame(width: 470, height: result.success ? 210 : 330)
     }
 
     private func copyResult() {
