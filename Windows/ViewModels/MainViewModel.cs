@@ -14,6 +14,7 @@ public sealed class MainViewModel : ObservableObject
     private string _detail = "稍等片刻，CloudRoute 正在检查本地流量入口";
     private HealthLevel _overallLevel = HealthLevel.Idle;
     private bool _isBusy;
+    private bool _isHealthCheckRunning;
     private string _healthButtonLabel = "开始检查";
     private string _lastUpdated = "尚未刷新";
 
@@ -78,6 +79,11 @@ public sealed class MainViewModel : ObservableObject
     }
 
     public bool IsNotBusy => !IsBusy;
+    public bool IsHealthCheckRunning
+    {
+        get => _isHealthCheckRunning;
+        private set => SetProperty(ref _isHealthCheckRunning, value);
+    }
 
     public async Task RefreshAsync()
     {
@@ -113,6 +119,7 @@ public sealed class MainViewModel : ObservableObject
         }
 
         IsBusy = true;
+        IsHealthCheckRunning = true;
         HealthButtonLabel = "正在检查…";
         try
         {
@@ -123,6 +130,7 @@ public sealed class MainViewModel : ObservableObject
         finally
         {
             HealthButtonLabel = "开始检查";
+            IsHealthCheckRunning = false;
             IsBusy = false;
         }
     }

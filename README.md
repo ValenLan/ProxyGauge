@@ -17,6 +17,7 @@ Mihomo/Clash Verge 的核心、混合端口和流量入口状态，并提供结�
 - 分开检查 ASN 归属、IP 段用途、风险标签、AI 站点真实响应和外网连通性
 - macOS 提供独立“高级检测”入口，按需打开 BrowserLeaks、IPhey、IPQS、Scamalytics、AbuseIPDB
 - 常规健康报告只统计自动检查；高级检测与账户判断不计入通过、提示或失败
+- 健康检查运行时显示线性进度，完成后给出可解释的 0–100 健康分
 - macOS 可选读取 Mihomo 运行时状态，独立验证 Google/Gemini 链式策略、规则命中、中性 204 延迟与真实链式出口 IP
 - macOS 深度复核可分别用默认出口或 Google 链路启动临时 Chrome；不复用现有 Cookie、扩展或浏览器资料，也不修改系统代理
 - 内置可独立分享的 Clash Verge Rev / Mihomo 规则包，不包含订阅或节点
@@ -209,7 +210,7 @@ Firewall/WFP 策略，误配置可能让整台电脑断网；当前分享版刻�
 每次 push 与 pull request 都会构建并测试 macOS、Windows x64 和 Windows ARM64，并把
 三个 ZIP 原样保存为 Actions artifacts。只有推送与应用版本完全一致的 `v<版本>` 标签时，
 工作流才会创建 GitHub Release，同时上传三个 ZIP 与 `SHA256SUMS.txt`。例如当前版本的
-发布标签是 `v1.3.2`。
+发布标签是 `v1.3.3`。
 
 创建标签会产生供仓库授权用户下载的正式发布结果，必须在全部本地测试和普通 push CI
 通过后由维护者明确执行；构建脚本本身不会自动创建标签。
@@ -234,6 +235,8 @@ Firewall/WFP 策略，误配置可能让整台电脑断网；当前分享版刻�
   观察 WebRTC、DNS、IPv6、时区和指纹一致性。
 - CloudRoute 不读取 Claude、ChatGPT 等网站的登录 Cookie 或账户资料，也不会把账户判断
   塞进常规健康报告。账户状态只能由用户在自己的正常登录会话中确认。
+- 健康分只汇总本次自动检查：提示扣对应部分一半权重，失败扣全部权重；核心、端口、
+  流量入口或默认出口失败时最高为 49 分。它不是网速、匿名性或账户安全评分。
 - macOS 的“高级检测”只在用户点击后启动独立 Chrome 进程，且结果不计入健康检查。它使用临时资料目录、
   禁用现有扩展与同步，并通过进程专属的本机代理打开 BrowserLeaks、IPhey、IPQS、
   Scamalytics 与 AbuseIPDB；关闭该 Chrome 窗口后删除临时资料。检测网站仍能看到所选

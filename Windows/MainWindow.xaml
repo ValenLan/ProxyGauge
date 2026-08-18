@@ -219,6 +219,10 @@
 
                     <Border Grid.Column="0" Background="{StaticResource SurfaceRaisedBrush}" BorderBrush="#36516F" BorderThickness="1" CornerRadius="15" Padding="17">
                         <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
@@ -237,6 +241,24 @@
                                     IsEnabled="{Binding IsNotBusy}"
                                     Click="HealthButton_Click"
                                     VerticalAlignment="Center" />
+                            <ProgressBar Grid.Row="1"
+                                         Grid.ColumnSpan="3"
+                                         Height="3"
+                                         Margin="0,10,0,0"
+                                         IsIndeterminate="True"
+                                         Foreground="{StaticResource AccentBrush}"
+                                         Background="#26354A">
+                                <ProgressBar.Style>
+                                    <Style TargetType="ProgressBar">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsHealthCheckRunning}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </ProgressBar.Style>
+                            </ProgressBar>
                         </Grid>
                     </Border>
 

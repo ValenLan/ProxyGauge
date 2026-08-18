@@ -32,6 +32,8 @@ public partial class HealthReportWindow : Window
     public string PassedText => $"{Report.PassedCount} 通过";
     public string WarningText => $"{Report.WarningCount} 提示";
     public string FailedText => $"{Report.FailedCount} 失败";
+    public string ScoreText => Report.Score.ToString();
+    public string ScoreLabel => $"健康分 · {Report.ScoreLabel}";
     public string StatusMark => Report.FailedCount == 0 && Report.WarningCount == 0 ? "✓" : "!";
     public Brush StatusBrush => Report.FailedCount > 0
         ? Palette.Error
@@ -41,6 +43,14 @@ public partial class HealthReportWindow : Window
         : Report.WarningCount > 0
             ? Palette.BackgroundForLevel(HealthLevel.Warning)
             : Palette.BackgroundForLevel(HealthLevel.Ok);
+    public Brush ScoreBrush => Report.Score >= 90
+        ? Palette.Success
+        : Report.Score >= 50 ? Palette.Warning : Palette.Error;
+    public Brush ScoreBackground => Report.Score >= 90
+        ? Palette.BackgroundForLevel(HealthLevel.Ok)
+        : Report.Score >= 50
+            ? Palette.BackgroundForLevel(HealthLevel.Warning)
+            : Palette.BackgroundForLevel(HealthLevel.Error);
 
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {

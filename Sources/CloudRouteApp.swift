@@ -244,7 +244,7 @@ struct MetricCard: View {
                 .shadow(color: metric.level.color.opacity(0.25), radius: 3)
         }
         .padding(.horizontal, 16)
-        .frame(maxWidth: .infinity, minHeight: 70)
+        .frame(maxWidth: .infinity, minHeight: 74)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -303,7 +303,7 @@ struct KillSwitchCard: View {
             .help(metric.level == .ok ? "关闭防泄漏保护" : "开启防泄漏保护")
         }
         .padding(.horizontal, 16)
-        .frame(maxWidth: .infinity, minHeight: 70)
+        .frame(maxWidth: .infinity, minHeight: 74)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -376,6 +376,42 @@ struct HealthReport {
     let passCount: Int
     let warningCount: Int
     let failCount: Int
+
+    private static let sectionWeights: [String: Double] = [
+        "1": 15,
+        "2": 15,
+        "3": 15,
+        "4": 20,
+        "5": 10,
+        "6": 10,
+        "7": 5,
+        "8": 10
+    ]
+
+    var score: Int {
+        var earned = 0.0
+        for section in sections {
+            guard let weight = Self.sectionWeights[section.number] else { continue }
+            if section.hasFailure {
+                continue
+            }
+            earned += section.hasWarning ? weight * 0.5 : weight
+        }
+
+        var value = Int(earned.rounded())
+        if sections.contains(where: { ["1", "2", "3", "4"].contains($0.number) && $0.hasFailure }) {
+            value = min(value, 49)
+        } else if failCount > 0 {
+            value = min(value, 69)
+        }
+        return max(0, min(100, value))
+    }
+
+    var scoreLabel: String {
+        if score >= 90 { return "良好" }
+        if score >= 50 { return "需改进" }
+        return "异常"
+    }
 
     init(output: String) {
         var timestamp: String?
@@ -602,6 +638,12 @@ struct ResultView: View {
         return "网络检查通过"
     }
 
+    private var scoreColor: Color {
+        if report.score >= 90 { return Color(red: 0.17, green: 0.66, blue: 0.43) }
+        if report.score >= 50 { return .orange }
+        return Color(red: 0.91, green: 0.31, blue: 0.29)
+    }
+
     @ViewBuilder
     private var healthResult: some View {
         if report.sections.isEmpty {
@@ -635,13 +677,37 @@ struct ResultView: View {
 
                 Spacer()
 
-                HStack(spacing: 7) {
-                    summaryBadge("\(report.passCount) 通过", color: Color(red: 0.17, green: 0.66, blue: 0.43))
-                    if report.warningCount > 0 {
-                        summaryBadge("\(report.warningCount) 提示", color: .orange)
+                VStack(spacing: 4) {
+                    ZStack {
+                        Circle()
+                            .stroke(scoreColor.opacity(0.14), lineWidth: 5)
+                        Circle()
+                            .trim(from: 0, to: Double(report.score) / 100)
+                            .stroke(scoreColor, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                            .rotationEffect(.degrees(-90))
+                        Text("\(report.score)")
+                            .font(.system(size: 17, weight: .bold, design: .rounded))
+                            .foregroundStyle(scoreColor)
                     }
-                    summaryBadge("\(report.failCount) 失败", color: report.failCount == 0 ? .secondary : healthColor)
+                    .frame(width: 50, height: 50)
+                    Text("健康分 · \(report.scoreLabel)")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(scoreColor)
                 }
+            }
+
+            HStack(spacing: 8) {
+                Label("关键链路加权；高级检测不计分", systemImage: "info.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                summaryBadge("\(report.passCount) 通过", color: Color(red: 0.17, green: 0.66, blue: 0.43))
+                if report.warningCount > 0 {
+                    summaryBadge("\(report.warningCount) 提示", color: .orange)
+                }
+                summaryBadge("\(report.failCount) 失败", color: report.failCount == 0 ? .secondary : healthColor)
             }
 
             ScrollView {
@@ -663,7 +729,7 @@ struct ResultView: View {
             }
         }
         .padding(20)
-        .frame(width: 610, height: 490)
+        .frame(width: 660, height: 520)
     }
 
     private var emptyHealthResult: some View {
@@ -787,8 +853,12 @@ struct ResultView: View {
     }
 
     private func copyResult() {
+        var copiedOutput = result.output
+        if case .health = result.kind, !report.sections.isEmpty {
+            copiedOutput = "健康分：\(report.score)/100 · \(report.scoreLabel)\n\(copiedOutput)"
+        }
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(result.output, forType: .string)
+        NSPasteboard.general.setString(copiedOutput, forType: .string)
         copied = true
     }
 
@@ -825,7 +895,7 @@ struct AdvancedCheckCard: View {
                     .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 11)
-            .frame(maxWidth: .infinity, minHeight: 68)
+            .frame(maxWidth: .infinity, minHeight: 74)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -844,8 +914,8 @@ struct AdvancedCheckView: View {
     @State private var browserProcesses: [Process] = []
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .fill(CloudPalette.reviewCyan.opacity(0.14))
@@ -853,7 +923,7 @@ struct AdvancedCheckView: View {
                         .font(.system(size: 20, weight: .semibold))
                         .foregroundStyle(CloudPalette.reviewCyan)
                 }
-                .frame(width: 50, height: 50)
+                .frame(width: 44, height: 44)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("高级检测")
@@ -892,33 +962,32 @@ struct AdvancedCheckView: View {
                 )
             }
 
-            VStack(alignment: .leading, spacing: 7) {
+            VStack(alignment: .leading, spacing: 5) {
                 Label("使用临时 Chrome 资料，不加载现有登录、扩展或同步数据。", systemImage: "person.crop.circle.badge.minus")
                 Label("不会改变系统代理；检测网站仍会看到所选出口 IP。", systemImage: "lock.shield")
                 Label("关闭临时窗口后，浏览器资料会自动清理。", systemImage: "trash")
             }
             .font(.caption)
             .foregroundStyle(.secondary)
-            .padding(12)
+            .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
 
-            if !message.isEmpty {
-                Label(message, systemImage: "checkmark.circle")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
             HStack {
+                if !message.isEmpty {
+                    Label(message, systemImage: "checkmark.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
                 Spacer()
                 Button("完成", action: close)
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(22)
-        .frame(width: 560, height: 400)
+        .padding(18)
+        .frame(width: 540, height: 330)
     }
 
     private func routeButton(
@@ -932,7 +1001,7 @@ struct AdvancedCheckView: View {
         Button {
             launchIsolatedBrowser(route)
         } label: {
-            VStack(alignment: .leading, spacing: 9) {
+            VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Image(systemName: symbol)
                         .font(.system(size: 16, weight: .semibold))
@@ -951,8 +1020,8 @@ struct AdvancedCheckView: View {
                     .font(.caption2.weight(.medium))
                     .foregroundStyle(tint)
             }
-            .padding(14)
-            .frame(maxWidth: .infinity, minHeight: 116, alignment: .leading)
+            .padding(12)
+            .frame(maxWidth: .infinity, minHeight: 92, alignment: .leading)
             .background(tint.opacity(0.075), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 13, style: .continuous)
@@ -1022,7 +1091,7 @@ struct RulePackCard: View {
                     .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity, minHeight: 68)
+            .frame(maxWidth: .infinity, minHeight: 74)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1182,7 +1251,7 @@ struct ContentView: View {
     @State private var showingRules = false
 
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 16) {
             header
 
             LazyVGrid(
@@ -1203,8 +1272,8 @@ struct ContentView: View {
 
             actionArea
         }
-        .padding(20)
-        .frame(width: 720, height: 348)
+        .padding(22)
+        .frame(width: 760, height: 380)
         .background(Color(nsColor: .windowBackgroundColor))
         .sheet(item: $model.resultSheet) { result in
             ResultView(result: result) {
@@ -1276,43 +1345,48 @@ struct ContentView: View {
 
     private var actionArea: some View {
         HStack(spacing: 12) {
-            HStack(spacing: 9) {
-                ZStack {
-                    Circle()
-                        .fill(CloudPalette.healthAzure.opacity(0.15))
-                    Image(systemName: "stethoscope")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(CloudPalette.healthAzure)
-                }
-                .frame(width: 30, height: 30)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("健康检查")
-                        .font(.callout.weight(.semibold))
-                    Text(model.isBusy && model.busyLabel.contains("全面检查") ? "正在检查代理链路…" : "检查双出口、IP 风险与域名分流")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-
-                Spacer(minLength: 0)
-
-                Button {
-                    model.runHealthCheck()
-                } label: {
-                    if model.isBusy && model.busyLabel.contains("全面检查") {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else {
-                        Text("开始")
+            VStack(spacing: 7) {
+                HStack(spacing: 9) {
+                    ZStack {
+                        Circle()
+                            .fill(CloudPalette.healthAzure.opacity(0.15))
+                        Image(systemName: "stethoscope")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(CloudPalette.healthAzure)
                     }
+                    .frame(width: 30, height: 30)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("健康检查")
+                            .font(.callout.weight(.semibold))
+                        Text(isHealthCheckRunning ? "正在检查代理链路…" : "检查双出口、IP 风险与域名分流")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Button {
+                        model.runHealthCheck()
+                    } label: {
+                        Text(isHealthCheckRunning ? "检查中" : "开始")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.isBusy)
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(model.isBusy)
+
+                if isHealthCheckRunning {
+                    ProgressView()
+                        .progressViewStyle(.linear)
+                        .tint(CloudPalette.healthAzure)
+                        .controlSize(.small)
+                        .accessibilityLabel("健康检查正在运行")
+                }
             }
             .padding(.horizontal, 12)
-            .frame(width: 292)
-            .frame(minHeight: 68)
+            .frame(width: 316)
+            .frame(minHeight: 74)
             .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -1322,6 +1396,10 @@ struct ContentView: View {
             AdvancedCheckCard { showingAdvanced = true }
             RulePackCard { showingRules = true }
         }
+    }
+
+    private var isHealthCheckRunning: Bool {
+        model.isBusy && model.busyLabel.contains("全面检查")
     }
 }
 
