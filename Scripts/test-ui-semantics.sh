@@ -12,8 +12,12 @@ WINDOWS_MAIN="$PROJECT_ROOT/Windows/MainWindow.xaml"
 /usr/bin/grep -Fq 'MetricCard(metric: model.core)' "$APP_SOURCE"
 /usr/bin/grep -Fq 'MetricCard(metric: model.port)' "$APP_SOURCE"
 /usr/bin/grep -Fq 'MetricCard(metric: model.tun)' "$APP_SOURCE"
-/usr/bin/grep -Fq 'static let width: CGFloat = 640' "$APP_SOURCE"
-/usr/bin/grep -Fq 'static let contentHeight: CGFloat = 448' "$APP_SOURCE"
+/usr/bin/grep -Fq 'static let minimumWidth: CGFloat = 640' "$APP_SOURCE"
+/usr/bin/grep -Fq 'static let minimumContentHeight: CGFloat = 448' "$APP_SOURCE"
+/usr/bin/grep -Fq 'static let defaultWidth: CGFloat = 680' "$APP_SOURCE"
+/usr/bin/grep -Fq 'static let defaultHeight: CGFloat = 500' "$APP_SOURCE"
+/usr/bin/grep -Fq 'Window("CloudRoute", id: "main")' "$APP_SOURCE"
+/usr/bin/grep -Fq '.windowResizability(.contentMinSize)' "$APP_SOURCE"
 /usr/bin/grep -Fq '.frame(maxWidth: .infinity, minHeight: 72)' "$APP_SOURCE"
 /usr/bin/grep -Fq 'static let actionTitle = Font.system(size: 14, weight: .semibold)' "$APP_SOURCE"
 /usr/bin/grep -Fq '.tint(CloudPalette.statusGreen)' "$APP_SOURCE"
@@ -30,6 +34,11 @@ fi
 
 if /usr/bin/grep -Fq '.frame(width: 276)' "$APP_SOURCE"; then
   echo "The health action must stay on its own row in the 4:3 main window." >&2
+  exit 1
+fi
+
+if /usr/bin/grep -Fq '.windowResizability(.contentSize)' "$APP_SOURCE"; then
+  echo "The main macOS window must remain user-resizable." >&2
   exit 1
 fi
 

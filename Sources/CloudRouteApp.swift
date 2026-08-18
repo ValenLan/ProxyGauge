@@ -197,9 +197,12 @@ private enum CloudPalette {
 }
 
 private enum MainWindowLayout {
-    // The current macOS title bar adds 32 points, producing a 640×480 window.
-    static let width: CGFloat = 640
-    static let contentHeight: CGFloat = 448
+    // Keep the dashboard legible at its smallest size, but let macOS users
+    // resize the window to match their workspace instead of enforcing a ratio.
+    static let minimumWidth: CGFloat = 640
+    static let minimumContentHeight: CGFloat = 448
+    static let defaultWidth: CGFloat = 680
+    static let defaultHeight: CGFloat = 500
 }
 
 private enum CloudTypography {
@@ -1284,7 +1287,13 @@ struct ContentView: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 22)
-        .frame(width: MainWindowLayout.width, height: MainWindowLayout.contentHeight)
+        .frame(
+            minWidth: MainWindowLayout.minimumWidth,
+            maxWidth: .infinity,
+            minHeight: MainWindowLayout.minimumContentHeight,
+            maxHeight: .infinity,
+            alignment: .top
+        )
         .background(Color(nsColor: .windowBackgroundColor))
         .sheet(item: $model.resultSheet) { result in
             ResultView(result: result) {
@@ -1481,10 +1490,13 @@ struct CloudRouteApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        WindowGroup("CloudRoute") {
+        Window("CloudRoute", id: "main") {
             ContentView()
         }
-        .defaultSize(width: 720, height: 348)
-        .windowResizability(.contentSize)
+        .defaultSize(
+            width: MainWindowLayout.defaultWidth,
+            height: MainWindowLayout.defaultHeight
+        )
+        .windowResizability(.contentMinSize)
     }
 }
