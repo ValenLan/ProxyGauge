@@ -192,7 +192,6 @@ private enum CloudPalette {
     static let statusRed = Color.red
     static let networkBlue = Color(red: 0.13, green: 0.55, blue: 1.00)
     static let googleViolet = Color(red: 0.61, green: 0.48, blue: 1.00)
-    static let guardTeal = Color(red: 0.20, green: 0.78, blue: 0.69)
     static let reviewCyan = Color(red: 0.20, green: 0.72, blue: 0.82)
     static let rulesViolet = Color(red: 0.54, green: 0.42, blue: 0.96)
 }
@@ -201,6 +200,17 @@ private enum MainWindowLayout {
     // The current macOS title bar adds 32 points, producing a 640×480 window.
     static let width: CGFloat = 640
     static let contentHeight: CGFloat = 448
+}
+
+private enum CloudTypography {
+    static let headline = Font.system(size: 21, weight: .semibold, design: .rounded)
+    static let headerDetail = Font.system(size: 12)
+    static let metricLabel = Font.system(size: 11, weight: .medium)
+    static func metricValue(monospaced: Bool = false) -> Font {
+        .system(size: 18, weight: .semibold, design: monospaced ? .monospaced : .rounded)
+    }
+    static let actionTitle = Font.system(size: 14, weight: .semibold)
+    static let actionDetail = Font.system(size: 11)
 }
 
 struct MetricCard: View {
@@ -227,14 +237,10 @@ struct MetricCard: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(metric.title)
-                    .font(.caption)
+                    .font(CloudTypography.metricLabel)
                     .foregroundStyle(.secondary)
                 Text(metric.value)
-                    .font(.system(
-                        size: 17,
-                        weight: .semibold,
-                        design: metric.title == "本地端口" ? .monospaced : .rounded
-                    ))
+                    .font(CloudTypography.metricValue(monospaced: metric.title == "本地端口"))
                     .lineLimit(1)
             }
             .layoutPriority(1)
@@ -265,7 +271,7 @@ struct KillSwitchCard: View {
         switch metric.level {
         case .error: return metric.level.color
         case .warning: return .orange
-        case .ok, .idle: return CloudPalette.guardTeal
+        case .ok, .idle: return CloudPalette.statusGreen
         }
     }
 
@@ -286,10 +292,10 @@ struct KillSwitchCard: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text("Kill Switch")
-                    .font(.caption)
+                    .font(CloudTypography.metricLabel)
                     .foregroundStyle(.secondary)
                 Text(metric.value)
-                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .font(CloudTypography.metricValue())
                     .lineLimit(1)
             }
 
@@ -301,6 +307,7 @@ struct KillSwitchCard: View {
             ))
             .labelsHidden()
             .toggleStyle(.switch)
+            .tint(CloudPalette.statusGreen)
             .controlSize(.small)
             .disabled(isBusy)
             .help(metric.level == .ok ? "关闭防泄漏保护" : "开启防泄漏保护")
@@ -884,9 +891,9 @@ struct AdvancedCheckCard: View {
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text("高级检测")
-                        .font(.callout.weight(.semibold))
+                        .font(CloudTypography.actionTitle)
                     Text("浏览器泄漏与 IP 风险")
-                        .font(.caption2)
+                        .font(CloudTypography.actionDetail)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
@@ -1080,9 +1087,9 @@ struct RulePackCard: View {
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text("规则管理")
-                        .font(.callout.weight(.semibold))
+                        .font(CloudTypography.actionTitle)
                     Text("12 条 · 2026.08")
-                        .font(.caption)
+                        .font(CloudTypography.actionDetail)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -1317,10 +1324,10 @@ struct ContentView: View {
                         .fill(model.overallLevel.color)
                         .frame(width: 8, height: 8)
                     Text(model.headline)
-                        .font(.system(size: 22, weight: .semibold, design: .rounded))
+                        .font(CloudTypography.headline)
                 }
                 Text(model.detail)
-                    .font(.system(size: 13))
+                    .font(CloudTypography.headerDetail)
                     .foregroundStyle(.secondary)
             }
 
@@ -1362,9 +1369,9 @@ struct ContentView: View {
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text("健康检查")
-                            .font(.callout.weight(.semibold))
+                            .font(CloudTypography.actionTitle)
                         Text(isHealthCheckRunning ? "正在检查代理链路…" : "检查双出口、IP 风险与分流")
-                            .font(.caption)
+                            .font(CloudTypography.actionDetail)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }

@@ -15,9 +15,16 @@ WINDOWS_MAIN="$PROJECT_ROOT/Windows/MainWindow.xaml"
 /usr/bin/grep -Fq 'static let width: CGFloat = 640' "$APP_SOURCE"
 /usr/bin/grep -Fq 'static let contentHeight: CGFloat = 448' "$APP_SOURCE"
 /usr/bin/grep -Fq '.frame(maxWidth: .infinity, minHeight: 72)' "$APP_SOURCE"
+/usr/bin/grep -Fq 'static let actionTitle = Font.system(size: 14, weight: .semibold)' "$APP_SOURCE"
+/usr/bin/grep -Fq '.tint(CloudPalette.statusGreen)' "$APP_SOURCE"
 
 if /usr/bin/grep -q 'MetricCard(metric: .*accent:' "$APP_SOURCE"; then
   echo "Read-only status cards must not use per-card accent colors." >&2
+  exit 1
+fi
+
+if /usr/bin/grep -Fq 'guardTeal' "$APP_SOURCE"; then
+  echo "Kill Switch must use the shared protection green." >&2
   exit 1
 fi
 
