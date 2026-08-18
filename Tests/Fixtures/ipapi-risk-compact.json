@@ -1,0 +1,12 @@
+{
+  "ip": "203.0.113.8",
+  "asn_num": 64501,
+  "asn_org": "Compact Example ISP",
+  "company_name": "Compact Example ISP",
+  "cc": "US",
+  "is_datacenter": false,
+  "is_tor": false,
+  "is_proxy": false,
+  "is_vpn": false,
+  "is_abuser": false
+}

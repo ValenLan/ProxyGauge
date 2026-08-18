@@ -112,14 +112,24 @@ final class ProxyModel: ObservableObject {
             let cleanOutput = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
             let isHealth = action == "health"
             let succeeded = result.status == 0 && (!isHealth || !cleanOutput.isEmpty)
+            let displayedOutput: String
+            if isHealth && cleanOutput.isEmpty {
+                displayedOutput = """
+                ===== 1. 健康检查脚本 =====
+                  ❌ 脚本没有返回文本（退出状态 \(result.status)）
+                  ℹ️ 请确认 App 内置脚本可执行，然后重新运行健康检查
+                """
+            } else if cleanOutput.isEmpty {
+                displayedOutput = succeeded ? "操作已完成。" : "没有收到操作结果。"
+            } else {
+                displayedOutput = cleanOutput
+            }
             self.isBusy = false
             self.busyLabel = ""
             self.resultSheet = ResultSheet(
                 kind: isHealth ? .health : .standard,
                 title: isHealth ? title : (succeeded ? title : "操作失败"),
-                output: cleanOutput.isEmpty
-                    ? (isHealth ? "健康检查没有返回详情，请重新运行。" : (succeeded ? "操作已完成。" : "没有收到操作结果。"))
-                    : cleanOutput,
+                output: displayedOutput,
                 success: succeeded
             )
             await self.refresh()
@@ -163,7 +173,10 @@ final class ProxyModel: ObservableObject {
                 try process.run()
                 let data = pipe.fileHandleForReading.readDataToEndOfFile()
                 process.waitUntilExit()
-                let output = String(data: data, encoding: .utf8) ?? ""
+                // A process command line or third-party response can contain a stray
+                // non-UTF-8 byte. Preserve the rest of the health report instead of
+                // discarding the complete buffer when that happens.
+                let output = String(decoding: data, as: UTF8.self)
                 return (process.terminationStatus, output)
             } catch {
                 return (1, error.localizedDescription)
@@ -172,34 +185,124 @@ final class ProxyModel: ObservableObject {
     }
 }
 
+private enum PuffPalette {
+    static let coreMint = Color(red: 0.22, green: 0.82, blue: 0.48)
+    static let portSky = Color(red: 0.29, green: 0.66, blue: 1.00)
+    static let tunnelLilac = Color(red: 0.61, green: 0.48, blue: 1.00)
+    static let guardTeal = Color(red: 0.20, green: 0.78, blue: 0.69)
+    static let healthAzure = Color(red: 0.13, green: 0.55, blue: 1.00)
+    static let rulesViolet = Color(red: 0.54, green: 0.42, blue: 0.96)
+}
+
 struct MetricCard: View {
     let metric: MetricState
+    let accent: Color
+
+    private var iconColor: Color {
+        switch metric.level {
+        case .error: return metric.level.color
+        case .warning: return .orange
+        case .ok, .idle: return accent
+        }
+    }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 13) {
             ZStack {
-                Circle()
-                    .fill(metric.level.color.opacity(0.14))
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(iconColor.opacity(0.15))
                 Image(systemName: metric.symbol)
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(metric.level.color)
+                    .foregroundStyle(iconColor)
             }
             .frame(width: 38, height: 38)
+            .overlay {
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .stroke(iconColor.opacity(0.13), lineWidth: 1)
+            }
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(metric.title)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Text(metric.value)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(
+                        size: 17,
+                        weight: .semibold,
+                        design: metric.title == "本地端口" ? .monospaced : .rounded
+                    ))
                     .lineLimit(1)
             }
             .layoutPriority(1)
 
             Spacer(minLength: 0)
+
+            Circle()
+                .fill(metric.level.color)
+                .frame(width: 7, height: 7)
+                .shadow(color: metric.level.color.opacity(0.25), radius: 3)
         }
-        .padding(.horizontal, 14)
-        .frame(maxWidth: .infinity, minHeight: 68)
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, minHeight: 70)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+        }
+    }
+}
+
+struct KillSwitchCard: View {
+    let metric: MetricState
+    let isBusy: Bool
+    let setEnabled: (Bool) -> Void
+
+    private var iconColor: Color {
+        switch metric.level {
+        case .error: return metric.level.color
+        case .warning: return .orange
+        case .ok, .idle: return PuffPalette.guardTeal
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 13) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(iconColor.opacity(0.15))
+                Image(systemName: "shield.lefthalf.filled")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(iconColor)
+            }
+            .frame(width: 38, height: 38)
+            .overlay {
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .stroke(iconColor.opacity(0.13), lineWidth: 1)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Kill Switch")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(metric.value)
+                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+
+            Toggle("", isOn: Binding(
+                get: { metric.level == .ok },
+                set: setEnabled
+            ))
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .disabled(isBusy)
+            .help(metric.level == .ok ? "关闭防泄漏保护" : "开启防泄漏保护")
+        }
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, minHeight: 70)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -254,12 +357,36 @@ struct HealthCheckSection: Identifiable {
     }
 }
 
+enum IsolatedBrowserRoute: String {
+    case defaultExit = "default"
+    case googleChain = "google"
+
+    var label: String {
+        switch self {
+        case .defaultExit: return "默认出口"
+        case .googleChain: return "Google 链路"
+        }
+    }
+}
+
 struct HealthReport {
     let checkedAt: String?
     let sections: [HealthCheckSection]
     let passCount: Int
     let warningCount: Int
     let failCount: Int
+
+    var defaultExitIP: String? {
+        firstIPv4(in: sections.first { $0.number == "4" })
+    }
+
+    var googleExitIP: String? {
+        guard let chainSection = sections.first(where: { $0.number == "6" }) else { return nil }
+        for item in chainSection.items where item.text.contains("确认 Google / Gemini 出口一致") {
+            if let address = Self.ipv4(in: item.text) { return address }
+        }
+        return nil
+    }
 
     init(output: String) {
         var timestamp: String?
@@ -358,10 +485,38 @@ struct HealthReport {
         warningCount = warnings
         failCount = failed
     }
+
+    private func firstIPv4(in section: HealthCheckSection?) -> String? {
+        guard let section else { return nil }
+        for item in section.items {
+            if let address = Self.ipv4(in: item.text) { return address }
+        }
+        return nil
+    }
+
+    private static func ipv4(in text: String) -> String? {
+        let pattern = #"(?<![0-9])(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?![0-9])"#
+        guard let expression = try? NSRegularExpression(pattern: pattern),
+              let match = expression.firstMatch(
+                in: text,
+                range: NSRange(text.startIndex..., in: text)
+              ),
+              let range = Range(match.range, in: text) else { return nil }
+        return String(text[range])
+    }
 }
 
 struct HealthItemRow: View {
     let item: HealthCheckItem
+
+    private var linkedText: (label: String, url: URL)? {
+        guard let range = item.text.range(of: "https://") else { return nil }
+        let rawURL = String(item.text[range.lowerBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: rawURL) else { return nil }
+        let label = String(item.text[..<range.lowerBound])
+            .trimmingCharacters(in: CharacterSet(charactersIn: " ：:"))
+        return (label.isEmpty ? url.host ?? "深度检测" : label, url)
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 9) {
@@ -374,16 +529,40 @@ struct HealthItemRow: View {
             }
             .frame(width: 20, height: 20)
 
-            Text(item.text)
+            if let linkedText {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(linkedText.label)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Link(destination: linkedText.url) {
+                        Label("打开", systemImage: "arrow.up.right.square")
+                            .font(.caption.weight(.medium))
+                    }
+                }
                 .font(.system(size: 13))
-                .foregroundStyle(item.kind == .info ? Color.secondary : Color.primary)
-                .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text(item.text)
+                    .font(.system(size: 13))
+                    .foregroundStyle(item.kind == .info ? Color.secondary : Color.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 }
 
 struct HealthSectionCard: View {
     let section: HealthCheckSection
+    let isolationMessage: String?
+    let launchIsolatedBrowser: ((IsolatedBrowserRoute) -> Void)?
+
+    init(
+        section: HealthCheckSection,
+        isolationMessage: String? = nil,
+        launchIsolatedBrowser: ((IsolatedBrowserRoute) -> Void)? = nil
+    ) {
+        self.section = section
+        self.isolationMessage = isolationMessage
+        self.launchIsolatedBrowser = launchIsolatedBrowser
+    }
 
     private var accent: Color {
         if section.hasFailure { return Color(red: 0.91, green: 0.31, blue: 0.29) }
@@ -395,6 +574,10 @@ struct HealthSectionCard: View {
         if section.hasFailure { return "xmark.circle.fill" }
         if section.hasWarning { return "exclamationmark.circle.fill" }
         return "checkmark.circle.fill"
+    }
+
+    private var offersIsolation: Bool {
+        section.title.contains("社区深度复核") && launchIsolatedBrowser != nil
     }
 
     var body: some View {
@@ -414,6 +597,10 @@ struct HealthSectionCard: View {
                         .foregroundStyle(accent)
                 }
 
+                if offersIsolation {
+                    isolatedBrowserPanel
+                }
+
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(section.items) { item in
                         HealthItemRow(item: item)
@@ -428,12 +615,91 @@ struct HealthSectionCard: View {
                 .stroke(section.hasFailure || section.hasWarning ? accent.opacity(0.22) : Color.primary.opacity(0.06), lineWidth: 1)
         }
     }
+
+
+    private var isolatedBrowserPanel: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .top, spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(PuffPalette.portSky.opacity(0.14))
+                    Image(systemName: "safari.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(PuffPalette.portSky)
+                }
+                .frame(width: 32, height: 32)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("隔离浏览器检测")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("临时 Chrome 资料 · 无现有登录和扩展 · 不改变系统代理")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            HStack(spacing: 8) {
+                isolationButton(
+                    "默认出口",
+                    symbol: "network",
+                    tint: PuffPalette.portSky,
+                    route: .defaultExit
+                )
+                isolationButton(
+                    "Google 链路",
+                    symbol: "point.3.connected.trianglepath.dotted",
+                    tint: PuffPalette.tunnelLilac,
+                    route: .googleChain
+                )
+                Spacer(minLength: 0)
+            }
+
+            if let isolationMessage, !isolationMessage.isEmpty {
+                Label(isolationMessage, systemImage: "checkmark.circle")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("检测网站仍会看到所选出口 IP；账号状态必须在你的已登录会话中确认。")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(11)
+        .background(PuffPalette.portSky.opacity(0.055), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .stroke(PuffPalette.portSky.opacity(0.13), lineWidth: 1)
+        }
+    }
+
+    private func isolationButton(
+        _ title: String,
+        symbol: String,
+        tint: Color,
+        route: IsolatedBrowserRoute
+    ) -> some View {
+        Button {
+            launchIsolatedBrowser?(route)
+        } label: {
+            Label(title, systemImage: symbol)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(tint)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(tint.opacity(0.11), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .help("用\(title)打开独立的临时 Chrome 检测窗口")
+    }
 }
 
 struct ResultView: View {
     let result: ResultSheet
     let close: () -> Void
     @State private var copied = false
+    @State private var isolationMessage = ""
+    @State private var isolatedBrowserProcesses: [Process] = []
 
     @ViewBuilder
     var body: some View {
@@ -460,8 +726,8 @@ struct ResultView: View {
     private var healthTitle: String {
         if report.sections.isEmpty { return "未收到检查详情" }
         if report.failCount > 0 { return "发现 \(report.failCount) 项问题" }
-        if report.warningCount > 0 { return "代理可用，发现 \(report.warningCount) 项风险提示" }
-        return "代理链路正常"
+        if report.warningCount > 0 { return "网络可用，仍有 \(report.warningCount) 项提示" }
+        return "网络检查通过"
     }
 
     @ViewBuilder
@@ -509,7 +775,13 @@ struct ResultView: View {
             ScrollView {
                 LazyVStack(spacing: 10) {
                     ForEach(report.sections) { section in
-                        HealthSectionCard(section: section)
+                        HealthSectionCard(
+                            section: section,
+                            isolationMessage: isolationMessage.isEmpty ? nil : isolationMessage,
+                            launchIsolatedBrowser: section.title.contains("社区深度复核")
+                                ? launchIsolatedBrowser
+                                : nil
+                        )
                     }
                 }
                 .padding(.vertical, 1)
@@ -653,6 +925,40 @@ struct ResultView: View {
         NSPasteboard.general.setString(result.output, forType: .string)
         copied = true
     }
+
+    private func launchIsolatedBrowser(_ route: IsolatedBrowserRoute) {
+        let bundledPath = Bundle.main.path(forResource: "puffroute-private-browser", ofType: "sh")
+        let fallbackPath = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".local/bin/puffroute-private-browser").path
+        let scriptPath = bundledPath ?? fallbackPath
+
+        guard FileManager.default.isExecutableFile(atPath: scriptPath) else {
+            isolationMessage = "隔离浏览器组件不可用，请重新安装 PuffRoute。"
+            return
+        }
+
+        let exitIP: String?
+        switch route {
+        case .defaultExit:
+            exitIP = report.defaultExitIP
+        case .googleChain:
+            exitIP = report.googleExitIP
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = [scriptPath, route.rawValue, exitIP ?? ""]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            isolatedBrowserProcesses.append(process)
+            isolationMessage = "已用\(route.label)打开隔离窗口；关闭窗口后会自动清理临时资料。"
+        } catch {
+            isolationMessage = "无法打开隔离窗口：\(error.localizedDescription)"
+        }
+    }
 }
 
 struct RulePackCard: View {
@@ -660,31 +966,35 @@ struct RulePackCard: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 12) {
+            HStack(spacing: 9) {
                 ZStack {
                     Circle()
-                        .fill(Color.blue.opacity(0.14))
+                        .fill(PuffPalette.rulesViolet.opacity(0.15))
                     Image(systemName: "list.bullet.rectangle")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.blue)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(PuffPalette.rulesViolet)
                 }
-                .frame(width: 38, height: 38)
+                .frame(width: 30, height: 30)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("规则包")
+                    Text("规则管理")
+                        .font(.callout.weight(.semibold))
+                    Text("12 条规则 · 版本 2026.08")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text("管理")
-                        .font(.system(size: 15, weight: .semibold))
+                        .lineLimit(1)
                 }
 
                 Spacer(minLength: 0)
 
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.tertiary)
+                Text("管理")
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(PuffPalette.rulesViolet)
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 6)
+                    .background(PuffPalette.rulesViolet.opacity(0.11), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, 12)
             .frame(maxWidth: .infinity, minHeight: 68)
             .contentShape(Rectangle())
         }
@@ -711,10 +1021,10 @@ struct RulePackView: View {
             HStack(spacing: 14) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Color.blue.opacity(0.13))
+                        .fill(PuffPalette.rulesViolet.opacity(0.15))
                     Image(systemName: "point.3.connected.trianglepath.dotted")
                         .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(PuffPalette.rulesViolet)
                 }
                 .frame(width: 50, height: 50)
 
@@ -730,10 +1040,10 @@ struct RulePackView: View {
 
                 Text("不含订阅")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(PuffPalette.rulesViolet)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
-                    .background(Color.blue.opacity(0.11), in: Capsule())
+                    .background(PuffPalette.rulesViolet.opacity(0.11), in: Capsule())
             }
 
             VStack(alignment: .leading, spacing: 10) {
@@ -844,25 +1154,29 @@ struct ContentView: View {
     @State private var showingRules = false
 
     var body: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 14) {
             header
 
             LazyVGrid(
-                columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4),
+                columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 2),
                 spacing: 12
             ) {
-                MetricCard(metric: model.core)
-                MetricCard(metric: model.port)
-                MetricCard(metric: model.tun)
-                RulePackCard {
-                    showingRules = true
+                MetricCard(metric: model.core, accent: PuffPalette.coreMint)
+                MetricCard(metric: model.port, accent: PuffPalette.portSky)
+                MetricCard(metric: model.tun, accent: PuffPalette.tunnelLilac)
+                KillSwitchCard(metric: model.killSwitch, isBusy: model.isBusy) { enabled in
+                    if enabled {
+                        model.enableKillSwitch()
+                    } else {
+                        model.showDisableConfirmation = true
+                    }
                 }
             }
 
             actionArea
         }
-        .padding(22)
-        .frame(width: 720, height: 300)
+        .padding(20)
+        .frame(width: 720, height: 348)
         .background(Color(nsColor: .windowBackgroundColor))
         .sheet(item: $model.resultSheet) { result in
             ResultView(result: result) {
@@ -885,21 +1199,22 @@ struct ContentView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 14) {
             Image(nsImage: NSApplication.shared.applicationIconImage)
                 .resizable()
                 .interpolation(.high)
-                .frame(width: 56, height: 56)
+                .frame(width: 48, height: 48)
 
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 8) {
-                    Image(systemName: model.overallLevel.systemImage)
-                        .foregroundStyle(model.overallLevel.color)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 9) {
+                    Circle()
+                        .fill(model.overallLevel.color)
+                        .frame(width: 8, height: 8)
                     Text(model.headline)
-                        .font(.system(size: 24, weight: .semibold, design: .rounded))
+                        .font(.system(size: 22, weight: .semibold, design: .rounded))
                 }
                 Text(model.detail)
-                    .font(.callout)
+                    .font(.system(size: 13))
                     .foregroundStyle(.secondary)
             }
 
@@ -914,28 +1229,15 @@ struct ContentView: View {
                         .frame(width: 18, height: 18)
                 } else {
                     Image(systemName: "arrow.clockwise")
+                        .foregroundStyle(PuffPalette.portSky)
                         .frame(width: 18, height: 18)
                 }
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.borderless)
+            .padding(8)
+            .background(PuffPalette.portSky.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
             .disabled(model.isBusy || model.isRefreshing)
             .help("刷新状态")
-        }
-    }
-
-    private var killSwitchDescription: String {
-        if model.isBusy && !model.busyLabel.contains("全面检查") {
-            return model.busyLabel
-        }
-        switch model.killSwitch.level {
-        case .ok:
-            return "代理中断时阻止真实 IP 直连"
-        case .warning:
-            return "保护未开启，流量可能直接连接"
-        case .error:
-            return "状态读取失败，请重新开启保护"
-        case .idle:
-            return "尚未取得管理员验证状态"
         }
     }
 
@@ -944,17 +1246,17 @@ struct ContentView: View {
             HStack(spacing: 9) {
                 ZStack {
                     Circle()
-                        .fill(Color.blue.opacity(0.13))
+                        .fill(PuffPalette.healthAzure.opacity(0.15))
                     Image(systemName: "stethoscope")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(PuffPalette.healthAzure)
                 }
                 .frame(width: 30, height: 30)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text("健康检查")
                         .font(.callout.weight(.semibold))
-                    Text(model.isBusy && model.busyLabel.contains("全面检查") ? "正在检查代理链路…" : "检查出口与站点可达性")
+                    Text(model.isBusy && model.busyLabel.contains("全面检查") ? "正在检查代理链路…" : "检查双出口、IP 风险与域名分流")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -976,68 +1278,16 @@ struct ContentView: View {
                 .disabled(model.isBusy)
             }
             .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity, minHeight: 64)
+            .frame(maxWidth: .infinity, minHeight: 68)
             .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .stroke(Color.primary.opacity(0.07), lineWidth: 1)
             }
 
-            HStack(spacing: 9) {
-                ZStack {
-                    Circle()
-                        .fill(model.killSwitch.level.color.opacity(0.13))
-                    Image(systemName: "shield.lefthalf.filled")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(model.killSwitch.level.color)
-                }
-                .frame(width: 30, height: 30)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 7) {
-                        Text("Kill Switch")
-                            .font(.callout.weight(.semibold))
-
-                        HStack(spacing: 5) {
-                            Circle()
-                                .fill(model.killSwitch.level.color)
-                                .frame(width: 6, height: 6)
-                            Text(model.killSwitch.value)
-                                .font(.caption2.weight(.semibold))
-                        }
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3)
-                        .background(model.killSwitch.level.color.opacity(0.12), in: Capsule())
-                    }
-
-                    Text(killSwitchDescription)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-
-                Spacer(minLength: 0)
-
-                if model.killSwitch.level == .ok {
-                    Button("关闭") {
-                        model.showDisableConfirmation = true
-                    }
-                    .tint(.red)
-                } else {
-                    Button("开启", action: model.enableKillSwitch)
-                        .tint(.blue)
-                }
+            RulePackCard {
+                showingRules = true
             }
-            .buttonStyle(.bordered)
-            .controlSize(.regular)
-            .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity, minHeight: 64)
-            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color.primary.opacity(0.07), lineWidth: 1)
-            }
-            .disabled(model.isBusy)
         }
     }
 }
@@ -1111,7 +1361,7 @@ struct PuffRouteApp: App {
         WindowGroup("PuffRoute") {
             ContentView()
         }
-        .defaultSize(width: 720, height: 300)
+        .defaultSize(width: 720, height: 348)
         .windowResizability(.contentSize)
     }
 }

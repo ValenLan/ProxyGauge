@@ -12,6 +12,9 @@ APP_DIR="$HOME/Applications"
 
 /bin/mkdir -p "$USER_BIN" "$SUPPORT_DIR" "$CONFIG_DIR" "$APP_DIR"
 /usr/bin/install -m 755 "$PROJECT_ROOT/Scripts/puffroute-check.sh" "$USER_BIN/puffroute-check"
+/usr/bin/install -m 755 "$PROJECT_ROOT/Scripts/puffroute-ip-risk.jxa" "$USER_BIN/puffroute-ip-risk.jxa"
+/usr/bin/install -m 755 "$PROJECT_ROOT/Scripts/puffroute-chain-check.jxa" "$USER_BIN/puffroute-chain-check.jxa"
+/usr/bin/install -m 755 "$PROJECT_ROOT/Scripts/puffroute-private-browser.sh" "$USER_BIN/puffroute-private-browser"
 /usr/bin/install -m 755 "$PROJECT_ROOT/Scripts/puffroute-killswitch" "$USER_BIN/puffroute-killswitch"
 /usr/bin/install -m 755 "$PROJECT_ROOT/Scripts/puffroute-backend.sh" "$SUPPORT_DIR/puffroute-backend.sh"
 

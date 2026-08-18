@@ -11,7 +11,13 @@ Mihomo/Clash Verge 的核心、混合端口和流量入口状态，并提供结�
 
 - macOS 使用 SwiftUI，Windows 使用原生 WPF
 - 检测 Mihomo 核心、mixed 端口、系统代理与 TUN 路由
-- 检查代理出口 IP、ASN、风险分、风险标签、常用 AI 站点和外网连通性
+- 用三个独立查询源交叉验证代理出口，识别出口漂移、分流或透明代理干扰
+- TUN 生效时验证 DNS 是否返回 `198.18.x.x` Fake-IP，直接发现域名分流配置缺失
+- 分开检查 ASN 归属、IP 段用途、风险标签、AI 站点真实响应和外网连通性
+- 提供 BrowserLeaks、IPhey、IPQS、Scamalytics、AbuseIPDB 的浏览器深度复核入口
+- 明确区分网络可达、IP 情报和登录账户状态；不会用网络检查结果推断账户未被封禁
+- macOS 可选读取 Mihomo 运行时状态，独立验证 Google/Gemini 链式策略、规则命中、中性 204 延迟与真实链式出口 IP
+- macOS 深度复核可分别用默认出口或 Google 链路启动临时 Chrome；不复用现有 Cookie、扩展或浏览器资料，也不修改系统代理
 - 内置可独立分享的 Clash Verge Rev / Mihomo 规则包，不包含订阅或节点
 - macOS 可选用独立 PF anchor 实现防泄漏 Kill Switch
 - Windows 版只做只读网络检测，不修改全局防火墙策略
@@ -32,7 +38,7 @@ PuffRoute 把两者有意分开：
 - **订阅**由使用者自己的代理客户端管理，PuffRoute 不读取、不保存也不分发订阅地址、
   节点或凭据。
 - **规则包**位于 [`Rules/PuffRoute-Merge.yaml`](Rules/PuffRoute-Merge.yaml)，随 macOS
-  App 与 Windows 单文件程序一起打包，可从主界面第四张“规则包”卡片预览、复制或导出。
+  App 与 Windows 单文件程序一起打包，可从主界面底部“规则管理”入口预览、复制或导出。
 
 规则包使用 Clash Verge Rev 的 `prepend-rules`，确保 AI 与开发站点规则排在订阅自带的
 `GEOIP` / `MATCH` 规则之前，同时包含 TUN 所需的 Fake-IP DNS 配置。默认策略组名是
@@ -68,6 +74,9 @@ Scripts/install.sh
 默认安装到 `~/Applications/PuffRoute.app`，辅助脚本安装到：
 
 - `~/.local/bin/puffroute-check`
+- `~/.local/bin/puffroute-ip-risk.jxa`
+- `~/.local/bin/puffroute-chain-check.jxa`
+- `~/.local/bin/puffroute-private-browser`
 - `~/.local/bin/puffroute-killswitch`
 - `~/.local/share/puffroute/`
 
@@ -87,10 +96,22 @@ Scripts/install.sh
 ```bash
 PUFFROUTE_MIXED="127.0.0.1:7890"
 PUFFROUTE_EXPECT_IP=""  # 可选：校验准确的代理出口 IP
+PUFFROUTE_GOOGLE_GROUP="Google-Chain"  # 可选：Google/Gemini 链式策略组
+PUFFROUTE_GOOGLE_MIXED="127.0.0.1:7891"  # 可选：固定走 Google-Chain 的本地检测入口
+PUFFROUTE_EXPECT_GOOGLE_IP=""  # 可选：校验准确的 Google/Gemini 出口 IP
+PUFFROUTE_CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+PUFFROUTE_ACTIVE_AI_PROBES="0"  # 默认关闭：不主动请求任何 AI 平台
 PUFFROUTE_VPS_IP=""     # 仅 PF Kill Switch 需要
 ```
 
 仓库不包含任何真实服务器地址或个人配置。
+
+如果 Google/Gemini 使用独立链式出口，仅检查策略组和规则命中还不够。把
+[`Rules/PuffRoute-Google-Chain-Probe.yaml`](Rules/PuffRoute-Google-Chain-Probe.yaml)
+中的 `listeners` 合并到 Mihomo 活动配置后，PuffRoute 会通过只监听
+`127.0.0.1:7891` 的专用 mixed 入口查询实际出口，并在报告中并排显示默认出口与
+Google/Gemini 出口。该入口固定绑定 `Google-Chain`，不会临时切换策略组，也不会暴露到
+局域网。
 
 ### 可选：PF Kill Switch
 
@@ -154,8 +175,28 @@ Firewall/WFP 策略，误配置可能让整台电脑断网；当前分享版刻�
 ## 隐私与安全
 
 - 健康检查会通过已配置的本地代理访问公开 IP 查询服务和测试站点。
-- IP 风险画像会把实测出口 IP 提交给 `ipapi.is` 与 `proxycheck.io`，展示 ASN、网络类型、
-  风险分、置信度和风险标签。第三方情报仅供参考，接口限流不会被视为代理故障。
+- 默认健康检查不会请求 Claude、ChatGPT、Gemini 的网页或 API。Google/Gemini 的路由
+  命中从本机 Mihomo 运行时读取，链路延迟使用中性 204 地址，实际出口通过专用本地入口
+  访问公开 IP 查询服务确认。只有用户显式把 `PUFFROUTE_ACTIVE_AI_PROBES` 设为 `1` 时，
+  macOS 才会主动请求三个 AI API；即使启用，也不会自动访问账号网页。
+- 出口一致性检查会把默认代理出口分别提交给 `api.ipify.org`、`ifconfig.me` 与 `ip.sb`；
+  启用链式出口探针时，也会经固定的 Google/Gemini 链路访问同一组服务。只有至少两个
+  来源给出一致结果才算完成交叉验证。
+- IP 风险画像会把实测出口 IP 提交给 `ipapi.is` 与 `proxycheck.io`，并把查询得到的 ASN
+  提交给 `PeeringDB`。启用 Google/Gemini 链式探针后，默认出口与链式出口会分别查询、
+  分开展示，避免拿默认 IP 的结论评价 Google 链路。报告会分别展示网络归属、ASN 属性、
+  IP 段用途、风险分与地址风险标签，避免把运营商类型和具体地址用途混为一谈。第三方情报
+  仅供参考，接口限流不会被视为代理故障。
+- IPQS、Scamalytics、AbuseIPDB、BrowserLeaks 与 IPhey 只作为用户主动点击的复核入口，
+  PuffRoute 不会在后台自动访问。BrowserLeaks/IPhey 必须在真实浏览器上下文中运行，才能
+  观察 WebRTC、DNS、IPv6、时区和指纹一致性。
+- PuffRoute 不读取 Claude、ChatGPT 等网站的登录 Cookie 或账户资料，因此无法自动判断
+账户封禁。健康报告会把账户状态显示为“未验证”，必须在用户自己的真实登录会话中确认。
+- macOS 的“隔离浏览器检测”只在用户点击后启动独立 Chrome 进程。它使用临时资料目录、
+  禁用现有扩展与同步，并通过进程专属的本机代理打开 BrowserLeaks、IPhey、IPQS、
+  Scamalytics 与 AbuseIPDB；关闭该 Chrome 窗口后删除临时资料。检测网站仍能看到所选
+  出口 IP 和浏览器指纹，因此“隔离”不等于对网站匿名。该功能不会改变系统代理，也不会
+  影响普通 Chrome 窗口和其他应用的流量。
 - PuffRoute 不上传配置，不收集遥测，也不保存浏览记录。
 - macOS 管理员权限仅用于读取或修改 PuffRoute 自己的 PF anchor。
 - Windows 版不请求管理员权限，也不修改 Windows Firewall。

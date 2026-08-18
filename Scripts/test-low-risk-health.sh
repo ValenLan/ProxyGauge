@@ -1,0 +1,30 @@
+#!/bin/bash
+set -euo pipefail
+
+SCRIPT_DIR=$(/usr/bin/dirname "$0")
+PROJECT_ROOT=$(cd "$SCRIPT_DIR/.." && /bin/pwd)
+CHECK="$PROJECT_ROOT/Scripts/puffroute-check.sh"
+
+/usr/bin/grep -q 'ACTIVE_AI_PROBES="${PUFFROUTE_ACTIVE_AI_PROBES:-0}"' "$CHECK"
+/usr/bin/grep -q 'Gemini API.*"\$GOOGLE_MIXED"' "$CHECK"
+/usr/bin/grep -q 'url=https://cp.cloudflare.com/generate_204' "$CHECK"
+/usr/bin/grep -q 'dscacheutil -q host -a name www.cloudflare.com' "$CHECK"
+/usr/bin/grep -Fq '未启用 Google / Gemini 链式策略组；跳过可选链式出口探针' "$CHECK"
+/usr/bin/grep -Fq '未启用独立 Google / Gemini 链式出口；跳过可选出口确认' "$CHECK"
+
+if /usr/bin/grep -q 'check_site "\(ChatGPT\|Claude\) ' "$CHECK"; then
+  echo "Account-facing web probes must not run from the health check." >&2
+  exit 1
+fi
+
+if /usr/bin/grep -q 'www.google.com/generate_204' "$CHECK"; then
+  echo "AI-safe mode must not use a Google connectivity endpoint." >&2
+  exit 1
+fi
+
+if /usr/bin/grep -Fq 'check no "尚未确认 Gemini 的独立出口 IP"' "$CHECK"; then
+  echo "Optional chain diagnostics must not fail an otherwise healthy default route." >&2
+  exit 1
+fi
+
+echo "PuffRoute low-risk health tests passed."

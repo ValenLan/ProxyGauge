@@ -1,0 +1,13 @@
+# Optional local-only listener for checking the real Google/Gemini exit IP.
+#
+# Add this top-level block to the active Mihomo configuration only when a
+# policy group named Google-Chain already exists. It does not contain a node,
+# subscription URL, credential, or server address.
+
+listeners:
+  - name: puffroute-google-chain-probe
+    type: mixed
+    listen: 127.0.0.1
+    port: 7891
+    proxy: Google-Chain
+    udp: false

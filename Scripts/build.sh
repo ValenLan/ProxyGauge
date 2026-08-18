@@ -28,7 +28,10 @@ fi
 /bin/cp "$PROJECT_ROOT/Scripts/puffroute-check.sh" "$APP/Contents/Resources/puffroute-check.sh"
 /bin/cp "$PROJECT_ROOT/Scripts/puffroute-killswitch" "$APP/Contents/Resources/puffroute-killswitch"
 /bin/cp "$PROJECT_ROOT/Scripts/puffroute-ip-risk.jxa" "$APP/Contents/Resources/puffroute-ip-risk.jxa"
+/bin/cp "$PROJECT_ROOT/Scripts/puffroute-chain-check.jxa" "$APP/Contents/Resources/puffroute-chain-check.jxa"
+/bin/cp "$PROJECT_ROOT/Scripts/puffroute-private-browser.sh" "$APP/Contents/Resources/puffroute-private-browser.sh"
 /bin/cp "$PROJECT_ROOT/Rules/PuffRoute-Merge.yaml" "$APP/Contents/Resources/Rules/PuffRoute-Merge.yaml"
+/bin/cp "$PROJECT_ROOT/Rules/PuffRoute-Google-Chain-Probe.yaml" "$APP/Contents/Resources/Rules/PuffRoute-Google-Chain-Probe.yaml"
 
 for action in On Off Status; do
   /usr/bin/osacompile -l AppleScript \
@@ -41,13 +44,18 @@ done
   "$APP/Contents/Resources/puffroute-backend.sh" \
   "$APP/Contents/Resources/puffroute-check.sh" \
   "$APP/Contents/Resources/puffroute-killswitch" \
-  "$APP/Contents/Resources/puffroute-ip-risk.jxa"
+  "$APP/Contents/Resources/puffroute-ip-risk.jxa" \
+  "$APP/Contents/Resources/puffroute-chain-check.jxa" \
+  "$APP/Contents/Resources/puffroute-private-browser.sh"
 
 for required_path in \
   "$APP/Contents/Resources/puffroute-check.sh" \
   "$APP/Contents/Resources/puffroute-killswitch" \
   "$APP/Contents/Resources/puffroute-ip-risk.jxa" \
+  "$APP/Contents/Resources/puffroute-chain-check.jxa" \
+  "$APP/Contents/Resources/puffroute-private-browser.sh" \
   "$APP/Contents/Resources/Rules/PuffRoute-Merge.yaml" \
+  "$APP/Contents/Resources/Rules/PuffRoute-Google-Chain-Probe.yaml" \
   "$APP/Contents/Resources/AdminHelpers/PuffRoute Admin On.app" \
   "$APP/Contents/Resources/AdminHelpers/PuffRoute Admin Off.app" \
   "$APP/Contents/Resources/AdminHelpers/PuffRoute Admin Status.app"; do

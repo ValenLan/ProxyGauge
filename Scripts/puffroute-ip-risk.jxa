@@ -2,10 +2,16 @@ ObjC.import("Foundation");
 
 function readJSON(path) {
     if (!path) return {};
-    const data = $.NSData.dataWithContentsOfFile(path);
-    if (!data) return {};
-    const object = $.NSJSONSerialization.JSONObjectWithDataOptionsError(data, 0, null);
-    return object ? ObjC.deepUnwrap(object) : {};
+    try {
+        const data = $.NSData.dataWithContentsOfFile(path);
+        if (!data || Number(data.length) === 0) return {};
+        const error = Ref();
+        const object = $.NSJSONSerialization.JSONObjectWithDataOptionsError(data, 0, error);
+        const unwrapped = object ? ObjC.deepUnwrap(object) : null;
+        return unwrapped && typeof unwrapped === "object" ? unwrapped : {};
+    } catch (_) {
+        return {};
+    }
 }
 
 function valueAt(object, path) {
@@ -28,35 +34,80 @@ function riskLabel(score) {
     return "很高";
 }
 
+function networkTypeLabel(value) {
+    if (!value) return null;
+    const normalized = String(value).toLowerCase();
+    const labels = {
+        "nsp": "ISP / 网络服务商",
+        "cable/dsl/isp": "ISP / 宽带运营商",
+        "isp": "ISP / 网络服务商",
+        "business": "商业网络",
+        "enterprise": "企业网络",
+        "hosting": "托管 / 数据中心",
+        "residential": "住宅宽带",
+        "wireless": "移动 / 无线网络",
+        "educational/research": "教育 / 研究网络",
+        "government": "政府网络",
+        "content": "内容网络"
+    };
+    return labels[normalized] || String(value);
+}
+
 function run(argv) {
+    if (argv[0] === "extract-asn") {
+        const ipDocument = readJSON(argv[1]);
+        const proxyDocument = readJSON(argv[2]);
+        const address = argv[3] || "";
+        const proxyResult = proxyDocument[address] || {};
+        const rawASN = text(valueAt(ipDocument, ["asn", "asn"]))
+            || text(ipDocument.asn_num)
+            || text(valueAt(proxyResult, ["network", "asn"]))
+            || "";
+        return rawASN.toUpperCase().startsWith("AS") ? rawASN.slice(2) : rawASN;
+    }
+
     const ipapi = readJSON(argv[0]);
     const proxycheck = readJSON(argv[1]);
-    const address = argv[2] || "";
+    const peeringdb = readJSON(argv[2]);
+    const address = argv[3] || "";
     const proxyResult = proxycheck[address] || {};
     const detections = proxyResult.detections || {};
     const network = proxyResult.network || {};
     const asn = ipapi.asn || {};
     const company = ipapi.company || {};
     const location = ipapi.location || {};
+    const peeringRecord = peeringdb && Array.isArray(peeringdb.data) && peeringdb.data.length > 0
+        ? peeringdb.data[0]
+        : {};
     const lines = [];
 
-    lines.push("  ℹ️ 数据源: ipapi.is / proxycheck.io（出口 IP 会提交给这两个服务）");
+    lines.push("  ℹ️ 数据源: ipapi.is / proxycheck.io / PeeringDB（前两者查询 IP；PeeringDB 查询 ASN）");
 
-    const asnNumber = text(asn.asn) || text(network.asn);
-    const organisation = text(asn.org) || text(network.provider) || text(company.name);
+    const asnNumber = text(asn.asn) || text(ipapi.asn_num) || text(network.asn);
+    const organisation = text(asn.org) || text(ipapi.asn_org) || text(network.provider)
+        || text(company.name) || text(ipapi.company_name);
     if (asnNumber || organisation) {
         const normalizedASN = asnNumber && !asnNumber.toUpperCase().startsWith("AS") ? `AS${asnNumber}` : asnNumber;
-        lines.push(`  ℹ️ ASN: ${[normalizedASN, organisation].filter(Boolean).join(" · ")}`);
+        lines.push(`  ℹ️ 网络归属: ${[normalizedASN, organisation].filter(Boolean).join(" · ")}`);
     }
 
-    const networkType = text(asn.type) || text(company.type) || text(network.type);
-    const country = text(location.country);
+    const peeringTypes = Array.isArray(peeringRecord.info_types) ? peeringRecord.info_types : [];
+    const asnType = text(peeringTypes[0]) || text(peeringRecord.info_type) || text(asn.type);
+    if (asnType) {
+        const source = Object.keys(peeringRecord).length > 0 ? "PeeringDB" : "ipapi.is";
+        lines.push(`  ℹ️ ASN 属性: ${networkTypeLabel(asnType)}（${source}）`);
+    }
+
+    const allocationType = text(network.type) || text(company.type);
+    if (allocationType) {
+        const source = text(network.type) ? "proxycheck.io" : "ipapi.is";
+        lines.push(`  ℹ️ IP 段用途: ${networkTypeLabel(allocationType)}（${source}）`);
+    }
+
+    const country = text(location.country) || text(ipapi.cc);
     const city = text(location.city);
-    if (networkType || country || city) {
-        const parts = [];
-        if (networkType) parts.push(`网络类型 ${networkType}`);
-        if (country || city) parts.push([country, city].filter(Boolean).join(" "));
-        lines.push(`  ℹ️ ${parts.join(" · ")}`);
+    if (country || city) {
+        lines.push(`  ℹ️ 地区: ${[country, city].filter(Boolean).join(" ")}`);
     }
 
     const risk = Number(detections.risk);
@@ -89,9 +140,9 @@ function run(argv) {
     if (ipapi.is_datacenter === true && !flags.includes("数据中心")) flags.push("数据中心");
 
     if (flags.length > 0) {
-        lines.push(`  ⚠️ 风险标签: ${flags.join(" / ")}`);
+        lines.push(`  ⚠️ 地址风险标签: ${flags.join(" / ")}`);
     } else if (Object.keys(detections).length > 0 || Object.keys(ipapi).length > 0) {
-        lines.push("  ✅ 未发现代理、VPN、Tor 或滥用标签");
+        lines.push("  ✅ 地址风险标签: 未发现代理、VPN、Tor 或滥用记录");
     }
 
     const companyScore = text(company.abuser_score);
@@ -106,6 +157,6 @@ function run(argv) {
     if (lines.length === 1) {
         lines.push("  ℹ️ IP 风险画像暂不可用；不影响代理链路检查结果");
     }
-    lines.push("  ℹ️ 风险数据来自第三方情报，只能作为参考，不能代表目标网站一定放行或封禁");
+    lines.push("  ℹ️ 第三方 IP 情报不能判断 Claude / ChatGPT 登录账户是否已被封禁");
     return lines.join("\n");
 }

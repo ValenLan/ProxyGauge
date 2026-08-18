@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using PuffRoute.Models;
@@ -19,13 +21,13 @@ public partial class HealthReportWindow : Window
     public string Headline => Report.FailedCount > 0
         ? "发现需要处理的项目"
         : Report.WarningCount > 0
-            ? "代理可用，风险画像需留意"
-            : "代理链路工作正常";
+            ? "网络可用，仍有未验证或需留意的项目"
+            : "网络检查通过";
     public string Subtitle => Report.FailedCount > 0
         ? "失败项目保留了具体原因，建议从上到下处理。"
         : Report.WarningCount > 0
-            ? "风险指标来自第三方情报，仅供参考，不代表目标网站一定封禁。"
-            : "所有链路检查均通过，可以正常使用代理。";
+            ? "网络可达不代表登录账户未被封禁，请区分链路、IP 情报和账户状态。"
+            : "网络与公开入口检查通过；登录账户状态仍需在真实浏览器中确认。";
     public string CheckedAtText => $"检查时间 {Report.CheckedAt:yyyy-MM-dd HH:mm:ss}";
     public string PassedText => $"{Report.PassedCount} 通过";
     public string WarningText => $"{Report.WarningCount} 提示";
@@ -51,6 +53,22 @@ public partial class HealthReportWindow : Window
     private void CopyButton_Click(object sender, RoutedEventArgs e)
     {
         Clipboard.SetText(Report.ToPlainText());
+    }
+
+    private void OpenLinkButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string url } ||
+            !Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp)) return;
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
+        }
+        catch
+        {
+            // The URL remains visible in copied results if Windows has no browser association.
+        }
     }
 
     private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();

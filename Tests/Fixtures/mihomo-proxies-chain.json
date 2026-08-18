@@ -1,0 +1,23 @@
+{
+  "proxies": {
+    "Google-Chain": {
+      "type": "Selector",
+      "now": "Google-SOCKS-Exit",
+      "alive": true,
+      "all": ["Google-SOCKS-Exit", "Default-Exit", "DIRECT"]
+    },
+    "Google-SOCKS-Exit": {
+      "type": "Socks5",
+      "alive": true
+    },
+    "PROXY": {
+      "type": "Selector",
+      "now": "Default-Exit",
+      "all": ["Default-Exit", "DIRECT"]
+    },
+    "Default-Exit": {
+      "type": "Vless",
+      "alive": true
+    }
+  }
+}

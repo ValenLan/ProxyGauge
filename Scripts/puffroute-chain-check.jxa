@@ -1,0 +1,105 @@
+ObjC.import("Foundation");
+
+function readJSON(path) {
+    if (!path) return {};
+    try {
+        const data = $.NSData.dataWithContentsOfFile(path);
+        if (!data || Number(data.length) === 0) return {};
+        const error = Ref();
+        const object = $.NSJSONSerialization.JSONObjectWithDataOptionsError(data, 0, error);
+        const unwrapped = object ? ObjC.deepUnwrap(object) : null;
+        return unwrapped && typeof unwrapped === "object" ? unwrapped : {};
+    } catch (_) {
+        return {};
+    }
+}
+
+function matchesDomain(rule, domain) {
+    const type = String(rule.type || "").toLowerCase();
+    const payload = String(rule.payload || "").toLowerCase();
+    const candidate = domain.toLowerCase();
+    if (type === "domain") return candidate === payload;
+    if (type === "domainsuffix") return candidate === payload || candidate.endsWith(`.${payload}`);
+    if (type === "domainkeyword") return candidate.includes(payload);
+    return false;
+}
+
+function firstPolicyFor(rules, domain) {
+    for (const rule of rules) {
+        if (matchesDomain(rule, domain)) return String(rule.proxy || "");
+    }
+    return "";
+}
+
+function run(argv) {
+    const proxyDocument = readJSON(argv[0]);
+    const ruleDocument = readJSON(argv[1]);
+    const delayDocument = readJSON(argv[2]);
+    const groupName = argv[3] || "Google-Chain";
+    const defaultGroupName = argv[4] || "PROXY";
+    const proxies = proxyDocument.proxies || {};
+    const group = proxies[groupName];
+    const lines = [];
+
+    if (!group) {
+        return `  ℹ️ 未检测到 ${groupName}；Google / Gemini 将按当前通用规则出站`;
+    }
+
+    const selected = String(group.now || "");
+    const selectedProxy = proxies[selected] || {};
+    const defaultSelected = String((proxies[defaultGroupName] || {}).now || "");
+    if (!selected) {
+        lines.push(`  ❌ ${groupName} 没有当前选中出口`);
+    } else if (selected.toUpperCase() === "DIRECT") {
+        lines.push(`  ❌ ${groupName} 当前选择 DIRECT，Google / Gemini 会暴露本机出口`);
+    } else if (defaultSelected && selected === defaultSelected) {
+        lines.push(`  ❌ ${groupName} 当前绕过链式节点，正在复用默认出口 ${selected}`);
+    } else {
+        lines.push(`  ✅ 链式策略: ${groupName} → ${selected}`);
+    }
+
+    if (selected && selected.toUpperCase() !== "DIRECT") {
+        if (selectedProxy.alive === false) {
+            lines.push(`  ❌ 链式出口节点 ${selected} 当前不可用`);
+        } else if (selectedProxy.alive === true) {
+            lines.push(`  ✅ 链式出口节点 ${selected} 存活`);
+        } else {
+            lines.push(`  ℹ️ 链式出口节点 ${selected} 尚无存活探测结果`);
+        }
+    }
+
+    const targets = [
+        ["Gemini 网页", "gemini.google.com"],
+        ["Gemini API", "generativelanguage.googleapis.com"],
+        ["Google", "www.google.com"]
+    ];
+    const mismatches = [];
+    const rules = Array.isArray(ruleDocument.rules) ? ruleDocument.rules : [];
+    for (const [label, domain] of targets) {
+        const policy = firstPolicyFor(rules, domain);
+        if (policy !== groupName) mismatches.push(`${label}→${policy || "未匹配"}`);
+    }
+    if (mismatches.length > 0) {
+        lines.push(`  ❌ 链式规则未完整命中: ${mismatches.join(" / ")}`);
+    } else {
+        lines.push(`  ✅ Gemini 网页、Gemini API 与 Google 均命中 ${groupName}`);
+    }
+
+    const delay = Number(delayDocument.delay);
+    if (Number.isFinite(delay) && delay > 0) {
+        lines.push(`  ✅ 链式中性 204 探测: ${delay} ms`);
+    } else {
+        const message = String(delayDocument.message || delayDocument.error || "没有返回延迟");
+        lines.push(`  ❌ 链式中性 204 探测失败: ${message}`);
+    }
+
+    const alternatives = Array.isArray(group.all) ? group.all : [];
+    const unsafe = alternatives.filter(name =>
+        name !== selected && (String(name).toUpperCase() === "DIRECT" || (defaultSelected && name === defaultSelected))
+    );
+    if (unsafe.length > 0) {
+        lines.push(`  ⚠️ ${groupName} 仍提供可能绕过链式出口的手动选项: ${unsafe.join(" / ")}`);
+    }
+
+    return lines.join("\n");
+}

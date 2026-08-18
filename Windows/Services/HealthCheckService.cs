@@ -15,15 +15,6 @@ public sealed class HealthCheckService
         ("ip.sb", "https://ip.sb/ip")
     ];
 
-    private static readonly (string Name, string Url)[] SiteChecks =
-    [
-        ("OpenAI API", "https://api.openai.com"),
-        ("Anthropic API", "https://api.anthropic.com"),
-        ("ChatGPT", "https://chatgpt.com"),
-        ("Claude", "https://claude.ai"),
-        ("Gemini API", "https://generativelanguage.googleapis.com")
-    ];
-
     private readonly ProxyProbeService _probeService;
 
     public HealthCheckService(ProxyProbeService probeService)
@@ -40,6 +31,10 @@ public sealed class HealthCheckService
             new("本地混合端口", $"{config.MixedHost}:{config.MixedPort} · {snapshot.Port.Value}", snapshot.Port.Level == HealthLevel.Ok),
             new("流量入口", snapshot.Route.Value, snapshot.SystemProxyEnabled || snapshot.TunDetected)
         };
+        if (snapshot.TunDetected)
+        {
+            localItems.Add(await CheckFakeIpDnsAsync(cancellationToken));
+        }
 
         using var handler = new SocketsHttpHandler
         {
@@ -49,18 +44,16 @@ public sealed class HealthCheckService
         };
         using var client = new HttpClient(handler)
         {
-            Timeout = TimeSpan.FromSeconds(config.TimeoutSeconds)
+            // PeeringDB metadata can take slightly longer than ordinary reachability
+            // probes. Match the macOS metadata budget without changing connect timeout.
+            Timeout = TimeSpan.FromSeconds(Math.Max(config.TimeoutSeconds, 12))
         };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("PuffRoute/1.1");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("PuffRoute/1.2.7 (+https://github.com/ValenLan/PuffRoute)");
 
         var exitResult = await CheckExitIpAsync(client, config, cancellationToken);
         var riskTask = CheckIpRiskAsync(client, exitResult.Address, cancellationToken);
-        var siteTasks = SiteChecks.Select(site => CheckSiteAsync(client, site.Name, site.Url, cancellationToken));
-        var internetTask = CheckGenerate204Async(client, cancellationToken);
 
         var riskItems = await riskTask;
-        var siteItems = await Task.WhenAll(siteTasks);
-        var internetItem = await internetTask;
 
         return new HealthReport
         {
@@ -70,8 +63,18 @@ public sealed class HealthCheckService
                 new HealthCheckSection("本地代理", localItems),
                 new HealthCheckSection("代理出口", [exitResult.Item]),
                 new HealthCheckSection("IP 风险画像", riskItems),
-                new HealthCheckSection("常用站点", siteItems),
-                new HealthCheckSection("外网连通性", [internetItem])
+                new HealthCheckSection("账户与社区深度复核", BuildCommunityChecks(exitResult.Address)),
+                new HealthCheckSection("AI 路由确认（默认低风险模式）",
+                [
+                    new HealthCheckItem(
+                        "主动平台探测",
+                        "已关闭 · 不请求 Claude、ChatGPT 或 Gemini 网页与 API",
+                        HealthLevel.Ok),
+                    new HealthCheckItem(
+                        "账号状态",
+                        "只在用户自己的正常登录会话中确认；PuffRoute 不代替账号登录",
+                        HealthLevel.Idle)
+                ])
             ]
         };
     }
@@ -81,33 +84,90 @@ public sealed class HealthCheckService
         AppConfig config,
         CancellationToken cancellationToken)
     {
+        var results = new List<(string Name, string Address)>();
         foreach (var service in IpServices)
         {
             try
             {
                 var value = (await client.GetStringAsync(service.Url, cancellationToken)).Trim();
                 if (!IPAddress.TryParse(value, out _)) continue;
-
-                if (string.IsNullOrWhiteSpace(config.ExpectedIp))
-                {
-                    return (new HealthCheckItem("出口 IP", $"{value} · 未设置期望值", true), value);
-                }
-
-                var matched = string.Equals(value, config.ExpectedIp.Trim(), StringComparison.OrdinalIgnoreCase);
-                return (
-                    new HealthCheckItem(
-                        "出口 IP",
-                        matched ? $"{value} · 符合配置" : $"{value} · 期望 {config.ExpectedIp.Trim()}",
-                        matched),
-                    value);
+                results.Add((service.Name, value));
             }
             catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or SocketException)
             {
-                // Try the next public IP service through the same proxy.
+                // Keep collecting independent public IP results through the same proxy.
             }
         }
 
-        return (new HealthCheckItem("出口 IP", "无法通过本地代理获取出口地址", false), null);
+        if (results.Count == 0)
+        {
+            return (new HealthCheckItem("出口 IP", "三个查询源均无法通过本地代理获取出口地址", false), null);
+        }
+
+        var groups = results
+            .GroupBy(result => result.Address, StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(group => group.Count())
+            .ToArray();
+        var address = groups[0].Key;
+        var sourceSummary = string.Join(" · ", results.Select(result => $"{result.Name} {result.Address}"));
+        var hasConflict = groups.Length > 1;
+        var insufficient = results.Count < 2;
+        var expected = config.ExpectedIp.Trim();
+        var expectedMismatch = !string.IsNullOrWhiteSpace(expected) &&
+            !string.Equals(address, expected, StringComparison.OrdinalIgnoreCase);
+
+        var level = expectedMismatch
+            ? HealthLevel.Error
+            : hasConflict || insufficient ? HealthLevel.Warning : HealthLevel.Ok;
+        var verdict = expectedMismatch
+            ? $"主结果 {address} · 期望 {expected}"
+            : hasConflict
+                ? "查询结果不一致，可能发生节点轮换、分流或透明代理干扰"
+                : insufficient
+                    ? "只收到一个查询源响应，暂时无法交叉验证"
+                    : $"{results.Count} 个查询源确认出口一致 ({address})";
+        return (new HealthCheckItem("出口一致性", $"{verdict} · {sourceSummary}", level), address);
+    }
+
+    private static async Task<HealthCheckItem> CheckFakeIpDnsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var addresses = await Dns.GetHostAddressesAsync("www.cloudflare.com", cancellationToken);
+            var first = addresses.FirstOrDefault(address => address.AddressFamily == AddressFamily.InterNetwork);
+            if (first is null)
+            {
+                return new HealthCheckItem("TUN DNS", "没有取得 IPv4 解析结果，请检查 dns-hijack 与 dns 配置", HealthLevel.Error);
+            }
+
+            var bytes = first.GetAddressBytes();
+            return bytes.Length == 4 && bytes[0] == 198 && bytes[1] == 18
+                ? new HealthCheckItem("TUN DNS", $"{first} · Fake-IP 生效，域名分流可用", HealthLevel.Ok)
+                : new HealthCheckItem("TUN DNS", $"{first} · 返回真实地址，DOMAIN 规则可能无法按预期命中", HealthLevel.Warning);
+        }
+        catch (Exception exception) when (exception is SocketException or OperationCanceledException)
+        {
+            return new HealthCheckItem("TUN DNS", "系统无法解析域名，请检查 dns-hijack 与 dns 配置", HealthLevel.Error);
+        }
+    }
+
+    private static IReadOnlyList<HealthCheckItem> BuildCommunityChecks(string? address)
+    {
+        var items = new List<HealthCheckItem>
+        {
+            new("登录账户状态", "未验证 · 公开入口可达和 IP 低风险都不代表 Claude / ChatGPT 账户未被封禁", HealthLevel.Warning),
+            new("Claude 登录会话验证", "https://claude.ai/", HealthLevel.Idle),
+            new("ChatGPT 登录会话验证", "https://chatgpt.com/", HealthLevel.Idle),
+            new("DNS / WebRTC / IPv6 泄漏", "https://browserleaks.com/ip", HealthLevel.Idle),
+            new("浏览器指纹与位置一致性", "https://iphey.com/", HealthLevel.Idle),
+            new("IPQS 风险与代理识别", "https://www.ipqualityscore.com/free-ip-lookup-proxy-vpn-test", HealthLevel.Idle)
+        };
+        if (!string.IsNullOrWhiteSpace(address))
+        {
+            items.Add(new("Scamalytics 欺诈分", $"https://scamalytics.com/ip/{address}", HealthLevel.Idle));
+            items.Add(new("AbuseIPDB 滥用记录", $"https://www.abuseipdb.com/check/{address}", HealthLevel.Idle));
+        }
+        return items;
     }
 
     private static async Task<IReadOnlyList<HealthCheckItem>> CheckIpRiskAsync(
@@ -127,11 +187,12 @@ public sealed class HealthCheckService
 
         var items = new List<HealthCheckItem>
         {
-            new("数据来源", "ipapi.is / proxycheck.io · 出口 IP 会提交给这两个服务", HealthLevel.Idle)
+            new("数据来源", "ipapi.is / proxycheck.io / PeeringDB · 前两者查询 IP，PeeringDB 查询 ASN", HealthLevel.Idle)
         };
 
         JsonDocument? ipApiDocument = null;
         JsonDocument? proxyCheckDocument = null;
+        JsonDocument? peeringDbDocument = null;
         try
         {
             if (!string.IsNullOrWhiteSpace(ipApiTask.Result))
@@ -151,33 +212,70 @@ public sealed class HealthCheckService
                 proxyResult = resultElement;
             }
 
-            var asn = GetDisplay(ipApi, "asn", "asn") ?? GetDisplay(proxyResult, "network", "asn");
+            var asn = GetDisplay(ipApi, "asn", "asn")
+                ?? GetDisplay(ipApi, "asn_num")
+                ?? GetDisplay(proxyResult, "network", "asn");
             var organisation = GetDisplay(ipApi, "asn", "org")
+                ?? GetDisplay(ipApi, "asn_org")
                 ?? GetDisplay(proxyResult, "network", "provider")
-                ?? GetDisplay(ipApi, "company", "name");
+                ?? GetDisplay(ipApi, "company", "name")
+                ?? GetDisplay(ipApi, "company_name");
             if (asn is not null || organisation is not null)
             {
                 var normalizedAsn = asn is not null && !asn.StartsWith("AS", StringComparison.OrdinalIgnoreCase)
                     ? $"AS{asn}"
                     : asn;
                 items.Add(new HealthCheckItem(
-                    "ASN",
+                    "网络归属",
                     string.Join(" · ", new[] { normalizedAsn, organisation }.Where(value => !string.IsNullOrWhiteSpace(value))),
                     HealthLevel.Idle));
             }
 
-            var networkType = GetDisplay(ipApi, "asn", "type")
-                ?? GetDisplay(ipApi, "company", "type")
-                ?? GetDisplay(proxyResult, "network", "type");
-            var country = GetDisplay(ipApi, "location", "country");
+            var asnNumber = asn?.Trim();
+            if (asnNumber?.StartsWith("AS", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                asnNumber = asnNumber[2..];
+            }
+            if (long.TryParse(asnNumber, out var numericAsn))
+            {
+                var peeringJson = await TryGetStringAsync(
+                    client,
+                    $"https://www.peeringdb.com/api/net?asn={numericAsn}",
+                    cancellationToken);
+                if (!string.IsNullOrWhiteSpace(peeringJson))
+                {
+                    peeringDbDocument = JsonDocument.Parse(peeringJson);
+                }
+            }
+
+            var peeringRecord = GetFirstArrayItem(peeringDbDocument?.RootElement, "data");
+            var peeringType = GetFirstString(peeringRecord, "info_types")
+                ?? GetDisplay(peeringRecord, "info_type");
+            var asnType = peeringType ?? GetDisplay(ipApi, "asn", "type");
+            if (asnType is not null)
+            {
+                items.Add(new HealthCheckItem(
+                    "ASN 属性",
+                    $"{NetworkTypeLabel(asnType)}（{(peeringType is not null ? "PeeringDB" : "ipapi.is")}）",
+                    HealthLevel.Idle));
+            }
+
+            var proxyType = GetDisplay(proxyResult, "network", "type");
+            var allocationType = proxyType ?? GetDisplay(ipApi, "company", "type");
+            if (allocationType is not null)
+            {
+                items.Add(new HealthCheckItem(
+                    "IP 段用途",
+                    $"{NetworkTypeLabel(allocationType)}（{(proxyType is not null ? "proxycheck.io" : "ipapi.is")}）",
+                    HealthLevel.Idle));
+            }
+
+            var country = GetDisplay(ipApi, "location", "country") ?? GetDisplay(ipApi, "cc");
             var city = GetDisplay(ipApi, "location", "city");
-            if (networkType is not null || country is not null || city is not null)
+            if (country is not null || city is not null)
             {
                 var location = string.Join(" ", new[] { country, city }.Where(value => !string.IsNullOrWhiteSpace(value)));
-                items.Add(new HealthCheckItem(
-                    "网络属性",
-                    string.Join(" · ", new[] { networkType, location }.Where(value => !string.IsNullOrWhiteSpace(value))),
-                    HealthLevel.Idle));
+                items.Add(new HealthCheckItem("地区", location, HealthLevel.Idle));
             }
 
             var risk = GetNumber(proxyResult, "detections", "risk");
@@ -212,11 +310,11 @@ public sealed class HealthCheckService
 
             if (flags.Count > 0)
             {
-                items.Add(new HealthCheckItem("风险标签", string.Join(" / ", flags.Distinct()), HealthLevel.Warning));
+                items.Add(new HealthCheckItem("地址风险标签", string.Join(" / ", flags.Distinct()), HealthLevel.Warning));
             }
             else if (ipApi is not null || proxyResult is not null)
             {
-                items.Add(new HealthCheckItem("风险标签", "未发现代理、VPN、Tor 或滥用标签", HealthLevel.Ok));
+                items.Add(new HealthCheckItem("地址风险标签", "未发现代理、VPN、Tor 或滥用记录", HealthLevel.Ok));
             }
 
             var companyScore = GetDisplay(ipApi, "company", "abuser_score");
@@ -236,7 +334,7 @@ public sealed class HealthCheckService
 
             items.Add(new HealthCheckItem(
                 "结果说明",
-                "第三方情报只能作为参考，不能代表目标网站一定放行或封禁",
+                "第三方 IP 情报不能判断 Claude / ChatGPT 登录账户是否已被封禁",
                 HealthLevel.Idle));
             return items;
         }
@@ -252,8 +350,25 @@ public sealed class HealthCheckService
         {
             ipApiDocument?.Dispose();
             proxyCheckDocument?.Dispose();
+            peeringDbDocument?.Dispose();
         }
     }
+
+    private static string NetworkTypeLabel(string value) => value.Trim().ToLowerInvariant() switch
+    {
+        "nsp" => "ISP / 网络服务商",
+        "cable/dsl/isp" => "ISP / 宽带运营商",
+        "isp" => "ISP / 网络服务商",
+        "business" => "商业网络",
+        "enterprise" => "企业网络",
+        "hosting" => "托管 / 数据中心",
+        "residential" => "住宅宽带",
+        "wireless" => "移动 / 无线网络",
+        "educational/research" => "教育 / 研究网络",
+        "government" => "政府网络",
+        "content" => "内容网络",
+        _ => value
+    };
 
     private static async Task<string?> TryGetStringAsync(HttpClient client, string url, CancellationToken cancellationToken)
     {
@@ -306,47 +421,33 @@ public sealed class HealthCheckService
         return current;
     }
 
+    private static JsonElement? GetFirstArrayItem(JsonElement? root, params string[] path)
+    {
+        var value = GetElement(root, path);
+        return value is not null &&
+               value.Value.ValueKind == JsonValueKind.Array &&
+               value.Value.GetArrayLength() > 0
+            ? value.Value[0]
+            : null;
+    }
+
+    private static string? GetFirstString(JsonElement? root, params string[] path)
+    {
+        var value = GetElement(root, path);
+        if (value is null || value.Value.ValueKind != JsonValueKind.Array) return null;
+        foreach (var item in value.Value.EnumerateArray())
+        {
+            if (item.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(item.GetString()))
+            {
+                return item.GetString();
+            }
+        }
+        return null;
+    }
+
     private static void AddFlag(ICollection<string> flags, bool present, string label)
     {
         if (present && !flags.Contains(label)) flags.Add(label);
     }
 
-    private static async Task<HealthCheckItem> CheckSiteAsync(
-        HttpClient client,
-        string name,
-        string url,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            using var request = new HttpRequestMessage(HttpMethod.Get, url);
-            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-            var code = (int)response.StatusCode;
-            return new HealthCheckItem(name, $"HTTP {code} · 网络可达", true);
-        }
-        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or SocketException)
-        {
-            return new HealthCheckItem(name, "TCP、DNS 或 TLS 连接失败", false);
-        }
-    }
-
-    private static async Task<HealthCheckItem> CheckGenerate204Async(HttpClient client, CancellationToken cancellationToken)
-    {
-        try
-        {
-            using var response = await client.GetAsync(
-                "https://www.google.com/generate_204",
-                HttpCompletionOption.ResponseHeadersRead,
-                cancellationToken);
-            var code = (int)response.StatusCode;
-            return new HealthCheckItem(
-                "Google 204 探测",
-                code == 204 ? "HTTP 204 · 代理出网正常" : $"HTTP {code} · 已连接但响应异常",
-                code == 204);
-        }
-        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or SocketException)
-        {
-            return new HealthCheckItem("Google 204 探测", "无法通过代理连接外网", false);
-        }
-    }
 }

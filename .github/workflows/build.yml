@@ -14,6 +14,9 @@ jobs:
           chmod +x Scripts/*.sh
           Scripts/test-backend.sh
           Scripts/test-ip-risk.sh
+          Scripts/test-chain-check.sh
+          Scripts/test-low-risk-health.sh
+          Scripts/test-private-browser.sh
           Scripts/build.sh
       - name: Verify bundle
         run: codesign --verify --deep --strict --verbose=2 build/PuffRoute.app

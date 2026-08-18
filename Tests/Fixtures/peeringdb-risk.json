@@ -1,0 +1,12 @@
+{
+  "meta": {},
+  "data": [
+    {
+      "asn": 64500,
+      "name": "Example Network",
+      "info_type": "NSP",
+      "info_types": ["NSP"],
+      "info_scope": "Global"
+    }
+  ]
+}

@@ -95,7 +95,16 @@
                                                         </Border>
                                                         <StackPanel Grid.Column="1" Margin="7,-1,0,0">
                                                             <TextBlock Text="{Binding Label}" FontSize="12" FontWeight="SemiBold" />
-                                                            <TextBlock Text="{Binding Detail}" Foreground="{StaticResource MutedTextBrush}" FontSize="11" Margin="0,3,0,0" TextWrapping="Wrap" />
+                                                            <TextBlock x:Name="DetailText" Text="{Binding Detail}" Foreground="{StaticResource MutedTextBrush}" FontSize="11" Margin="0,3,0,0" TextWrapping="Wrap" />
+                                                            <Button x:Name="OpenLinkButton"
+                                                                    Content="在浏览器打开"
+                                                                    Tag="{Binding Detail}"
+                                                                    Style="{StaticResource QuietButtonStyle}"
+                                                                    HorizontalAlignment="Left"
+                                                                    Margin="0,5,0,0"
+                                                                    Padding="10,4"
+                                                                    Visibility="Collapsed"
+                                                                    Click="OpenLinkButton_Click" />
                                                         </StackPanel>
                                                     </Grid>
                                                     <DataTemplate.Triggers>
@@ -110,6 +119,10 @@
                                                         <DataTrigger Binding="{Binding LevelKey}" Value="Idle">
                                                             <Setter TargetName="ResultDot" Property="Background" Value="#22718096" />
                                                             <Setter TargetName="ResultMark" Property="Foreground" Value="{StaticResource IdleBrush}" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding IsLink}" Value="True">
+                                                            <Setter TargetName="DetailText" Property="Visibility" Value="Collapsed" />
+                                                            <Setter TargetName="OpenLinkButton" Property="Visibility" Value="Visible" />
                                                         </DataTrigger>
                                                     </DataTemplate.Triggers>
                                                 </DataTemplate>

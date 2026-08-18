@@ -19,6 +19,8 @@ public sealed record HealthCheckItem(string Label, string Detail, HealthLevel Le
 
     public bool Passed => Level == HealthLevel.Ok;
     public string LevelKey => Level.ToString();
+    public bool IsLink => Uri.TryCreate(Detail, UriKind.Absolute, out var uri) &&
+        (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp);
 }
 
 public sealed record HealthCheckSection(string Title, IReadOnlyList<HealthCheckItem> Items)
@@ -40,7 +42,7 @@ public sealed class HealthReport
     {
         var text = new StringBuilder();
         text.AppendLine($"PuffRoute Windows 健康检查 · {CheckedAt:yyyy-MM-dd HH:mm:ss}");
-        text.AppendLine($"结果：{PassedCount} 通过 / {FailedCount} 失败");
+        text.AppendLine($"结果：{PassedCount} 通过 / {WarningCount} 提示 / {FailedCount} 失败");
         text.AppendLine();
 
         foreach (var section in Sections)

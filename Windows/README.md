@@ -8,10 +8,16 @@
 4. 回到主界面刷新状态，或运行“健康检查”
 
 PuffRoute 会读取 Mihomo/Clash Verge 的本地进程、端口、系统代理和 TUN 状态，并在
-健康检查中显示出口 IP、ASN、proxycheck.io 风险分与 ipapi.is 风险标签。
+健康检查中分别显示网络归属、PeeringDB ASN 属性、IP 段用途、proxycheck.io 风险分与
+ipapi.is / proxycheck.io 地址风险标签；三个出口查询源会交叉验证结果。默认不会主动
+请求 Claude、ChatGPT、Gemini 的网页或 API，避免健康检查制造机器人式访问记录。
+检测到 TUN 时还会验证 DNS 是否返回 `198.18.x.x` Fake-IP，避免只看见路由已接管却漏掉
+域名规则实际不生效的问题。
 
-主界面的第四张“规则包”卡片可以预览、复制或导出独立的 Merge YAML。规则包不包含
-订阅地址、节点或凭据；默认使用名为 `PROXY` 的策略组。
+主界面底部的“规则管理”可以预览、复制或导出独立的 Merge YAML。规则包不包含订阅
+地址、节点或凭据；默认使用名为 `PROXY` 的策略组。健康报告还提供 BrowserLeaks、
+IPhey、IPQS、Scamalytics 和 AbuseIPDB 的浏览器复核按钮，这些网站不会在后台自动访问。
+Claude / ChatGPT 登录账户状态始终单独显示为“未验证”；公网入口可达不代表账户未被封禁。
 健康检查产生的网络请求只通过你设置的本地代理发送。
 
 ## 配置位置
