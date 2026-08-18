@@ -213,7 +213,7 @@ private enum CloudTypography {
         .system(size: 18, weight: .semibold, design: monospaced ? .monospaced : .rounded)
     }
     static let actionTitle = Font.system(size: 14, weight: .semibold)
-    static let actionDetail = Font.system(size: 11)
+    static let actionDetail = Font.system(size: 10.5)
 }
 
 struct MetricCard: View {
@@ -922,24 +922,10 @@ private struct DashboardActionCard: View {
                     }
 
                     if !scopeLabels.isEmpty {
-                        HStack(spacing: 8) {
-                            ForEach(Array(scopeLabels.enumerated()), id: \.offset) { index, label in
-                                if index > 0 {
-                                    Rectangle()
-                                        .fill(Color.primary.opacity(0.12))
-                                        .frame(width: 1, height: 12)
-                                }
-
-                                HStack(spacing: 4) {
-                                    Circle()
-                                        .fill(tint)
-                                        .frame(width: 4, height: 4)
-                                    Text(label)
-                                }
-                            }
-                        }
-                        .font(.system(size: 10, weight: .medium))
+                        Text(scopeLabels.joined(separator: "  ·  "))
+                        .font(.system(size: 10.5))
                         .foregroundStyle(.secondary)
+                        .padding(.leading, 12)
                         .layoutPriority(1)
                     }
 
@@ -1447,7 +1433,7 @@ struct ContentView: View {
         VStack(spacing: 10) {
             DashboardActionCard(
                 title: "健康检查",
-                detail: isHealthCheckRunning ? "正在检查代理链路…" : "检查双出口、IP 风险与分流",
+                detail: isHealthCheckRunning ? "正在检查代理链路…" : "自动检查代理链路",
                 symbol: "stethoscope",
                 actionLabel: "检查",
                 actionSymbol: "play.fill",
