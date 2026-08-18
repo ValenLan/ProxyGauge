@@ -18,6 +18,8 @@ APP_DIR="$HOME/Applications"
 /usr/bin/install -m 755 "$PROJECT_ROOT/Scripts/cloudroute-private-browser.sh" "$USER_BIN/cloudroute-private-browser"
 /usr/bin/install -m 755 "$PROJECT_ROOT/Scripts/cloudroute-killswitch" "$USER_BIN/cloudroute-killswitch"
 /usr/bin/install -m 755 "$PROJECT_ROOT/Scripts/cloudroute-backend.sh" "$SUPPORT_DIR/cloudroute-backend.sh"
+/usr/bin/install -m 644 "$PROJECT_ROOT/Helpers/CloudRoute Admin.applescript" \
+  "$SUPPORT_DIR/cloudroute-admin.applescript"
 
 if [ ! -e "$CONFIG_DIR/config" ]; then
   if [ -r "$LEGACY_CONFIG" ]; then
@@ -27,12 +29,6 @@ if [ ! -e "$CONFIG_DIR/config" ]; then
   fi
   /bin/chmod 600 "$CONFIG_DIR/config"
 fi
-
-for action in On Off Status; do
-  /usr/bin/osacompile -l AppleScript \
-    -o "$SUPPORT_DIR/CloudRoute Admin $action.app" \
-    "$PROJECT_ROOT/Helpers/CloudRoute Admin $action.applescript"
-done
 
 /usr/bin/ditto "$PROJECT_ROOT/build/CloudRoute.app" "$APP_DIR/CloudRoute.app"
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \

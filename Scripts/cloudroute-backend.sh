@@ -3,9 +3,13 @@
 RESOURCE_DIR=$(/usr/bin/dirname "$0")
 CHECK="$RESOURCE_DIR/cloudroute-check.sh"
 [ -x "$CHECK" ] || CHECK="$HOME/.local/bin/cloudroute-check"
-ADMIN_HELPER_DIR="$RESOURCE_DIR/AdminHelpers"
-[ -d "$ADMIN_HELPER_DIR" ] || ADMIN_HELPER_DIR="$HOME/.local/share/cloudroute"
-ADMIN_RESULT="${CLOUDROUTE_ADMIN_RESULT:-${PUFFROUTE_ADMIN_RESULT:-/var/run/cloudroute/admin-result}}"
+ADMIN_SCRIPT="${CLOUDROUTE_ADMIN_SCRIPT:-${PUFFROUTE_ADMIN_SCRIPT:-$RESOURCE_DIR/cloudroute-admin.applescript}}"
+[ -r "$ADMIN_SCRIPT" ] || ADMIN_SCRIPT="$HOME/.local/share/cloudroute/cloudroute-admin.applescript"
+OSASCRIPT="${CLOUDROUTE_OSASCRIPT:-${PUFFROUTE_OSASCRIPT:-/usr/bin/osascript}}"
+KILL_HELPER="${CLOUDROUTE_KILLSWITCH:-${PUFFROUTE_KILLSWITCH:-$RESOURCE_DIR/cloudroute-killswitch}}"
+[ -x "$KILL_HELPER" ] || KILL_HELPER="$HOME/.local/bin/cloudroute-killswitch"
+CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+ADMIN_RESULT="${CLOUDROUTE_ADMIN_RESULT:-${PUFFROUTE_ADMIN_RESULT:-$CACHE_HOME/cloudroute/admin-result}}"
 KILL_TOKEN="${CLOUDROUTE_KILL_TOKEN:-${PUFFROUTE_KILL_TOKEN:-/var/run/cloudroute-killswitch.pf-token}}"
 if [ -z "${CLOUDROUTE_KILL_TOKEN:-}" ] && [ -z "${PUFFROUTE_KILL_TOKEN:-}" ] \
   && [ ! -e "$KILL_TOKEN" ] && [ -e /var/run/puffroute-killswitch.pf-token ]; then
@@ -31,16 +35,27 @@ has_tun_route() {
 }
 
 kill_switch_snapshot() {
-  local action_status
+  local action_status result_file legacy_result
 
-  if [ -r "$ADMIN_RESULT" ]; then
-    action_status=$(/usr/bin/sed -n 's/^__STATUS__=//p' "$ADMIN_RESULT" | /usr/bin/tail -1)
+  result_file="$ADMIN_RESULT"
+  if [ ! -r "$result_file" ] && [ -z "${CLOUDROUTE_ADMIN_RESULT:-}" ] \
+    && [ -z "${PUFFROUTE_ADMIN_RESULT:-}" ]; then
+    for legacy_result in /var/run/cloudroute/admin-result /var/run/puffroute/admin-result; do
+      if [ -r "$legacy_result" ]; then
+        result_file="$legacy_result"
+        break
+      fi
+    done
+  fi
+
+  if [ -r "$result_file" ]; then
+    action_status=$(/usr/bin/sed -n 's/^__STATUS__=//p' "$result_file" | /usr/bin/tail -1)
     if [ "$action_status" = "0" ]; then
-      if /usr/bin/grep -qE 'Kill Switch([:：][[:space:]]*|[[:space:]]+)(Enabled|已开启)([[:space:]]|$)' "$ADMIN_RESULT"; then
+      if /usr/bin/grep -qE 'Kill Switch([:：][[:space:]]*|[[:space:]]+)(Enabled|已开启)([[:space:]]|$)' "$result_file"; then
         /usr/bin/printf '已开启\tok\n'
         return
       fi
-      if /usr/bin/grep -qE 'Kill Switch([:：][[:space:]]*|[[:space:]]+)(Disabled|已关闭)([[:space:]]|$)' "$ADMIN_RESULT"; then
+      if /usr/bin/grep -qE 'Kill Switch([:：][[:space:]]*|[[:space:]]+)(Disabled|已关闭)([[:space:]]|$)' "$result_file"; then
         /usr/bin/printf '已关闭\twarning\n'
         return
       fi
@@ -129,40 +144,58 @@ probe() {
 }
 
 run_admin() {
-  local action_name admin_helper before_run after_run action_status
+  local action_name admin_output action_status result_dir result_tmp
   action_name="$1"
   case "$action_name" in
-    on) admin_helper="$ADMIN_HELPER_DIR/CloudRoute Admin On.app" ;;
-    off) admin_helper="$ADMIN_HELPER_DIR/CloudRoute Admin Off.app" ;;
-    status) admin_helper="$ADMIN_HELPER_DIR/CloudRoute Admin Status.app" ;;
+    on|off|status) ;;
     *) echo "非法的管理员操作: $action_name"; return 2 ;;
   esac
 
-  if [ ! -e "$admin_helper" ]; then
-    echo "缺少管理员 helper: $admin_helper"
+  if [ ! -r "$ADMIN_SCRIPT" ]; then
+    echo "缺少管理员脚本: $ADMIN_SCRIPT"
+    return 1
+  fi
+  if [ ! -x "$KILL_HELPER" ]; then
+    echo "缺少 Kill Switch helper: $KILL_HELPER"
+    return 1
+  fi
+  if [ ! -x "$OSASCRIPT" ]; then
+    echo "无法执行管理员脚本: $OSASCRIPT"
     return 1
   fi
 
-  before_run=""
-  [ -r "$ADMIN_RESULT" ] && before_run=$(/usr/bin/sed -n 's/^__RUN__=//p' "$ADMIN_RESULT" | /usr/bin/tail -1)
-  if ! /usr/bin/open -W -n "$admin_helper" >/dev/null 2>&1; then
-    echo "管理员 helper 启动失败"
+  admin_output=$("$OSASCRIPT" "$ADMIN_SCRIPT" "$KILL_HELPER" "$action_name" 2>&1)
+  action_status=$?
+  if [ "$action_status" -ne 0 ]; then
+    if /usr/bin/printf '%s\n' "$admin_output" | /usr/bin/grep -qE '(^|[^0-9])-128([^0-9]|$)|User canceled|用户已取消'; then
+      echo "已取消管理员授权，未修改 Kill Switch"
+    else
+      echo "管理员操作失败"
+      [ -n "$admin_output" ] && /usr/bin/printf '%s\n' "$admin_output"
+    fi
     return 1
   fi
-  if [ ! -r "$ADMIN_RESULT" ]; then
-    echo "未收到管理员操作结果（可能已取消授权）"
+  if [ -z "$admin_output" ]; then
+    echo "管理员操作没有返回状态"
     return 1
   fi
 
-  after_run=$(/usr/bin/sed -n 's/^__RUN__=//p' "$ADMIN_RESULT" | /usr/bin/tail -1)
-  if [ -z "$after_run" ] || [ "$after_run" = "$before_run" ]; then
-    echo "管理员操作未执行（可能已取消授权）"
+  result_dir=$(/usr/bin/dirname "$ADMIN_RESULT")
+  if ! /bin/mkdir -p "$result_dir"; then
+    echo "无法创建状态缓存目录: $result_dir"
     return 1
   fi
-
-  action_status=$(/usr/bin/sed -n 's/^__STATUS__=//p' "$ADMIN_RESULT" | /usr/bin/tail -1)
-  /usr/bin/sed '/^__\(RUN\|STATUS\)__=/d' "$ADMIN_RESULT"
-  [ "$action_status" = "0" ]
+  result_tmp="$result_dir/.admin-result.$$.tmp"
+  if ! {
+    /usr/bin/printf '%s\n' "$admin_output"
+    /usr/bin/printf '__STATUS__=0\n'
+  } > "$result_tmp"; then
+    echo "无法写入 Kill Switch 状态缓存"
+    return 1
+  fi
+  /bin/chmod 600 "$result_tmp"
+  /bin/mv -f "$result_tmp" "$ADMIN_RESULT"
+  /usr/bin/printf '%s\n' "$admin_output"
 }
 
 case "${1:-}" in

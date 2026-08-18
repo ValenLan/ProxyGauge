@@ -12,7 +12,6 @@ fi
 
 /bin/mkdir -p \
   "$APP/Contents/MacOS" \
-  "$APP/Contents/Resources/AdminHelpers" \
   "$APP/Contents/Resources/Rules" \
   "$BUILD_DIR/module-cache"
 
@@ -33,12 +32,8 @@ fi
 /bin/cp "$PROJECT_ROOT/Scripts/cloudroute-private-browser.sh" "$APP/Contents/Resources/cloudroute-private-browser.sh"
 /bin/cp "$PROJECT_ROOT/Rules/CloudRoute-Merge.yaml" "$APP/Contents/Resources/Rules/CloudRoute-Merge.yaml"
 /bin/cp "$PROJECT_ROOT/Rules/CloudRoute-Google-Chain-Probe.yaml" "$APP/Contents/Resources/Rules/CloudRoute-Google-Chain-Probe.yaml"
-
-for action in On Off Status; do
-  /usr/bin/osacompile -l AppleScript \
-    -o "$APP/Contents/Resources/AdminHelpers/CloudRoute Admin $action.app" \
-    "$PROJECT_ROOT/Helpers/CloudRoute Admin $action.applescript"
-done
+/bin/cp "$PROJECT_ROOT/Helpers/CloudRoute Admin.applescript" \
+  "$APP/Contents/Resources/cloudroute-admin.applescript"
 
 /bin/chmod 755 \
   "$APP/Contents/MacOS/CloudRoute" \
@@ -55,11 +50,9 @@ for required_path in \
   "$APP/Contents/Resources/cloudroute-ip-risk.jxa" \
   "$APP/Contents/Resources/cloudroute-chain-check.jxa" \
   "$APP/Contents/Resources/cloudroute-private-browser.sh" \
+  "$APP/Contents/Resources/cloudroute-admin.applescript" \
   "$APP/Contents/Resources/Rules/CloudRoute-Merge.yaml" \
-  "$APP/Contents/Resources/Rules/CloudRoute-Google-Chain-Probe.yaml" \
-  "$APP/Contents/Resources/AdminHelpers/CloudRoute Admin On.app" \
-  "$APP/Contents/Resources/AdminHelpers/CloudRoute Admin Off.app" \
-  "$APP/Contents/Resources/AdminHelpers/CloudRoute Admin Status.app"; do
+  "$APP/Contents/Resources/Rules/CloudRoute-Google-Chain-Probe.yaml"; do
   if [ ! -e "$required_path" ]; then
     echo "Missing required bundled component: $required_path" >&2
     exit 1
