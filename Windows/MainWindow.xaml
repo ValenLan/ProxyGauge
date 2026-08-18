@@ -41,7 +41,7 @@
                     </StackPanel>
 
                     <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="0,4,5,4">
-                        <Button Style="{StaticResource TitleButtonStyle}" Content="&#xE713;" ToolTip="设置" Click="SettingsButton_Click" />
+                        <Button Style="{StaticResource TitleButtonStyle}" Content="&#xE713;" ToolTip="设置" IsEnabled="{Binding IsNotBusy}" Click="SettingsButton_Click" />
                         <Button Style="{StaticResource TitleButtonStyle}" Content="&#xE921;" ToolTip="最小化" Click="MinimizeButton_Click" />
                         <Button x:Name="CloseButton" Style="{StaticResource TitleButtonStyle}" Content="&#xE8BB;" ToolTip="关闭" Click="CloseButton_Click" />
                     </StackPanel>
