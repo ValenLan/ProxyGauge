@@ -1,23 +1,24 @@
-# Copy to ~/.config/puffroute/config and fill in your own values.
-PUFFROUTE_MIXED="127.0.0.1:7890"
-PUFFROUTE_TIMEOUT="6"
+# Copy to ~/.config/cloudroute/config and fill in your own values.
+# Legacy ~/.config/puffroute/config and PUFFROUTE_* variables remain readable.
+CLOUDROUTE_MIXED="127.0.0.1:7890"
+CLOUDROUTE_TIMEOUT="6"
 
 # Optional: when set, the health check verifies the exact proxy exit IP.
-PUFFROUTE_EXPECT_IP=""
+CLOUDROUTE_EXPECT_IP=""
 
 # Optional: separate Google/Gemini chain diagnostics through Clash Verge Rev.
-PUFFROUTE_MIHOMO_SOCKET="/private/tmp/verge/verge-mihomo.sock"
-PUFFROUTE_GOOGLE_GROUP="Google-Chain"
-PUFFROUTE_DEFAULT_GROUP="PROXY"
-PUFFROUTE_GOOGLE_MIXED="127.0.0.1:7891"
-PUFFROUTE_EXPECT_GOOGLE_IP=""
+CLOUDROUTE_MIHOMO_SOCKET="/private/tmp/verge/verge-mihomo.sock"
+CLOUDROUTE_GOOGLE_GROUP="Google-Chain"
+CLOUDROUTE_DEFAULT_GROUP="PROXY"
+CLOUDROUTE_GOOGLE_MIXED="127.0.0.1:7891"
+CLOUDROUTE_EXPECT_GOOGLE_IP=""
 
 # Off by default: active requests to AI APIs can create automated access logs.
-PUFFROUTE_ACTIVE_AI_PROBES="0"
+CLOUDROUTE_ACTIVE_AI_PROBES="0"
 
 # Optional: Chrome executable used by the isolated browser check.
-PUFFROUTE_CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+CLOUDROUTE_CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
 # Required only when installing the PF Kill Switch.
-PUFFROUTE_VPS_IP=""
-PUFFROUTE_INTERFACES="en0 en1 en2 en3 en4 en5 en6 en7 bridge0 bridge1 ppp0 ppp1"
+CLOUDROUTE_VPS_IP=""
+CLOUDROUTE_INTERFACES="en0 en1 en2 en3 en4 en5 en6 en7 bridge0 bridge1 ppp0 ppp1"

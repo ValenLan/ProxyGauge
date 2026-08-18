@@ -1,7 +1,7 @@
 using System.Windows.Media;
-using PuffRoute.Models;
+using CloudRoute.Models;
 
-namespace PuffRoute.ViewModels;
+namespace CloudRoute.ViewModels;
 
 public sealed class MetricViewModel : ObservableObject
 {

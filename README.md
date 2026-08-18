@@ -1,10 +1,11 @@
-# PuffRoute
+# CloudRoute Monitor
 
 <p align="center">
-  <img src="Resources/PuffRoute.png" width="144" alt="PuffRoute icon">
+  <img src="Resources/CloudRoute.png" width="144" alt="CloudRoute icon">
 </p>
 
-PuffRoute 是一个轻量的原生代理状态面板，支持 macOS 与 Windows。它用来查看
+CloudRoute Monitor（应用短名称 `CloudRoute`）是一个轻量的原生代理状态面板，支持
+macOS 与 Windows。它用来查看
 Mihomo/Clash Verge 的核心、混合端口和流量入口状态，并提供结构化健康检查。
 
 ## 功能
@@ -27,17 +28,17 @@ Mihomo/Clash Verge 的核心、混合端口和流量入口状态，并提供结�
 
 | 平台 | 状态面板 | 健康检查 | Kill Switch | 构建产物 |
 |---|---:|---:|---:|---|
-| macOS 26（Apple Silicon） | ✓ | ✓ | PF anchor（可选） | `PuffRoute.app` |
-| Windows 10/11 x64 | ✓ | ✓ | 暂不提供 | 单文件 `PuffRoute.exe` |
-| Windows 11 ARM64 | ✓ | ✓ | 暂不提供 | 单文件 `PuffRoute.exe` |
+| macOS 26（Apple Silicon） | ✓ | ✓ | PF anchor（可选） | `CloudRoute.app` |
+| Windows 10/11 x64 | ✓ | ✓ | 暂不提供 | 单文件 `CloudRoute.exe` |
+| Windows 11 ARM64 | ✓ | ✓ | 暂不提供 | 单文件 `CloudRoute.exe` |
 
 ## 规则包与订阅
 
-PuffRoute 把两者有意分开：
+CloudRoute 把两者有意分开：
 
-- **订阅**由使用者自己的代理客户端管理，PuffRoute 不读取、不保存也不分发订阅地址、
+- **订阅**由使用者自己的代理客户端管理，CloudRoute 不读取、不保存也不分发订阅地址、
   节点或凭据。
-- **规则包**位于 [`Rules/PuffRoute-Merge.yaml`](Rules/PuffRoute-Merge.yaml)，随 macOS
+- **规则包**位于 [`Rules/CloudRoute-Merge.yaml`](Rules/CloudRoute-Merge.yaml)，随 macOS
   App 与 Windows 单文件程序一起打包，可从主界面底部“规则管理”入口预览、复制或导出。
 
 规则包使用 Clash Verge Rev 的 `prepend-rules`，确保 AI 与开发站点规则排在订阅自带的
@@ -62,26 +63,26 @@ Verge Rev 中新建并启用 `Merge` 配置，再刷新当前订阅。这样规�
 chmod +x Scripts/*.sh
 Scripts/build.sh
 Scripts/package-macos.sh
-open build/PuffRoute.app
+open build/CloudRoute.app
 ```
 
-构建结果位于 `build/PuffRoute.app`，分享包位于
-`dist/PuffRoute-<版本>-macOS-arm64.zip`。应用采用 ad-hoc 签名，尚未使用 Developer ID
+构建结果位于 `build/CloudRoute.app`，分享包位于
+`dist/CloudRoute-<版本>-macOS-arm64.zip`。应用采用 ad-hoc 签名，尚未使用 Developer ID
 签名或 Apple 公证。
 
 ### 分享预编译版本
 
 推荐从 GitHub Releases 分享三个按版本命名的 ZIP，而不是分享源码或 `Scripts/` 目录：
 
-- `PuffRoute-<版本>-macOS-arm64.zip`
-- `PuffRoute-<版本>-win-x64.zip`
-- `PuffRoute-<版本>-win-arm64.zip`
+- `CloudRoute-<版本>-macOS-arm64.zip`
+- `CloudRoute-<版本>-win-x64.zip`
+- `CloudRoute-<版本>-win-arm64.zip`
 
 当前 GitHub 仓库是私有仓库：只有仓库协作者能直接下载 Release。分享给非协作者时，由维护
 者先下载对应 ZIP 和 `SHA256SUMS.txt`，再通过可信文件传输渠道发送；不要为了方便下载就
 直接把仓库改成公开。
 
-Mac 用户解压后把 `PuffRoute.app` 移到“应用程序”即可；正常图形功能所需的检查脚本、规则
+Mac 用户解压后把 `CloudRoute.app` 移到“应用程序”即可；正常图形功能所需的检查脚本、规则
 和管理员助手已包含在 App 内，不需要运行 `install.sh`。由于当前版本没有 Apple 公证，首次
 打开可能被 Gatekeeper 拦截；只应在确认下载来源与 `SHA256SUMS.txt` 校验值后，到“系统
 设置 → 隐私与安全性”选择“仍要打开”。面向更广泛用户公开分发前，应补齐 Developer ID
@@ -96,44 +97,48 @@ Mihomo/Clash Verge；PF Kill Switch 也不会随普通分享包自动安装。
 Scripts/install.sh
 ```
 
-默认安装到 `~/Applications/PuffRoute.app`，辅助脚本安装到：
+默认安装到 `~/Applications/CloudRoute.app`，辅助脚本安装到：
 
-- `~/.local/bin/puffroute-check`
-- `~/.local/bin/puffroute-ip-risk.jxa`
-- `~/.local/bin/puffroute-chain-check.jxa`
-- `~/.local/bin/puffroute-private-browser`
-- `~/.local/bin/puffroute-killswitch`
-- `~/.local/share/puffroute/`
+- `~/.local/bin/cloudroute-check`
+- `~/.local/bin/cloudroute-ip-risk.jxa`
+- `~/.local/bin/cloudroute-chain-check.jxa`
+- `~/.local/bin/cloudroute-private-browser`
+- `~/.local/bin/cloudroute-killswitch`
+- `~/.local/share/cloudroute/`
 
 这些外部脚本用于命令行调用和旧版兼容；图形应用正常运行会优先使用 App Bundle
-内置副本，因此单独移动 `PuffRoute.app` 不会丢失健康检查或管理员助手。
+内置副本，因此单独移动 `CloudRoute.app` 不会丢失健康检查或管理员助手。
 
 ### 配置
 
 安装脚本首次运行时会创建：
 
 ```text
-~/.config/puffroute/config
+~/.config/cloudroute/config
 ```
 
 主要配置项：
 
 ```bash
-PUFFROUTE_MIXED="127.0.0.1:7890"
-PUFFROUTE_EXPECT_IP=""  # 可选：校验准确的代理出口 IP
-PUFFROUTE_GOOGLE_GROUP="Google-Chain"  # 可选：Google/Gemini 链式策略组
-PUFFROUTE_GOOGLE_MIXED="127.0.0.1:7891"  # 可选：固定走 Google-Chain 的本地检测入口
-PUFFROUTE_EXPECT_GOOGLE_IP=""  # 可选：校验准确的 Google/Gemini 出口 IP
-PUFFROUTE_CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-PUFFROUTE_ACTIVE_AI_PROBES="0"  # 默认关闭：不主动请求任何 AI 平台
-PUFFROUTE_VPS_IP=""     # 仅 PF Kill Switch 需要
+CLOUDROUTE_MIXED="127.0.0.1:7890"
+CLOUDROUTE_EXPECT_IP=""  # 可选：校验准确的代理出口 IP
+CLOUDROUTE_GOOGLE_GROUP="Google-Chain"  # 可选：Google/Gemini 链式策略组
+CLOUDROUTE_GOOGLE_MIXED="127.0.0.1:7891"  # 可选：固定走 Google-Chain 的本地检测入口
+CLOUDROUTE_EXPECT_GOOGLE_IP=""  # 可选：校验准确的 Google/Gemini 出口 IP
+CLOUDROUTE_CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+CLOUDROUTE_ACTIVE_AI_PROBES="0"  # 默认关闭：不主动请求任何 AI 平台
+CLOUDROUTE_VPS_IP=""     # 仅 PF Kill Switch 需要
 ```
+
+从 PuffRoute 升级时，安装脚本会在新配置不存在的情况下复制旧配置；运行时也会回退读取
+`~/.config/puffroute/config` 和旧的 `PUFFROUTE_*` 变量。新旧配置同时存在时，以
+CloudRoute 配置和 `CLOUDROUTE_*` 变量为准。
 
 仓库不包含任何真实服务器地址或个人配置。
 
 如果 Google/Gemini 使用独立链式出口，仅检查策略组和规则命中还不够。把
-[`Rules/PuffRoute-Google-Chain-Probe.yaml`](Rules/PuffRoute-Google-Chain-Probe.yaml)
-中的 `listeners` 合并到 Mihomo 活动配置后，PuffRoute 会通过只监听
+[`Rules/CloudRoute-Google-Chain-Probe.yaml`](Rules/CloudRoute-Google-Chain-Probe.yaml)
+中的 `listeners` 合并到 Mihomo 活动配置后，CloudRoute 会通过只监听
 `127.0.0.1:7891` 的专用 mixed 入口查询实际出口，并在报告中并排显示默认出口与
 Google/Gemini 出口。该入口固定绑定 `Google-Chain`，不会临时切换策略组，也不会暴露到
 局域网。
@@ -143,7 +148,7 @@ Google/Gemini 出口。该入口固定绑定 `Google-Chain`，不会临时切换
 > PF 配置会影响整台 Mac 的联网行为。请先阅读脚本和规则，并确保你有可恢复的
 > 本地终端访问。配置错误可能导致暂时断网。
 
-填写 `PUFFROUTE_VPS_IP` 后运行：
+填写 `CLOUDROUTE_VPS_IP` 后运行：
 
 ```bash
 Scripts/install-pf.sh
@@ -151,16 +156,16 @@ Scripts/install-pf.sh
 
 该脚本会：
 
-1. 生成 `/etc/pf.anchors/puffroute`
-2. 在当前 `/etc/pf.conf` 中注册 `anchor "puffroute"`
+1. 生成 `/etc/pf.anchors/cloudroute`
+2. 在当前 `/etc/pf.conf` 中注册 `anchor "cloudroute"`
 3. 先运行 PF 语法检查，再安装配置
-4. 首次执行时备份 `/etc/pf.conf.puffroute.bak`
+4. 首次执行时备份 `/etc/pf.conf.cloudroute.bak`
 
-安装规则后，可在 PuffRoute 界面中开启或关闭 Kill Switch。
+安装规则后，可在 CloudRoute 界面中开启或关闭 Kill Switch。
 
-从旧版 Proxy Tools 升级时，如果系统仍注册旧的 `killswitch` anchor，PuffRoute 会
-继续调用原有规则，避免仅因应用改名而失去保护。全新安装始终使用 `puffroute`
-anchor。
+从 PuffRoute 或更早的 Proxy Tools 升级时，如果系统仍注册 `puffroute` 或 `killswitch`
+anchor，CloudRoute 会继续调用原有规则，避免仅因应用改名而失去保护。全新安装始终使用
+`cloudroute` anchor。
 
 ## Windows
 
@@ -168,9 +173,9 @@ Windows 版位于 [`Windows/`](Windows/)，使用 .NET 8 WPF，不依赖第三�
 
 ### 使用预编译版本
 
-1. 仓库协作者在 GitHub Releases 下载 `PuffRoute-<版本>-win-x64.zip`；ARM Windows 下载
-   `PuffRoute-<版本>-win-arm64.zip`。非协作者使用维护者转发的同一 ZIP
-2. 解压后运行 `PuffRoute.exe`
+1. 仓库协作者在 GitHub Releases 下载 `CloudRoute-<版本>-win-x64.zip`；ARM Windows 下载
+   `CloudRoute-<版本>-win-arm64.zip`。非协作者使用维护者转发的同一 ZIP
+2. 解压后运行 `CloudRoute.exe`
 3. 点击标题栏的设置按钮，确认 mixed 地址与端口
 
 发布包为 self-contained 单文件程序，朋友的电脑无需预装 .NET。Windows 首次运行
@@ -181,7 +186,7 @@ Windows 版位于 [`Windows/`](Windows/)，使用 .NET 8 WPF，不依赖第三�
 需要 .NET 8 SDK 与 Windows 10/11：
 
 ```powershell
-dotnet publish Windows/PuffRoute.Windows.csproj `
+dotnet publish Windows/CloudRoute.Windows.csproj `
   --configuration Release `
   --runtime win-x64 `
   --self-contained true `
@@ -191,8 +196,10 @@ dotnet publish Windows/PuffRoute.Windows.csproj `
 Windows 配置保存在：
 
 ```text
-%APPDATA%\PuffRoute\config.json
+%APPDATA%\CloudRoute\config.json
 ```
+
+首次运行会自动读取并复制旧的 `%APPDATA%\PuffRoute\config.json`，不会删除旧文件。
 
 Windows 版没有照搬 macOS Kill Switch。可靠的 Windows 等价方案需要修改全局
 Firewall/WFP 策略，误配置可能让整台电脑断网；当前分享版刻意保持只读。
@@ -202,7 +209,7 @@ Firewall/WFP 策略，误配置可能让整台电脑断网；当前分享版刻�
 每次 push 与 pull request 都会构建并测试 macOS、Windows x64 和 Windows ARM64，并把
 三个 ZIP 原样保存为 Actions artifacts。只有推送与应用版本完全一致的 `v<版本>` 标签时，
 工作流才会创建 GitHub Release，同时上传三个 ZIP 与 `SHA256SUMS.txt`。例如当前版本的
-发布标签是 `v1.2.7`。
+发布标签是 `v1.3.0`。
 
 创建标签会产生供仓库授权用户下载的正式发布结果，必须在全部本地测试和普通 push CI
 通过后由维护者明确执行；构建脚本本身不会自动创建标签。
@@ -212,7 +219,7 @@ Firewall/WFP 策略，误配置可能让整台电脑断网；当前分享版刻�
 - 健康检查会通过已配置的本地代理访问公开 IP 查询服务和测试站点。
 - 默认健康检查不会请求 Claude、ChatGPT、Gemini 的网页或 API。Google/Gemini 的路由
   命中从本机 Mihomo 运行时读取，链路延迟使用中性 204 地址，实际出口通过专用本地入口
-  访问公开 IP 查询服务确认。只有用户显式把 `PUFFROUTE_ACTIVE_AI_PROBES` 设为 `1` 时，
+  访问公开 IP 查询服务确认。只有用户显式把 `CLOUDROUTE_ACTIVE_AI_PROBES` 设为 `1` 时，
   macOS 才会主动请求三个 AI API；即使启用，也不会自动访问账号网页。
 - 出口一致性检查会把默认代理出口分别提交给 `api.ipify.org`、`ifconfig.me` 与 `ip.sb`；
   启用链式出口探针时，也会经固定的 Google/Gemini 链路访问同一组服务。只有至少两个
@@ -223,19 +230,19 @@ Firewall/WFP 策略，误配置可能让整台电脑断网；当前分享版刻�
   IP 段用途、风险分与地址风险标签，避免把运营商类型和具体地址用途混为一谈。第三方情报
   仅供参考，接口限流不会被视为代理故障。
 - IPQS、Scamalytics、AbuseIPDB、BrowserLeaks 与 IPhey 只作为用户主动点击的复核入口，
-  PuffRoute 不会在后台自动访问。BrowserLeaks/IPhey 必须在真实浏览器上下文中运行，才能
+  CloudRoute 不会在后台自动访问。BrowserLeaks/IPhey 必须在真实浏览器上下文中运行，才能
   观察 WebRTC、DNS、IPv6、时区和指纹一致性。
-- PuffRoute 不读取 Claude、ChatGPT 等网站的登录 Cookie 或账户资料，因此无法自动判断
+- CloudRoute 不读取 Claude、ChatGPT 等网站的登录 Cookie 或账户资料，因此无法自动判断
 账户封禁。健康报告会把账户状态显示为“未验证”，必须在用户自己的真实登录会话中确认。
 - macOS 的“隔离浏览器检测”只在用户点击后启动独立 Chrome 进程。它使用临时资料目录、
   禁用现有扩展与同步，并通过进程专属的本机代理打开 BrowserLeaks、IPhey、IPQS、
   Scamalytics 与 AbuseIPDB；关闭该 Chrome 窗口后删除临时资料。检测网站仍能看到所选
   出口 IP 和浏览器指纹，因此“隔离”不等于对网站匿名。该功能不会改变系统代理，也不会
   影响普通 Chrome 窗口和其他应用的流量。
-- PuffRoute 不上传配置，不收集遥测，也不保存浏览记录。
-- macOS 管理员权限仅用于读取或修改 PuffRoute 自己的 PF anchor。
+- CloudRoute 不上传配置，不收集遥测，也不保存浏览记录。
+- macOS 管理员权限仅用于读取或修改 CloudRoute 自己的 PF anchor。
 - Windows 版不请求管理员权限，也不修改 Windows Firewall。
-- 发布前请不要提交 `~/.config/puffroute/config`。
+- 发布前请不要提交 `~/.config/cloudroute/config`。
 
 ## 项目状态
 

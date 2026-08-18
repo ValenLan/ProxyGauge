@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace PuffRoute.Models;
+namespace CloudRoute.Models;
 
 public sealed record HealthCheckItem(string Label, string Detail, HealthLevel Level)
 {
@@ -41,7 +41,7 @@ public sealed class HealthReport
     public string ToPlainText()
     {
         var text = new StringBuilder();
-        text.AppendLine($"PuffRoute Windows 健康检查 · {CheckedAt:yyyy-MM-dd HH:mm:ss}");
+        text.AppendLine($"CloudRoute Windows 健康检查 · {CheckedAt:yyyy-MM-dd HH:mm:ss}");
         text.AppendLine($"结果：{PassedCount} 通过 / {WarningCount} 提示 / {FailedCount} 失败");
         text.AppendLine();
 

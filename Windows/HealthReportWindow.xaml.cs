@@ -3,10 +3,10 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using PuffRoute.Models;
-using PuffRoute.ViewModels;
+using CloudRoute.Models;
+using CloudRoute.ViewModels;
 
-namespace PuffRoute;
+namespace CloudRoute;
 
 public partial class HealthReportWindow : Window
 {

@@ -1,14 +1,14 @@
 #!/bin/bash
-# puffroute-killswitch — 代理防泄漏开关 (PF 独立 anchor)
-#   on      只加载 puffroute anchor 并持有一个 PF enable reference
-#   off     只清空 puffroute anchor 并释放本工具的 reference
+# cloudroute-killswitch — 代理防泄漏开关 (PF 独立 anchor)
+#   on      只加载 cloudroute anchor 并持有一个 PF enable reference
+#   off     只清空 cloudroute anchor 并释放本工具的 reference
 #   status  同时检查 PF 与 anchor 真实状态
 
 PFCTL=/sbin/pfctl
 MAIN_CONF=/etc/pf.conf
-ANCHOR_CONF=/etc/pf.anchors/puffroute
-ANCHOR=puffroute
-TOKEN_FILE=/var/run/puffroute-killswitch.pf-token
+ANCHOR_CONF=/etc/pf.anchors/cloudroute
+ANCHOR=cloudroute
+TOKEN_FILE=/var/run/cloudroute-killswitch.pf-token
 SCRIPT_DIR=$(/usr/bin/dirname "$0")
 LEGACY_HELPER="$SCRIPT_DIR/killswitch"
 
@@ -20,12 +20,18 @@ if [ ! -x "$LEGACY_HELPER" ]; then
   fi
 fi
 
-# Preserve existing installations while the application name migrates from
-# Proxy Tools to PuffRoute. New installations use the PuffRoute-owned anchor.
-if ! /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"puffroute"' "$MAIN_CONF" 2>/dev/null \
-  && /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"killswitch"' "$MAIN_CONF" 2>/dev/null \
-  && [ -x "$LEGACY_HELPER" ]; then
-  exec "$LEGACY_HELPER" "$@"
+# Preserve both previous migrations: Proxy Tools -> PuffRoute -> CloudRoute.
+# New installations use cloudroute; an existing PuffRoute anchor remains valid.
+if ! /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"cloudroute"' "$MAIN_CONF" 2>/dev/null; then
+  if /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"puffroute"' "$MAIN_CONF" 2>/dev/null \
+    && [ -r /etc/pf.anchors/puffroute ]; then
+    ANCHOR_CONF=/etc/pf.anchors/puffroute
+    ANCHOR=puffroute
+    TOKEN_FILE=/var/run/puffroute-killswitch.pf-token
+  elif /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"killswitch"' "$MAIN_CONF" 2>/dev/null \
+    && [ -x "$LEGACY_HELPER" ]; then
+    exec "$LEGACY_HELPER" "$@"
+  fi
 fi
 
 if [ "$(/usr/bin/id -u)" -ne 0 ]; then
@@ -56,8 +62,8 @@ release_owned_reference() {
 
 case "${1:-status}" in
   on)
-    if ! /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"puffroute"' "$MAIN_CONF"; then
-      echo "❌ $MAIN_CONF 缺少 puffroute anchor 入口，未做改动"
+    if ! /usr/bin/grep -qE "^[[:space:]]*anchor[[:space:]]+\"$ANCHOR\"" "$MAIN_CONF"; then
+      echo "❌ $MAIN_CONF 缺少 $ANCHOR anchor 入口，未做改动"
       exit 1
     fi
     if ! "$PFCTL" -a "$ANCHOR" -nf "$ANCHOR_CONF" >/dev/null 2>&1; then
@@ -85,7 +91,7 @@ case "${1:-status}" in
     fi
 
     if anchor_enabled; then
-      echo "🛡️ Kill Switch 已开启 — 仅 puffroute anchor 生效，不会覆盖其他 PF 规则"
+      echo "🛡️ Kill Switch 已开启 — 仅 $ANCHOR anchor 生效，不会覆盖其他 PF 规则"
     else
       release_owned_reference
       echo "❌ Kill Switch 启用后验证失败"
@@ -99,7 +105,7 @@ case "${1:-status}" in
       exit 1
     fi
     release_owned_reference
-    echo "🔓 Kill Switch 已关闭 — 仅已清空 puffroute anchor，未全局关闭 PF"
+    echo "🔓 Kill Switch 已关闭 — 仅已清空 $ANCHOR anchor，未全局关闭 PF"
     echo "⚠️ 现在真实 IP 无 Kill Switch 保护，代理恢复后请重新开启"
     ;;
 
@@ -119,7 +125,7 @@ case "${1:-status}" in
     ;;
 
   *)
-    echo "用法: puffroute-killswitch on | off | status"
+    echo "用法: cloudroute-killswitch on | off | status"
     exit 2
     ;;
 esac

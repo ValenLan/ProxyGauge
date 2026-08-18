@@ -1,28 +1,34 @@
 #!/bin/bash
-# PuffRoute 代理健康检查脚本
-# 用法: bash ~/.local/bin/puffroute-check
+# CloudRoute 代理健康检查脚本
+# 用法: bash ~/.local/bin/cloudroute-check
 # 退出码: 0 = 链路检查通过; 1 = 有失败项
 
-CONFIG_FILE="${PUFFROUTE_CONFIG:-$HOME/.config/puffroute/config}"
+DEFAULT_CONFIG="$HOME/.config/cloudroute/config"
+LEGACY_CONFIG="$HOME/.config/puffroute/config"
+CONFIG_FILE="${CLOUDROUTE_CONFIG:-${PUFFROUTE_CONFIG:-$DEFAULT_CONFIG}}"
+if [ -z "${CLOUDROUTE_CONFIG:-}" ] && [ -z "${PUFFROUTE_CONFIG:-}" ] \
+  && [ ! -r "$CONFIG_FILE" ] && [ -r "$LEGACY_CONFIG" ]; then
+  CONFIG_FILE="$LEGACY_CONFIG"
+fi
 [ -r "$CONFIG_FILE" ] && . "$CONFIG_FILE"
 
-EXPECT_IP="${PUFFROUTE_EXPECT_IP:-}"
-MIXED="${PUFFROUTE_MIXED:-127.0.0.1:7890}"
-TIMEOUT="${PUFFROUTE_TIMEOUT:-6}"
-METADATA_TIMEOUT="${PUFFROUTE_METADATA_TIMEOUT:-12}"
-MIHOMO_SOCKET="${PUFFROUTE_MIHOMO_SOCKET:-/private/tmp/verge/verge-mihomo.sock}"
-GOOGLE_GROUP="${PUFFROUTE_GOOGLE_GROUP:-Google-Chain}"
-DEFAULT_GROUP="${PUFFROUTE_DEFAULT_GROUP:-PROXY}"
-GOOGLE_MIXED="${PUFFROUTE_GOOGLE_MIXED:-127.0.0.1:7891}"
-EXPECT_GOOGLE_IP="${PUFFROUTE_EXPECT_GOOGLE_IP:-}"
-ACTIVE_AI_PROBES="${PUFFROUTE_ACTIVE_AI_PROBES:-0}"
+EXPECT_IP="${CLOUDROUTE_EXPECT_IP:-${PUFFROUTE_EXPECT_IP:-}}"
+MIXED="${CLOUDROUTE_MIXED:-${PUFFROUTE_MIXED:-127.0.0.1:7890}}"
+TIMEOUT="${CLOUDROUTE_TIMEOUT:-${PUFFROUTE_TIMEOUT:-6}}"
+METADATA_TIMEOUT="${CLOUDROUTE_METADATA_TIMEOUT:-${PUFFROUTE_METADATA_TIMEOUT:-12}}"
+MIHOMO_SOCKET="${CLOUDROUTE_MIHOMO_SOCKET:-${PUFFROUTE_MIHOMO_SOCKET:-/private/tmp/verge/verge-mihomo.sock}}"
+GOOGLE_GROUP="${CLOUDROUTE_GOOGLE_GROUP:-${PUFFROUTE_GOOGLE_GROUP:-Google-Chain}}"
+DEFAULT_GROUP="${CLOUDROUTE_DEFAULT_GROUP:-${PUFFROUTE_DEFAULT_GROUP:-PROXY}}"
+GOOGLE_MIXED="${CLOUDROUTE_GOOGLE_MIXED:-${PUFFROUTE_GOOGLE_MIXED:-127.0.0.1:7891}}"
+EXPECT_GOOGLE_IP="${CLOUDROUTE_EXPECT_GOOGLE_IP:-${PUFFROUTE_EXPECT_GOOGLE_IP:-}}"
+ACTIVE_AI_PROBES="${CLOUDROUTE_ACTIVE_AI_PROBES:-${PUFFROUTE_ACTIVE_AI_PROBES:-0}}"
 MIXED_HOST="${MIXED%:*}"
 MIXED_PORT="${MIXED##*:}"
 GOOGLE_MIXED_HOST="${GOOGLE_MIXED%:*}"
 GOOGLE_MIXED_PORT="${GOOGLE_MIXED##*:}"
 SCRIPT_DIR=$(/usr/bin/dirname "$0")
-RISK_PARSER="${PUFFROUTE_RISK_PARSER:-$SCRIPT_DIR/puffroute-ip-risk.jxa}"
-CHAIN_PARSER="${PUFFROUTE_CHAIN_PARSER:-$SCRIPT_DIR/puffroute-chain-check.jxa}"
+RISK_PARSER="${CLOUDROUTE_RISK_PARSER:-${PUFFROUTE_RISK_PARSER:-$SCRIPT_DIR/cloudroute-ip-risk.jxa}}"
+CHAIN_PARSER="${CLOUDROUTE_CHAIN_PARSER:-${PUFFROUTE_CHAIN_PARSER:-$SCRIPT_DIR/cloudroute-chain-check.jxa}}"
 
 pass=0
 warn=0
@@ -61,9 +67,9 @@ render_risk_profile() {
     return
   fi
 
-  IPAPI_JSON=$(/usr/bin/mktemp -t puffroute-ipapi)
-  PROXYCHECK_JSON=$(/usr/bin/mktemp -t puffroute-proxycheck)
-  PEERINGDB_JSON=$(/usr/bin/mktemp -t puffroute-peeringdb)
+  IPAPI_JSON=$(/usr/bin/mktemp -t cloudroute-ipapi)
+  PROXYCHECK_JSON=$(/usr/bin/mktemp -t cloudroute-proxycheck)
+  PEERINGDB_JSON=$(/usr/bin/mktemp -t cloudroute-peeringdb)
   : > "$IPAPI_JSON"
   : > "$PROXYCHECK_JSON"
   : > "$PEERINGDB_JSON"
@@ -79,7 +85,7 @@ render_risk_profile() {
     extract-asn "$IPAPI_JSON" "$PROXYCHECK_JSON" "$risk_ip" 2>/dev/null || true)
   if printf '%s' "$ASN_NUMBER" | /usr/bin/grep -qE '^[0-9]+$'; then
     /usr/bin/curl -sS --retry 1 --retry-all-errors --retry-delay 1 \
-      -A "PuffRoute/1.2.7 (+https://github.com/ValenLan/PuffRoute)" \
+      -A "CloudRoute/1.3.0 (+https://github.com/ValenLan/PuffRoute)" \
       --proxy "http://$risk_proxy" --max-time "$METADATA_TIMEOUT" \
       "https://www.peeringdb.com/api/net?asn=$ASN_NUMBER" \
       -o "$PEERINGDB_JSON" 2>/dev/null || true
@@ -205,9 +211,9 @@ echo "===== 6. Google / Gemini 链式代理 ====="
 GOOGLE_EXT=""
 CHAIN_CONFIGURED=""
 if [ -S "$MIHOMO_SOCKET" ] && [ -r "$CHAIN_PARSER" ]; then
-  PROXIES_JSON=$(/usr/bin/mktemp -t puffroute-proxies)
-  RULES_JSON=$(/usr/bin/mktemp -t puffroute-rules)
-  DELAY_JSON=$(/usr/bin/mktemp -t puffroute-chain-delay)
+  PROXIES_JSON=$(/usr/bin/mktemp -t cloudroute-proxies)
+  RULES_JSON=$(/usr/bin/mktemp -t cloudroute-rules)
+  DELAY_JSON=$(/usr/bin/mktemp -t cloudroute-chain-delay)
   : > "$PROXIES_JSON"
   : > "$RULES_JSON"
   : > "$DELAY_JSON"
@@ -328,8 +334,8 @@ check_site() {
   url="$2"
   kind="$3"
   probe_proxy="$4"
-  headers=$(/usr/bin/mktemp -t puffroute-site-headers)
-  body=$(/usr/bin/mktemp -t puffroute-site-body)
+  headers=$(/usr/bin/mktemp -t cloudroute-site-headers)
+  body=$(/usr/bin/mktemp -t cloudroute-site-body)
   out=$(/usr/bin/curl -sS -D "$headers" -o "$body" -w '%{http_code} %{time_total}' \
     --retry 1 --retry-all-errors --retry-delay 1 \
     --proxy "http://$probe_proxy" --max-time "$TIMEOUT" "$url" 2>/dev/null)
@@ -369,7 +375,7 @@ else
   echo "  ℹ️ 未启用独立 Google / Gemini 链式出口；跳过可选出口确认"
 fi
 echo "  ℹ️ 默认不请求 Claude、ChatGPT、Gemini 网页或 API，避免健康检查制造机器人式访问记录"
-echo "  ℹ️ 账号可用性只在你的正常登录会话中确认；PuffRoute 不代替账号登录"
+echo "  ℹ️ 账号可用性只在你的正常登录会话中确认；CloudRoute 不代替账号登录"
 
 if [ "$ACTIVE_AI_PROBES" = "1" ]; then
   echo "  ⚠️ 已手动启用主动 AI API 探测；请求会到达对应平台"

@@ -2,9 +2,9 @@ using System.Diagnostics;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using Microsoft.Win32;
-using PuffRoute.Models;
+using CloudRoute.Models;
 
-namespace PuffRoute.Services;
+namespace CloudRoute.Services;
 
 public sealed class ProxyProbeService
 {

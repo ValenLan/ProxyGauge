@@ -3,9 +3,9 @@ set -euo pipefail
 
 SCRIPT_DIR=$(/usr/bin/dirname "$0")
 PROJECT_ROOT=$(cd "$SCRIPT_DIR/.." && /bin/pwd)
-CHECK="$PROJECT_ROOT/Scripts/puffroute-check.sh"
+CHECK="$PROJECT_ROOT/Scripts/cloudroute-check.sh"
 
-/usr/bin/grep -q 'ACTIVE_AI_PROBES="${PUFFROUTE_ACTIVE_AI_PROBES:-0}"' "$CHECK"
+/usr/bin/grep -Fq 'ACTIVE_AI_PROBES="${CLOUDROUTE_ACTIVE_AI_PROBES:-${PUFFROUTE_ACTIVE_AI_PROBES:-0}}"' "$CHECK"
 /usr/bin/grep -q 'Gemini API.*"\$GOOGLE_MIXED"' "$CHECK"
 /usr/bin/grep -q 'url=https://cp.cloudflare.com/generate_204' "$CHECK"
 /usr/bin/grep -q 'dscacheutil -q host -a name www.cloudflare.com' "$CHECK"
@@ -27,4 +27,4 @@ if /usr/bin/grep -Fq 'check no "尚未确认 Gemini 的独立出口 IP"' "$CHECK
   exit 1
 fi
 
-echo "PuffRoute low-risk health tests passed."
+echo "CloudRoute low-risk health tests passed."

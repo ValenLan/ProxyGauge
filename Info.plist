@@ -5,23 +5,23 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>zh_CN</string>
     <key>CFBundleDisplayName</key>
-    <string>PuffRoute</string>
+    <string>CloudRoute</string>
     <key>CFBundleExecutable</key>
-    <string>PuffRoute</string>
+    <string>CloudRoute</string>
     <key>CFBundleIconFile</key>
-    <string>PuffRoute.icns</string>
+    <string>CloudRoute.icns</string>
     <key>CFBundleIdentifier</key>
-    <string>com.valenlan.puffroute</string>
+    <string>com.valenlan.cloudroute</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>PuffRoute</string>
+    <string>CloudRoute</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.2.7</string>
+    <string>1.3.0</string>
     <key>CFBundleVersion</key>
-    <string>12</string>
+    <string>13</string>
     <key>LSMinimumSystemVersion</key>
     <string>26.0</string>
     <key>LSMultipleInstancesProhibited</key>

@@ -1,9 +1,9 @@
 using System.Windows;
 using System.Windows.Input;
-using PuffRoute.Services;
-using PuffRoute.ViewModels;
+using CloudRoute.Services;
+using CloudRoute.ViewModels;
 
-namespace PuffRoute;
+namespace CloudRoute;
 
 public partial class MainWindow : Window
 {
@@ -50,7 +50,7 @@ public partial class MainWindow : Window
             MessageBox.Show(
                 this,
                 $"健康检查没有完成。\n\n{exception.Message}",
-                "PuffRoute",
+                "CloudRoute",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
         }

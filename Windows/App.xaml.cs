@@ -1,6 +1,6 @@
 using System.Windows;
 
-namespace PuffRoute;
+namespace CloudRoute;
 
 public partial class App : Application
 {

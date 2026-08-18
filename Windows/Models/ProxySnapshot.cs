@@ -1,4 +1,4 @@
-namespace PuffRoute.Models;
+namespace CloudRoute.Models;
 
 public enum HealthLevel
 {

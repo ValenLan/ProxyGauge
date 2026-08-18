@@ -1,15 +1,25 @@
 #!/bin/bash
 
 RESOURCE_DIR=$(/usr/bin/dirname "$0")
-CHECK="$RESOURCE_DIR/puffroute-check.sh"
-[ -x "$CHECK" ] || CHECK="$HOME/.local/bin/puffroute-check"
+CHECK="$RESOURCE_DIR/cloudroute-check.sh"
+[ -x "$CHECK" ] || CHECK="$HOME/.local/bin/cloudroute-check"
 ADMIN_HELPER_DIR="$RESOURCE_DIR/AdminHelpers"
-[ -d "$ADMIN_HELPER_DIR" ] || ADMIN_HELPER_DIR="$HOME/.local/share/puffroute"
-ADMIN_RESULT="${PUFFROUTE_ADMIN_RESULT:-/var/run/puffroute/admin-result}"
-KILL_TOKEN="${PUFFROUTE_KILL_TOKEN:-/var/run/puffroute-killswitch.pf-token}"
-CONFIG_FILE="${PUFFROUTE_CONFIG:-$HOME/.config/puffroute/config}"
+[ -d "$ADMIN_HELPER_DIR" ] || ADMIN_HELPER_DIR="$HOME/.local/share/cloudroute"
+ADMIN_RESULT="${CLOUDROUTE_ADMIN_RESULT:-${PUFFROUTE_ADMIN_RESULT:-/var/run/cloudroute/admin-result}}"
+KILL_TOKEN="${CLOUDROUTE_KILL_TOKEN:-${PUFFROUTE_KILL_TOKEN:-/var/run/cloudroute-killswitch.pf-token}}"
+if [ -z "${CLOUDROUTE_KILL_TOKEN:-}" ] && [ -z "${PUFFROUTE_KILL_TOKEN:-}" ] \
+  && [ ! -e "$KILL_TOKEN" ] && [ -e /var/run/puffroute-killswitch.pf-token ]; then
+  KILL_TOKEN=/var/run/puffroute-killswitch.pf-token
+fi
+DEFAULT_CONFIG="$HOME/.config/cloudroute/config"
+LEGACY_CONFIG="$HOME/.config/puffroute/config"
+CONFIG_FILE="${CLOUDROUTE_CONFIG:-${PUFFROUTE_CONFIG:-$DEFAULT_CONFIG}}"
+if [ -z "${CLOUDROUTE_CONFIG:-}" ] && [ -z "${PUFFROUTE_CONFIG:-}" ] \
+  && [ ! -r "$CONFIG_FILE" ] && [ -r "$LEGACY_CONFIG" ]; then
+  CONFIG_FILE="$LEGACY_CONFIG"
+fi
 [ -r "$CONFIG_FILE" ] && . "$CONFIG_FILE"
-MIXED="${PUFFROUTE_MIXED:-127.0.0.1:7890}"
+MIXED="${CLOUDROUTE_MIXED:-${PUFFROUTE_MIXED:-127.0.0.1:7890}}"
 MIXED_HOST="${MIXED%:*}"
 MIXED_PORT="${MIXED##*:}"
 
@@ -122,9 +132,9 @@ run_admin() {
   local action_name admin_helper before_run after_run action_status
   action_name="$1"
   case "$action_name" in
-    on) admin_helper="$ADMIN_HELPER_DIR/PuffRoute Admin On.app" ;;
-    off) admin_helper="$ADMIN_HELPER_DIR/PuffRoute Admin Off.app" ;;
-    status) admin_helper="$ADMIN_HELPER_DIR/PuffRoute Admin Status.app" ;;
+    on) admin_helper="$ADMIN_HELPER_DIR/CloudRoute Admin On.app" ;;
+    off) admin_helper="$ADMIN_HELPER_DIR/CloudRoute Admin Off.app" ;;
+    status) admin_helper="$ADMIN_HELPER_DIR/CloudRoute Admin Status.app" ;;
     *) echo "非法的管理员操作: $action_name"; return 2 ;;
   esac
 

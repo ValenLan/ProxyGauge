@@ -64,9 +64,9 @@ final class ProxyModel: ObservableObject {
     @Published var tun = MetricState(title: "TUN 路由", symbol: "arrow.triangle.2.circlepath", value: "检查中", level: .idle)
     @Published var killSwitch = MetricState(title: "Kill Switch", symbol: "shield.fill", value: "未确认", level: .idle)
 
-    private let backendPath = Bundle.main.path(forResource: "puffroute-backend", ofType: "sh")
+    private let backendPath = Bundle.main.path(forResource: "cloudroute-backend", ofType: "sh")
         ?? FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".local/share/puffroute/puffroute-backend.sh").path
+            .appendingPathComponent(".local/share/cloudroute/cloudroute-backend.sh").path
 
     init() {
         Task { [weak self] in
@@ -185,7 +185,7 @@ final class ProxyModel: ObservableObject {
     }
 }
 
-private enum PuffPalette {
+private enum CloudPalette {
     static let coreMint = Color(red: 0.22, green: 0.82, blue: 0.48)
     static let portSky = Color(red: 0.29, green: 0.66, blue: 1.00)
     static let tunnelLilac = Color(red: 0.61, green: 0.48, blue: 1.00)
@@ -261,7 +261,7 @@ struct KillSwitchCard: View {
         switch metric.level {
         case .error: return metric.level.color
         case .warning: return .orange
-        case .ok, .idle: return PuffPalette.guardTeal
+        case .ok, .idle: return CloudPalette.guardTeal
         }
     }
 
@@ -622,10 +622,10 @@ struct HealthSectionCard: View {
             HStack(alignment: .top, spacing: 10) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(PuffPalette.portSky.opacity(0.14))
+                        .fill(CloudPalette.portSky.opacity(0.14))
                     Image(systemName: "safari.fill")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(PuffPalette.portSky)
+                        .foregroundStyle(CloudPalette.portSky)
                 }
                 .frame(width: 32, height: 32)
 
@@ -642,13 +642,13 @@ struct HealthSectionCard: View {
                 isolationButton(
                     "默认出口",
                     symbol: "network",
-                    tint: PuffPalette.portSky,
+                    tint: CloudPalette.portSky,
                     route: .defaultExit
                 )
                 isolationButton(
                     "Google 链路",
                     symbol: "point.3.connected.trianglepath.dotted",
-                    tint: PuffPalette.tunnelLilac,
+                    tint: CloudPalette.tunnelLilac,
                     route: .googleChain
                 )
                 Spacer(minLength: 0)
@@ -666,10 +666,10 @@ struct HealthSectionCard: View {
             }
         }
         .padding(11)
-        .background(PuffPalette.portSky.opacity(0.055), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .background(CloudPalette.portSky.opacity(0.055), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .stroke(PuffPalette.portSky.opacity(0.13), lineWidth: 1)
+                .stroke(CloudPalette.portSky.opacity(0.13), lineWidth: 1)
         }
     }
 
@@ -927,13 +927,13 @@ struct ResultView: View {
     }
 
     private func launchIsolatedBrowser(_ route: IsolatedBrowserRoute) {
-        let bundledPath = Bundle.main.path(forResource: "puffroute-private-browser", ofType: "sh")
+        let bundledPath = Bundle.main.path(forResource: "cloudroute-private-browser", ofType: "sh")
         let fallbackPath = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".local/bin/puffroute-private-browser").path
+            .appendingPathComponent(".local/bin/cloudroute-private-browser").path
         let scriptPath = bundledPath ?? fallbackPath
 
         guard FileManager.default.isExecutableFile(atPath: scriptPath) else {
-            isolationMessage = "隔离浏览器组件不可用，请重新安装 PuffRoute。"
+            isolationMessage = "隔离浏览器组件不可用，请重新安装 CloudRoute。"
             return
         }
 
@@ -969,10 +969,10 @@ struct RulePackCard: View {
             HStack(spacing: 9) {
                 ZStack {
                     Circle()
-                        .fill(PuffPalette.rulesViolet.opacity(0.15))
+                        .fill(CloudPalette.rulesViolet.opacity(0.15))
                     Image(systemName: "list.bullet.rectangle")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(PuffPalette.rulesViolet)
+                        .foregroundStyle(CloudPalette.rulesViolet)
                 }
                 .frame(width: 30, height: 30)
 
@@ -989,10 +989,10 @@ struct RulePackCard: View {
 
                 Text("管理")
                     .font(.callout.weight(.medium))
-                    .foregroundStyle(PuffPalette.rulesViolet)
+                    .foregroundStyle(CloudPalette.rulesViolet)
                     .padding(.horizontal, 11)
                     .padding(.vertical, 6)
-                    .background(PuffPalette.rulesViolet.opacity(0.11), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .background(CloudPalette.rulesViolet.opacity(0.11), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
             .padding(.horizontal, 12)
             .frame(maxWidth: .infinity, minHeight: 68)
@@ -1021,15 +1021,15 @@ struct RulePackView: View {
             HStack(spacing: 14) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(PuffPalette.rulesViolet.opacity(0.15))
+                        .fill(CloudPalette.rulesViolet.opacity(0.15))
                     Image(systemName: "point.3.connected.trianglepath.dotted")
                         .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(PuffPalette.rulesViolet)
+                        .foregroundStyle(CloudPalette.rulesViolet)
                 }
                 .frame(width: 50, height: 50)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("PuffRoute 规则包")
+                    Text("CloudRoute 规则包")
                         .font(.system(size: 21, weight: .semibold, design: .rounded))
                     Text("分流规则与 TUN DNS · 版本 \(version)")
                         .font(.callout)
@@ -1040,10 +1040,10 @@ struct RulePackView: View {
 
                 Text("不含订阅")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(PuffPalette.rulesViolet)
+                    .foregroundStyle(CloudPalette.rulesViolet)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
-                    .background(PuffPalette.rulesViolet.opacity(0.11), in: Capsule())
+                    .background(CloudPalette.rulesViolet.opacity(0.11), in: Capsule())
             }
 
             VStack(alignment: .leading, spacing: 10) {
@@ -1102,7 +1102,7 @@ struct RulePackView: View {
     }
 
     private var bundledRuleURL: URL? {
-        Bundle.main.url(forResource: "PuffRoute-Merge", withExtension: "yaml", subdirectory: "Rules")
+        Bundle.main.url(forResource: "CloudRoute-Merge", withExtension: "yaml", subdirectory: "Rules")
     }
 
     private func loadPreview() {
@@ -1129,8 +1129,8 @@ struct RulePackView: View {
         }
 
         let panel = NSSavePanel()
-        panel.title = "导出 PuffRoute 规则包"
-        panel.nameFieldStringValue = "PuffRoute-Merge.yaml"
+        panel.title = "导出 CloudRoute 规则包"
+        panel.nameFieldStringValue = "CloudRoute-Merge.yaml"
         panel.canCreateDirectories = true
         if let yamlType = UTType(filenameExtension: "yaml") {
             panel.allowedContentTypes = [yamlType]
@@ -1161,9 +1161,9 @@ struct ContentView: View {
                 columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 2),
                 spacing: 12
             ) {
-                MetricCard(metric: model.core, accent: PuffPalette.coreMint)
-                MetricCard(metric: model.port, accent: PuffPalette.portSky)
-                MetricCard(metric: model.tun, accent: PuffPalette.tunnelLilac)
+                MetricCard(metric: model.core, accent: CloudPalette.coreMint)
+                MetricCard(metric: model.port, accent: CloudPalette.portSky)
+                MetricCard(metric: model.tun, accent: CloudPalette.tunnelLilac)
                 KillSwitchCard(metric: model.killSwitch, isBusy: model.isBusy) { enabled in
                     if enabled {
                         model.enableKillSwitch()
@@ -1229,13 +1229,13 @@ struct ContentView: View {
                         .frame(width: 18, height: 18)
                 } else {
                     Image(systemName: "arrow.clockwise")
-                        .foregroundStyle(PuffPalette.portSky)
+                        .foregroundStyle(CloudPalette.portSky)
                         .frame(width: 18, height: 18)
                 }
             }
             .buttonStyle(.borderless)
             .padding(8)
-            .background(PuffPalette.portSky.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .background(CloudPalette.portSky.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
             .disabled(model.isBusy || model.isRefreshing)
             .help("刷新状态")
         }
@@ -1246,10 +1246,10 @@ struct ContentView: View {
             HStack(spacing: 9) {
                 ZStack {
                     Circle()
-                        .fill(PuffPalette.healthAzure.opacity(0.15))
+                        .fill(CloudPalette.healthAzure.opacity(0.15))
                     Image(systemName: "stethoscope")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(PuffPalette.healthAzure)
+                        .foregroundStyle(CloudPalette.healthAzure)
                 }
                 .frame(width: 30, height: 30)
 
@@ -1298,7 +1298,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         let lockPath = (NSTemporaryDirectory() as NSString)
-            .appendingPathComponent("com.valenlan.puffroute.lock")
+            .appendingPathComponent("com.valenlan.cloudroute.lock")
         singletonLockFD = Darwin.open(lockPath, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
 
         guard singletonLockFD >= 0,
@@ -1310,7 +1310,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             let currentPID = ProcessInfo.processInfo.processIdentifier
             let existing = NSRunningApplication
-                .runningApplications(withBundleIdentifier: "com.valenlan.puffroute")
+                .runningApplications(withBundleIdentifier: "com.valenlan.cloudroute")
                 .first { $0.processIdentifier != currentPID && !$0.isTerminated }
             existing?.activate(options: [.activateAllWindows])
 
@@ -1335,7 +1335,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func applyApplicationIcon() {
-        guard let iconURL = Bundle.main.url(forResource: "PuffRoute", withExtension: "icns"),
+        guard let iconURL = Bundle.main.url(forResource: "CloudRoute", withExtension: "icns"),
               let icon = NSImage(contentsOf: iconURL) else { return }
         NSApp.applicationIconImage = icon
         NSApp.dockTile.display()
@@ -1354,11 +1354,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 @main
-struct PuffRouteApp: App {
+struct CloudRouteApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        WindowGroup("PuffRoute") {
+        WindowGroup("CloudRoute") {
             ContentView()
         }
         .defaultSize(width: 720, height: 348)

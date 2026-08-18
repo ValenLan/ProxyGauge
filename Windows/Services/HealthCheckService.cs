@@ -2,9 +2,9 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.Text.Json;
-using PuffRoute.Models;
+using CloudRoute.Models;
 
-namespace PuffRoute.Services;
+namespace CloudRoute.Services;
 
 public sealed class HealthCheckService
 {
@@ -48,7 +48,7 @@ public sealed class HealthCheckService
             // probes. Match the macOS metadata budget without changing connect timeout.
             Timeout = TimeSpan.FromSeconds(Math.Max(config.TimeoutSeconds, 12))
         };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("PuffRoute/1.2.7 (+https://github.com/ValenLan/PuffRoute)");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("CloudRoute/1.3.0 (+https://github.com/ValenLan/PuffRoute)");
 
         var exitResult = await CheckExitIpAsync(client, config, cancellationToken);
         var riskTask = CheckIpRiskAsync(client, exitResult.Address, cancellationToken);
@@ -72,7 +72,7 @@ public sealed class HealthCheckService
                         HealthLevel.Ok),
                     new HealthCheckItem(
                         "账号状态",
-                        "只在用户自己的正常登录会话中确认；PuffRoute 不代替账号登录",
+                        "只在用户自己的正常登录会话中确认；CloudRoute 不代替账号登录",
                         HealthLevel.Idle)
                 ])
             ]

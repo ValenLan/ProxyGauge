@@ -1,9 +1,9 @@
 using System.Net;
 using System.Windows;
 using System.Windows.Input;
-using PuffRoute.Models;
+using CloudRoute.Models;
 
-namespace PuffRoute;
+namespace CloudRoute;
 
 public partial class SettingsWindow : Window
 {

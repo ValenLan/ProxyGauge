@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 
-namespace PuffRoute.ViewModels;
+namespace CloudRoute.ViewModels;
 
 public abstract class ObservableObject : INotifyPropertyChanged
 {

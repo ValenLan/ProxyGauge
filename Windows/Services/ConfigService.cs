@@ -1,8 +1,8 @@
 using System.IO;
 using System.Text.Json;
-using PuffRoute.Models;
+using CloudRoute.Models;
 
-namespace PuffRoute.Services;
+namespace CloudRoute.Services;
 
 public sealed class ConfigService
 {
@@ -14,6 +14,11 @@ public sealed class ConfigService
 
     public string ConfigPath { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "CloudRoute",
+        "config.json");
+
+    private string LegacyConfigPath { get; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "PuffRoute",
         "config.json");
 
@@ -21,13 +26,21 @@ public sealed class ConfigService
     {
         try
         {
-            if (!File.Exists(ConfigPath))
+            var sourcePath = File.Exists(ConfigPath)
+                ? ConfigPath
+                : LegacyConfigPath;
+            if (!File.Exists(sourcePath))
             {
                 return new AppConfig();
             }
 
-            var json = File.ReadAllText(ConfigPath);
-            return Normalize(JsonSerializer.Deserialize<AppConfig>(json) ?? new AppConfig());
+            var json = File.ReadAllText(sourcePath);
+            var config = Normalize(JsonSerializer.Deserialize<AppConfig>(json) ?? new AppConfig());
+            if (sourcePath == LegacyConfigPath && !File.Exists(ConfigPath))
+            {
+                Save(config);
+            }
+            return config;
         }
         catch
         {

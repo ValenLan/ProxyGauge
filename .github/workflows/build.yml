@@ -14,7 +14,7 @@ jobs:
       version: ${{ steps.package.outputs.version }}
     steps:
       - uses: actions/checkout@v6
-      - name: Build PuffRoute
+      - name: Build CloudRoute
         run: |
           chmod +x Scripts/*.sh
           Scripts/test-backend.sh
@@ -24,12 +24,12 @@ jobs:
           Scripts/test-private-browser.sh
           Scripts/build.sh
       - name: Verify bundle
-        run: codesign --verify --deep --strict --verbose=2 build/PuffRoute.app
+        run: codesign --verify --deep --strict --verbose=2 build/CloudRoute.app
       - name: Package macOS app
         id: package
         run: |
           VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)
-          ARCHIVE="dist/PuffRoute-$VERSION-macOS-arm64.zip"
+          ARCHIVE="dist/CloudRoute-$VERSION-macOS-arm64.zip"
           Scripts/package-macos.sh "$ARCHIVE"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "archive=$ARCHIVE" >> "$GITHUB_OUTPUT"
@@ -50,10 +50,10 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 8.0.x
-      - name: Publish PuffRoute for Windows
+      - name: Publish CloudRoute for Windows
         shell: pwsh
         run: |
-          dotnet publish Windows/PuffRoute.Windows.csproj `
+          dotnet publish Windows/CloudRoute.Windows.csproj `
             --configuration Release `
             --runtime ${{ matrix.runtime }} `
             --self-contained true `
@@ -64,9 +64,9 @@ jobs:
             -p:DebugType=None `
             -p:DebugSymbols=false
           Copy-Item Windows/README.md "publish/${{ matrix.runtime }}/README-Windows.md"
-          $Project = [xml](Get-Content Windows/PuffRoute.Windows.csproj -Raw)
+          $Project = [xml](Get-Content Windows/CloudRoute.Windows.csproj -Raw)
           $Version = $Project.Project.PropertyGroup.Version
-          $Archive = "PuffRoute-$Version-${{ matrix.runtime }}.zip"
+          $Archive = "CloudRoute-$Version-${{ matrix.runtime }}.zip"
           Compress-Archive `
             -Path "publish/${{ matrix.runtime }}/*" `
             -DestinationPath $Archive
@@ -97,27 +97,27 @@ jobs:
       - name: Download release packages
         uses: actions/download-artifact@v8
         with:
-          pattern: PuffRoute-*.zip
+          pattern: CloudRoute-*.zip
           path: release-assets
           merge-multiple: true
           skip-decompress: true
       - name: Generate checksums
         run: |
           shopt -s nullglob
-          ASSETS=(release-assets/PuffRoute-*.zip)
+          ASSETS=(release-assets/CloudRoute-*.zip)
           if [ "${#ASSETS[@]}" -ne 3 ]; then
             echo "Expected 3 release packages, found ${#ASSETS[@]}." >&2
             exit 1
           fi
           cd release-assets
-          sha256sum PuffRoute-*.zip > SHA256SUMS.txt
+          sha256sum CloudRoute-*.zip > SHA256SUMS.txt
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" \
-            release-assets/PuffRoute-*.zip \
+            release-assets/CloudRoute-*.zip \
             release-assets/SHA256SUMS.txt \
             --verify-tag \
             --generate-notes \
-            --title "PuffRoute $GITHUB_REF_NAME"
+            --title "CloudRoute Monitor $GITHUB_REF_NAME"
