@@ -1,0 +1,23 @@
+{
+  "ip": "203.0.113.8",
+  "is_datacenter": true,
+  "is_tor": false,
+  "is_proxy": false,
+  "is_vpn": false,
+  "is_abuser": true,
+  "company": {
+    "name": "Example Network",
+    "abuser_score": "0.014 (Elevated)",
+    "type": "hosting"
+  },
+  "asn": {
+    "asn": 64500,
+    "org": "Example ASN",
+    "type": "hosting",
+    "abuser_score": "0.0072 (Low)"
+  },
+  "location": {
+    "country": "United States",
+    "city": "Los Angeles"
+  }
+}

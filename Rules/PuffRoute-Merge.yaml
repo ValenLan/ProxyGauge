@@ -1,0 +1,54 @@
+# PuffRoute Rule Pack 2026.08
+#
+# Portable Clash Verge Rev / Mihomo merge profile.
+# This file contains routing and DNS rules only. It never contains a
+# subscription URL, proxy node, credential, or server address.
+#
+# Requirement: the active subscription should expose a proxy group named
+# PROXY. If your group uses another name, replace the final field below.
+
+prepend-rules:
+  # OpenAI / ChatGPT
+  - DOMAIN-SUFFIX,openai.com,PROXY
+  - DOMAIN-SUFFIX,chatgpt.com,PROXY
+  - DOMAIN-SUFFIX,oaistatic.com,PROXY
+  - DOMAIN-SUFFIX,oaiusercontent.com,PROXY
+
+  # Anthropic / Claude
+  - DOMAIN-SUFFIX,anthropic.com,PROXY
+  - DOMAIN-SUFFIX,claude.ai,PROXY
+
+  # Google AI
+  - DOMAIN,gemini.google.com,PROXY
+  - DOMAIN,ai.google.dev,PROXY
+  - DOMAIN,generativelanguage.googleapis.com,PROXY
+
+  # GitHub and Copilot
+  - DOMAIN-SUFFIX,github.com,PROXY
+  - DOMAIN-SUFFIX,githubusercontent.com,PROXY
+  - DOMAIN-SUFFIX,githubcopilot.com,PROXY
+
+# TUN requires a DNS receiver for hijacked port 53 traffic. Fake-IP also
+# allows domain rules above to match before a real address is resolved.
+dns:
+  enable: true
+  ipv6: false
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  listen: 127.0.0.1:1053
+  fake-ip-filter:
+    - "*.lan"
+    - "*.local"
+    - "*.arpa"
+    - localhost
+    - time.*.com
+    - ntp.*.com
+  default-nameserver:
+    - 223.5.5.5
+    - 119.29.29.29
+  nameserver:
+    - 223.5.5.5
+    - https://doh.pub/dns-query
+    - https://dns.alidns.com/dns-query
+  proxy-server-nameserver:
+    - 223.5.5.5

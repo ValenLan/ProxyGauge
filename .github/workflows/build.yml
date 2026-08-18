@@ -13,6 +13,7 @@ jobs:
         run: |
           chmod +x Scripts/*.sh
           Scripts/test-backend.sh
+          Scripts/test-ip-risk.sh
           Scripts/build.sh
       - name: Verify bundle
         run: codesign --verify --deep --strict --verbose=2 build/PuffRoute.app

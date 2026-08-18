@@ -8,6 +8,7 @@ namespace PuffRoute;
 public partial class MainWindow : Window
 {
     private readonly MainViewModel _viewModel;
+    private readonly RulePackService _rulePackService;
 
     public MainWindow()
     {
@@ -16,6 +17,7 @@ public partial class MainWindow : Window
         var configService = new ConfigService();
         var probeService = new ProxyProbeService();
         var healthCheckService = new HealthCheckService(probeService);
+        _rulePackService = new RulePackService();
         _viewModel = new MainViewModel(configService, probeService, healthCheckService);
         DataContext = _viewModel;
 
@@ -65,6 +67,9 @@ public partial class MainWindow : Window
         _viewModel.SaveConfig(dialog.Config);
         await _viewModel.RefreshAsync();
     }
+
+    private void RulesButton_Click(object sender, RoutedEventArgs e) =>
+        new RulePackWindow(_rulePackService) { Owner = this }.ShowDialog();
 
     private void MinimizeButton_Click(object sender, RoutedEventArgs e) =>
         WindowState = WindowState.Minimized;

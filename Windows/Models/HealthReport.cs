@@ -2,15 +2,28 @@ using System.Text;
 
 namespace PuffRoute.Models;
 
-public sealed record HealthCheckItem(string Label, string Detail, bool Passed)
+public sealed record HealthCheckItem(string Label, string Detail, HealthLevel Level)
 {
-    public string Mark => Passed ? "✓" : "×";
-    public string LevelKey => Passed ? "Ok" : "Error";
+    public HealthCheckItem(string label, string detail, bool passed)
+        : this(label, detail, passed ? HealthLevel.Ok : HealthLevel.Error)
+    {
+    }
+
+    public string Mark => Level switch
+    {
+        HealthLevel.Ok => "✓",
+        HealthLevel.Warning => "!",
+        HealthLevel.Error => "×",
+        _ => "i"
+    };
+
+    public bool Passed => Level == HealthLevel.Ok;
+    public string LevelKey => Level.ToString();
 }
 
 public sealed record HealthCheckSection(string Title, IReadOnlyList<HealthCheckItem> Items)
 {
-    public bool Passed => Items.All(item => item.Passed);
+    public bool Passed => Items.All(item => item.Level != HealthLevel.Error);
 }
 
 public sealed class HealthReport
@@ -18,8 +31,9 @@ public sealed class HealthReport
     public required DateTime CheckedAt { get; init; }
     public required IReadOnlyList<HealthCheckSection> Sections { get; init; }
 
-    public int PassedCount => Sections.SelectMany(section => section.Items).Count(item => item.Passed);
-    public int FailedCount => Sections.SelectMany(section => section.Items).Count(item => !item.Passed);
+    public int PassedCount => Sections.SelectMany(section => section.Items).Count(item => item.Level == HealthLevel.Ok);
+    public int WarningCount => Sections.SelectMany(section => section.Items).Count(item => item.Level == HealthLevel.Warning);
+    public int FailedCount => Sections.SelectMany(section => section.Items).Count(item => item.Level == HealthLevel.Error);
     public bool Passed => FailedCount == 0;
 
     public string ToPlainText()

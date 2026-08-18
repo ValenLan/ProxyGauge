@@ -124,9 +124,11 @@
                 <Grid Grid.Row="3">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="13" />
+                        <ColumnDefinition Width="10" />
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="13" />
+                        <ColumnDefinition Width="10" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="10" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
 
@@ -184,6 +186,32 @@
                                 </StackPanel>
                             </StackPanel>
                             <TextBlock Grid.Row="1" Text="{Binding Route.Detail}" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" VerticalAlignment="Bottom" />
+                        </Grid>
+                    </Border>
+
+                    <Border Grid.Column="6" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="14" Padding="15">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <StackPanel Orientation="Horizontal">
+                                <Border Width="34" Height="34" CornerRadius="11" Background="#223D76AD">
+                                    <TextBlock Text="&#xE8A5;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Foreground="{StaticResource AccentBrush}" FontSize="13" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <StackPanel Margin="11,-1,0,0">
+                                    <TextBlock Text="规则包" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                                    <TextBlock Text="2026.08" FontSize="17" FontWeight="SemiBold" Margin="0,3,0,0" />
+                                </StackPanel>
+                            </StackPanel>
+                            <Button Grid.Row="1"
+                                    Style="{StaticResource QuietButtonStyle}"
+                                    Content="管理"
+                                    Padding="11,5"
+                                    FontSize="11"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Bottom"
+                                    Click="RulesButton_Click" />
                         </Grid>
                     </Border>
                 </Grid>

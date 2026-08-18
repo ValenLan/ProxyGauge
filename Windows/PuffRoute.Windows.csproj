@@ -8,12 +8,15 @@
     <AssemblyName>PuffRoute</AssemblyName>
     <RootNamespace>PuffRoute</RootNamespace>
     <ApplicationIcon>Assets\PuffRoute.ico</ApplicationIcon>
-    <Version>1.0.0</Version>
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <FileVersion>1.0.0.0</FileVersion>
+    <Version>1.1.0</Version>
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
+    <FileVersion>1.1.0.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
     <Resource Include="Assets\PuffRoute.ico" />
+    <EmbeddedResource Include="..\Rules\PuffRoute-Merge.yaml"
+                      Link="Rules\PuffRoute-Merge.yaml"
+                      LogicalName="PuffRoute.Rules.PuffRoute-Merge.yaml" />
   </ItemGroup>
 </Project>

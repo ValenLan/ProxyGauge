@@ -11,6 +11,8 @@ MIXED="${PUFFROUTE_MIXED:-127.0.0.1:7890}"
 TIMEOUT="${PUFFROUTE_TIMEOUT:-6}"
 MIXED_HOST="${MIXED%:*}"
 MIXED_PORT="${MIXED##*:}"
+SCRIPT_DIR=$(/usr/bin/dirname "$0")
+RISK_PARSER="${PUFFROUTE_RISK_PARSER:-$SCRIPT_DIR/puffroute-ip-risk.jxa}"
 
 pass=0
 fail=0
@@ -98,7 +100,34 @@ else
   check no "无法经代理获取出口 IP (多个查询源均失败)"
 fi
 
-echo "===== 5. AI 站点网络可达性 (走代理) ====="
+echo "===== 5. 出口 IP 风险画像 ====="
+if [ -n "$EXT" ] && [ -r "$RISK_PARSER" ]; then
+  IPAPI_JSON=$(/usr/bin/mktemp -t puffroute-ipapi)
+  PROXYCHECK_JSON=$(/usr/bin/mktemp -t puffroute-proxycheck)
+  : > "$IPAPI_JSON"
+  : > "$PROXYCHECK_JSON"
+
+  /usr/bin/curl -sS --retry 1 --retry-all-errors --retry-delay 1 \
+    --proxy "http://$MIXED" --max-time "$TIMEOUT" \
+    "https://api.ipapi.is/?q=$EXT" -o "$IPAPI_JSON" 2>/dev/null || true
+  /usr/bin/curl -sS --retry 1 --retry-all-errors --retry-delay 1 \
+    --proxy "http://$MIXED" --max-time "$TIMEOUT" \
+    "https://proxycheck.io/v3/$EXT" -o "$PROXYCHECK_JSON" 2>/dev/null || true
+
+  RISK_OUTPUT=$(/usr/bin/osascript -l JavaScript "$RISK_PARSER" \
+    "$IPAPI_JSON" "$PROXYCHECK_JSON" "$EXT" 2>/dev/null || true)
+  /bin/rm -f "$IPAPI_JSON" "$PROXYCHECK_JSON"
+
+  if [ -n "$RISK_OUTPUT" ]; then
+    /usr/bin/printf '%s\n' "$RISK_OUTPUT"
+  else
+    echo "  ℹ️ IP 风险画像暂不可用；不影响代理链路检查结果"
+  fi
+else
+  echo "  ℹ️ 未取得出口 IP，暂时无法查询风险画像"
+fi
+
+echo "===== 6. AI 站点网络可达性 (走代理) ====="
 for h in api.openai.com api.anthropic.com claude.ai chatgpt.com generativelanguage.googleapis.com; do
   out=$(/usr/bin/curl -s -o /dev/null -w '%{http_code} %{time_total}' --retry 1 --retry-all-errors --retry-delay 1 --proxy "http://$MIXED" --max-time "$TIMEOUT" "https://$h" 2>/dev/null)
   code=${out%% *}
@@ -114,7 +143,7 @@ for h in api.openai.com api.anthropic.com claude.ai chatgpt.com generativelangua
   fi
 done
 
-echo "===== 6. 外网连通性 (204 探测) ====="
+echo "===== 7. 外网连通性 (204 探测) ====="
 code=$(/usr/bin/curl -s -o /dev/null -w '%{http_code}' --retry 1 --retry-all-errors --retry-delay 1 --proxy "http://$MIXED" --max-time "$TIMEOUT" https://www.google.com/generate_204 2>/dev/null)
 if [ "$code" = "204" ]; then
   check ok "Google generate_204 正常 (代理出网通畅)"

@@ -1,0 +1,111 @@
+ObjC.import("Foundation");
+
+function readJSON(path) {
+    if (!path) return {};
+    const data = $.NSData.dataWithContentsOfFile(path);
+    if (!data) return {};
+    const object = $.NSJSONSerialization.JSONObjectWithDataOptionsError(data, 0, null);
+    return object ? ObjC.deepUnwrap(object) : {};
+}
+
+function valueAt(object, path) {
+    let current = object;
+    for (const key of path) {
+        if (current === null || current === undefined || typeof current !== "object") return null;
+        current = current[key];
+    }
+    return current === undefined ? null : current;
+}
+
+function text(value) {
+    return value === null || value === undefined || value === "" ? null : String(value);
+}
+
+function riskLabel(score) {
+    if (score <= 25) return "低";
+    if (score <= 50) return "中";
+    if (score <= 75) return "高";
+    return "很高";
+}
+
+function run(argv) {
+    const ipapi = readJSON(argv[0]);
+    const proxycheck = readJSON(argv[1]);
+    const address = argv[2] || "";
+    const proxyResult = proxycheck[address] || {};
+    const detections = proxyResult.detections || {};
+    const network = proxyResult.network || {};
+    const asn = ipapi.asn || {};
+    const company = ipapi.company || {};
+    const location = ipapi.location || {};
+    const lines = [];
+
+    lines.push("  ℹ️ 数据源: ipapi.is / proxycheck.io（出口 IP 会提交给这两个服务）");
+
+    const asnNumber = text(asn.asn) || text(network.asn);
+    const organisation = text(asn.org) || text(network.provider) || text(company.name);
+    if (asnNumber || organisation) {
+        const normalizedASN = asnNumber && !asnNumber.toUpperCase().startsWith("AS") ? `AS${asnNumber}` : asnNumber;
+        lines.push(`  ℹ️ ASN: ${[normalizedASN, organisation].filter(Boolean).join(" · ")}`);
+    }
+
+    const networkType = text(asn.type) || text(company.type) || text(network.type);
+    const country = text(location.country);
+    const city = text(location.city);
+    if (networkType || country || city) {
+        const parts = [];
+        if (networkType) parts.push(`网络类型 ${networkType}`);
+        if (country || city) parts.push([country, city].filter(Boolean).join(" "));
+        lines.push(`  ℹ️ ${parts.join(" · ")}`);
+    }
+
+    const risk = Number(detections.risk);
+    const confidence = Number(detections.confidence);
+    if (Number.isFinite(risk)) {
+        const marker = risk <= 25 ? "✅" : "⚠️";
+        const confidenceText = Number.isFinite(confidence) ? ` · 置信度 ${confidence}%` : "";
+        lines.push(`  ${marker} proxycheck 风险分: ${risk}/100（${riskLabel(risk)}）${confidenceText}`);
+    } else {
+        lines.push("  ℹ️ proxycheck 风险分暂不可用（可能已限流）");
+    }
+
+    const flags = [];
+    const flagMap = [
+        ["hosting", "数据中心"],
+        ["proxy", "代理出口"],
+        ["vpn", "VPN"],
+        ["tor", "Tor"],
+        ["compromised", "疑似被入侵"],
+        ["scraper", "爬虫"],
+        ["anonymous", "匿名网络"]
+    ];
+    for (const [key, label] of flagMap) {
+        if (detections[key] === true) flags.push(label);
+    }
+    if (ipapi.is_abuser === true && !flags.includes("滥用记录")) flags.push("滥用记录");
+    if (ipapi.is_vpn === true && !flags.includes("VPN")) flags.push("VPN");
+    if (ipapi.is_proxy === true && !flags.includes("代理出口")) flags.push("代理出口");
+    if (ipapi.is_tor === true && !flags.includes("Tor")) flags.push("Tor");
+    if (ipapi.is_datacenter === true && !flags.includes("数据中心")) flags.push("数据中心");
+
+    if (flags.length > 0) {
+        lines.push(`  ⚠️ 风险标签: ${flags.join(" / ")}`);
+    } else if (Object.keys(detections).length > 0 || Object.keys(ipapi).length > 0) {
+        lines.push("  ✅ 未发现代理、VPN、Tor 或滥用标签");
+    }
+
+    const companyScore = text(company.abuser_score);
+    const asnScore = text(asn.abuser_score);
+    if (companyScore || asnScore) {
+        const scores = [];
+        if (companyScore) scores.push(`组织 ${companyScore}`);
+        if (asnScore) scores.push(`ASN ${asnScore}`);
+        lines.push(`  ℹ️ 滥用指标: ${scores.join(" · ")}`);
+    }
+
+    if (lines.length === 1) {
+        lines.push("  ℹ️ IP 风险画像暂不可用；不影响代理链路检查结果");
+    }
+    lines.push("  ℹ️ 风险数据来自第三方情报，只能作为参考，不能代表目标网站一定放行或封禁");
+    return lines.join("\n");
+}

@@ -7,7 +7,11 @@
 3. mixed 地址通常为 `127.0.0.1`，默认端口为 `7890`
 4. 回到主界面刷新状态，或运行“健康检查”
 
-PuffRoute 会读取 Mihomo/Clash Verge 的本地进程、端口、系统代理和 TUN 状态。
+PuffRoute 会读取 Mihomo/Clash Verge 的本地进程、端口、系统代理和 TUN 状态，并在
+健康检查中显示出口 IP、ASN、proxycheck.io 风险分与 ipapi.is 风险标签。
+
+主界面的第四张“规则包”卡片可以预览、复制或导出独立的 Merge YAML。规则包不包含
+订阅地址、节点或凭据；默认使用名为 `PROXY` 的策略组。
 健康检查产生的网络请求只通过你设置的本地代理发送。
 
 ## 配置位置

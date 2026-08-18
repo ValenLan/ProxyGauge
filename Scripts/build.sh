@@ -13,6 +13,7 @@ fi
 /bin/mkdir -p \
   "$APP/Contents/MacOS" \
   "$APP/Contents/Resources/AdminHelpers" \
+  "$APP/Contents/Resources/Rules" \
   "$BUILD_DIR/module-cache"
 
 /usr/bin/xcrun swiftc \
@@ -26,6 +27,8 @@ fi
 /bin/cp "$PROJECT_ROOT/Scripts/puffroute-backend.sh" "$APP/Contents/Resources/puffroute-backend.sh"
 /bin/cp "$PROJECT_ROOT/Scripts/puffroute-check.sh" "$APP/Contents/Resources/puffroute-check.sh"
 /bin/cp "$PROJECT_ROOT/Scripts/puffroute-killswitch" "$APP/Contents/Resources/puffroute-killswitch"
+/bin/cp "$PROJECT_ROOT/Scripts/puffroute-ip-risk.jxa" "$APP/Contents/Resources/puffroute-ip-risk.jxa"
+/bin/cp "$PROJECT_ROOT/Rules/PuffRoute-Merge.yaml" "$APP/Contents/Resources/Rules/PuffRoute-Merge.yaml"
 
 for action in On Off Status; do
   /usr/bin/osacompile -l AppleScript \
@@ -37,11 +40,14 @@ done
   "$APP/Contents/MacOS/PuffRoute" \
   "$APP/Contents/Resources/puffroute-backend.sh" \
   "$APP/Contents/Resources/puffroute-check.sh" \
-  "$APP/Contents/Resources/puffroute-killswitch"
+  "$APP/Contents/Resources/puffroute-killswitch" \
+  "$APP/Contents/Resources/puffroute-ip-risk.jxa"
 
 for required_path in \
   "$APP/Contents/Resources/puffroute-check.sh" \
   "$APP/Contents/Resources/puffroute-killswitch" \
+  "$APP/Contents/Resources/puffroute-ip-risk.jxa" \
+  "$APP/Contents/Resources/Rules/PuffRoute-Merge.yaml" \
   "$APP/Contents/Resources/AdminHelpers/PuffRoute Admin On.app" \
   "$APP/Contents/Resources/AdminHelpers/PuffRoute Admin Off.app" \
   "$APP/Contents/Resources/AdminHelpers/PuffRoute Admin Status.app"; do

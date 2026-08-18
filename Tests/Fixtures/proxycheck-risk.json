@@ -1,0 +1,21 @@
+{
+  "status": "ok",
+  "203.0.113.8": {
+    "network": {
+      "asn": "AS64500",
+      "provider": "Example Network",
+      "type": "Hosting"
+    },
+    "detections": {
+      "proxy": false,
+      "vpn": false,
+      "compromised": false,
+      "scraper": false,
+      "tor": false,
+      "hosting": true,
+      "anonymous": false,
+      "risk": 42,
+      "confidence": 96
+    }
+  }
+}

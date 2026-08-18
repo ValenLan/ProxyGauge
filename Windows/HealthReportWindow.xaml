@@ -63,6 +63,8 @@
                         <StackPanel Grid.Column="1" Orientation="Horizontal">
                             <TextBlock Text="{Binding PassedText}" Foreground="{StaticResource SuccessBrush}" FontSize="11" FontWeight="SemiBold" />
                             <TextBlock Text="  ·  " Foreground="#53667D" FontSize="11" />
+                            <TextBlock Text="{Binding WarningText}" Foreground="{StaticResource WarningBrush}" FontSize="11" FontWeight="SemiBold" />
+                            <TextBlock Text="  ·  " Foreground="#53667D" FontSize="11" />
                             <TextBlock Text="{Binding FailedText}" Foreground="{StaticResource ErrorBrush}" FontSize="11" FontWeight="SemiBold" />
                         </StackPanel>
                     </Grid>
@@ -100,6 +102,14 @@
                                                         <DataTrigger Binding="{Binding Passed}" Value="True">
                                                             <Setter TargetName="ResultDot" Property="Background" Value="#2250D68A" />
                                                             <Setter TargetName="ResultMark" Property="Foreground" Value="{StaticResource SuccessBrush}" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding LevelKey}" Value="Warning">
+                                                            <Setter TargetName="ResultDot" Property="Background" Value="#22F3BC64" />
+                                                            <Setter TargetName="ResultMark" Property="Foreground" Value="{StaticResource WarningBrush}" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding LevelKey}" Value="Idle">
+                                                            <Setter TargetName="ResultDot" Property="Background" Value="#22718096" />
+                                                            <Setter TargetName="ResultMark" Property="Foreground" Value="{StaticResource IdleBrush}" />
                                                         </DataTrigger>
                                                     </DataTemplate.Triggers>
                                                 </DataTemplate>

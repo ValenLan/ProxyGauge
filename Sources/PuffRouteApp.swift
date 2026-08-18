@@ -1,6 +1,7 @@
 import AppKit
 import Darwin
 import SwiftUI
+import UniformTypeIdentifiers
 
 enum HealthLevel: String, Sendable {
     case ok
@@ -209,12 +210,14 @@ struct MetricCard: View {
 
 enum HealthItemKind {
     case passed
+    case warning
     case failed
     case info
 
     var color: Color {
         switch self {
         case .passed: return Color(red: 0.17, green: 0.66, blue: 0.43)
+        case .warning: return .orange
         case .failed: return Color(red: 0.91, green: 0.31, blue: 0.29)
         case .info: return .secondary
         }
@@ -223,6 +226,7 @@ enum HealthItemKind {
     var symbol: String {
         switch self {
         case .passed: return "checkmark"
+        case .warning: return "exclamationmark"
         case .failed: return "exclamationmark"
         case .info: return "info"
         }
@@ -244,12 +248,17 @@ struct HealthCheckSection: Identifiable {
     var hasFailure: Bool {
         items.contains { $0.kind == .failed }
     }
+
+    var hasWarning: Bool {
+        items.contains { $0.kind == .warning }
+    }
 }
 
 struct HealthReport {
     let checkedAt: String?
     let sections: [HealthCheckSection]
     let passCount: Int
+    let warningCount: Int
     let failCount: Int
 
     init(output: String) {
@@ -259,6 +268,7 @@ struct HealthReport {
         var currentTitle: String?
         var currentItems: [HealthCheckItem] = []
         var passed = 0
+        var warnings = 0
         var failed = 0
 
         func flushSection() {
@@ -320,6 +330,15 @@ struct HealthReport {
                         text: String(line.dropFirst()).trimmingCharacters(in: .whitespaces)
                     )
                 )
+            } else if line.hasPrefix("⚠️") {
+                warnings += 1
+                currentItems.append(
+                    HealthCheckItem(
+                        kind: .warning,
+                        text: line.replacingOccurrences(of: "⚠️", with: "")
+                            .trimmingCharacters(in: .whitespaces)
+                    )
+                )
             } else if line.hasPrefix("ℹ️") {
                 currentItems.append(
                     HealthCheckItem(
@@ -336,6 +355,7 @@ struct HealthReport {
         checkedAt = timestamp
         sections = parsedSections
         passCount = passed
+        warningCount = warnings
         failCount = failed
     }
 }
@@ -366,7 +386,15 @@ struct HealthSectionCard: View {
     let section: HealthCheckSection
 
     private var accent: Color {
-        section.hasFailure ? Color(red: 0.91, green: 0.31, blue: 0.29) : .blue
+        if section.hasFailure { return Color(red: 0.91, green: 0.31, blue: 0.29) }
+        if section.hasWarning { return .orange }
+        return .blue
+    }
+
+    private var statusSymbol: String {
+        if section.hasFailure { return "xmark.circle.fill" }
+        if section.hasWarning { return "exclamationmark.circle.fill" }
+        return "checkmark.circle.fill"
     }
 
     var body: some View {
@@ -382,7 +410,7 @@ struct HealthSectionCard: View {
                     Text(section.title)
                         .font(.system(size: 14, weight: .semibold))
                     Spacer()
-                    Image(systemName: section.hasFailure ? "exclamationmark.circle.fill" : "checkmark.circle.fill")
+                    Image(systemName: statusSymbol)
                         .foregroundStyle(accent)
                 }
 
@@ -397,7 +425,7 @@ struct HealthSectionCard: View {
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(section.hasFailure ? accent.opacity(0.22) : Color.primary.opacity(0.06), lineWidth: 1)
+                .stroke(section.hasFailure || section.hasWarning ? accent.opacity(0.22) : Color.primary.opacity(0.06), lineWidth: 1)
         }
     }
 }
@@ -425,12 +453,14 @@ struct ResultView: View {
         if report.failCount > 0 || (!result.success && report.sections.isEmpty) {
             return Color(red: 0.91, green: 0.31, blue: 0.29)
         }
+        if report.warningCount > 0 { return .orange }
         return Color(red: 0.17, green: 0.66, blue: 0.43)
     }
 
     private var healthTitle: String {
         if report.sections.isEmpty { return "未收到检查详情" }
         if report.failCount > 0 { return "发现 \(report.failCount) 项问题" }
+        if report.warningCount > 0 { return "代理可用，发现 \(report.warningCount) 项风险提示" }
         return "代理链路正常"
     }
 
@@ -449,7 +479,7 @@ struct ResultView: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 13, style: .continuous)
                         .fill(healthColor.opacity(0.13))
-                    Image(systemName: report.failCount == 0 && result.success ? "checkmark" : "exclamationmark")
+                    Image(systemName: report.failCount == 0 && report.warningCount == 0 && result.success ? "checkmark" : "exclamationmark")
                         .font(.system(size: 17, weight: .bold))
                         .foregroundStyle(healthColor)
                 }
@@ -469,6 +499,9 @@ struct ResultView: View {
 
                 HStack(spacing: 7) {
                     summaryBadge("\(report.passCount) 通过", color: Color(red: 0.17, green: 0.66, blue: 0.43))
+                    if report.warningCount > 0 {
+                        summaryBadge("\(report.warningCount) 提示", color: .orange)
+                    }
                     summaryBadge("\(report.failCount) 失败", color: report.failCount == 0 ? .secondary : healthColor)
                 }
             }
@@ -622,30 +655,223 @@ struct ResultView: View {
     }
 }
 
+struct RulePackCard: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(Color.blue.opacity(0.14))
+                    Image(systemName: "list.bullet.rectangle")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.blue)
+                }
+                .frame(width: 38, height: 38)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("规则包")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("管理")
+                        .font(.system(size: 15, weight: .semibold))
+                }
+
+                Spacer(minLength: 0)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity, minHeight: 68)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+        }
+        .help("管理可分享的 Mihomo / Clash Verge 规则包")
+    }
+}
+
+struct RulePackView: View {
+    let close: () -> Void
+    @State private var preview = ""
+    @State private var copied = false
+    @State private var message = ""
+
+    private let version = "2026.08"
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color.blue.opacity(0.13))
+                    Image(systemName: "point.3.connected.trianglepath.dotted")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(.blue)
+                }
+                .frame(width: 50, height: 50)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("PuffRoute 规则包")
+                        .font(.system(size: 21, weight: .semibold, design: .rounded))
+                    Text("分流规则与 TUN DNS · 版本 \(version)")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Text("不含订阅")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.blue)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Color.blue.opacity(0.11), in: Capsule())
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Label("适用于 Clash Verge Rev 的 Merge 配置；不会读取或保存节点、订阅地址与凭据。", systemImage: "lock.shield")
+                Label("默认策略组名为 PROXY；朋友的订阅若使用其他名称，导入前替换规则最后一列。", systemImage: "arrow.triangle.branch")
+                Label("导入后在 Clash Verge Rev 中启用该 Merge 配置并刷新当前订阅。", systemImage: "arrow.clockwise")
+            }
+            .font(.system(size: 12))
+            .foregroundStyle(.secondary)
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("规则预览")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text("12 条域名规则")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+
+                ScrollView([.vertical, .horizontal]) {
+                    Text(preview.isEmpty ? "规则资源不可用" : preview)
+                        .font(.system(size: 11, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                }
+                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            }
+            .frame(maxHeight: 225)
+
+            HStack(spacing: 9) {
+                Button(copied ? "已复制" : "复制 YAML", action: copyRules)
+                Button("导出…", action: exportRules)
+                    .buttonStyle(.borderedProminent)
+
+                if !message.isEmpty {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+                Button("完成", action: close)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(22)
+        .frame(width: 620, height: 520)
+        .onAppear(perform: loadPreview)
+    }
+
+    private var bundledRuleURL: URL? {
+        Bundle.main.url(forResource: "PuffRoute-Merge", withExtension: "yaml", subdirectory: "Rules")
+    }
+
+    private func loadPreview() {
+        guard let url = bundledRuleURL,
+              let content = try? String(contentsOf: url, encoding: .utf8) else {
+            preview = ""
+            return
+        }
+        preview = content
+    }
+
+    private func copyRules() {
+        guard !preview.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(preview, forType: .string)
+        copied = true
+        message = "可以粘贴到新的 Merge 配置"
+    }
+
+    private func exportRules() {
+        guard let source = bundledRuleURL else {
+            message = "找不到内置规则资源"
+            return
+        }
+
+        let panel = NSSavePanel()
+        panel.title = "导出 PuffRoute 规则包"
+        panel.nameFieldStringValue = "PuffRoute-Merge.yaml"
+        panel.canCreateDirectories = true
+        if let yamlType = UTType(filenameExtension: "yaml") {
+            panel.allowedContentTypes = [yamlType]
+        }
+
+        guard panel.runModal() == .OK, let destination = panel.url else { return }
+        do {
+            if FileManager.default.fileExists(atPath: destination.path) {
+                try FileManager.default.removeItem(at: destination)
+            }
+            try FileManager.default.copyItem(at: source, to: destination)
+            message = "已导出 \(destination.lastPathComponent)"
+        } catch {
+            message = "导出失败：\(error.localizedDescription)"
+        }
+    }
+}
+
 struct ContentView: View {
     @StateObject private var model = ProxyModel()
+    @State private var showingRules = false
 
     var body: some View {
         VStack(spacing: 18) {
             header
 
             LazyVGrid(
-                columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3),
+                columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4),
                 spacing: 12
             ) {
                 MetricCard(metric: model.core)
                 MetricCard(metric: model.port)
                 MetricCard(metric: model.tun)
+                RulePackCard {
+                    showingRules = true
+                }
             }
 
             actionArea
         }
         .padding(22)
-        .frame(width: 620, height: 290)
+        .frame(width: 720, height: 300)
         .background(Color(nsColor: .windowBackgroundColor))
         .sheet(item: $model.resultSheet) { result in
             ResultView(result: result) {
                 model.resultSheet = nil
+            }
+        }
+        .sheet(isPresented: $showingRules) {
+            RulePackView {
+                showingRules = false
             }
         }
         .alert("关闭 Kill Switch？", isPresented: $model.showDisableConfirmation) {
@@ -885,7 +1111,7 @@ struct PuffRouteApp: App {
         WindowGroup("PuffRoute") {
             ContentView()
         }
-        .defaultSize(width: 620, height: 290)
+        .defaultSize(width: 720, height: 300)
         .windowResizability(.contentSize)
     }
 }

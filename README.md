@@ -11,7 +11,8 @@ Mihomo/Clash Verge 的核心、混合端口和流量入口状态，并提供结�
 
 - macOS 使用 SwiftUI，Windows 使用原生 WPF
 - 检测 Mihomo 核心、mixed 端口、系统代理与 TUN 路由
-- 检查代理出口 IP、常用 AI 站点和外网连通性
+- 检查代理出口 IP、ASN、风险分、风险标签、常用 AI 站点和外网连通性
+- 内置可独立分享的 Clash Verge Rev / Mihomo 规则包，不包含订阅或节点
 - macOS 可选用独立 PF anchor 实现防泄漏 Kill Switch
 - Windows 版只做只读网络检测，不修改全局防火墙策略
 - macOS 健康检查、Kill Switch 脚本和管理员助手均内置于 App Bundle
@@ -23,6 +24,21 @@ Mihomo/Clash Verge 的核心、混合端口和流量入口状态，并提供结�
 | macOS 13+ | ✓ | ✓ | PF anchor（可选） | `PuffRoute.app` |
 | Windows 10/11 x64 | ✓ | ✓ | 暂不提供 | 单文件 `PuffRoute.exe` |
 | Windows 11 ARM64 | ✓ | ✓ | 暂不提供 | 单文件 `PuffRoute.exe` |
+
+## 规则包与订阅
+
+PuffRoute 把两者有意分开：
+
+- **订阅**由使用者自己的代理客户端管理，PuffRoute 不读取、不保存也不分发订阅地址、
+  节点或凭据。
+- **规则包**位于 [`Rules/PuffRoute-Merge.yaml`](Rules/PuffRoute-Merge.yaml)，随 macOS
+  App 与 Windows 单文件程序一起打包，可从主界面第四张“规则包”卡片预览、复制或导出。
+
+规则包使用 Clash Verge Rev 的 `prepend-rules`，确保 AI 与开发站点规则排在订阅自带的
+`GEOIP` / `MATCH` 规则之前，同时包含 TUN 所需的 Fake-IP DNS 配置。默认策略组名是
+`PROXY`；如果朋友的订阅使用其他组名，导入前替换规则最后一列即可。导出后在 Clash
+Verge Rev 中新建并启用 `Merge` 配置，再刷新当前订阅。这样规则可以共享，订阅仍由每个
+人独立选择。
 
 ## macOS
 
@@ -138,6 +154,8 @@ Firewall/WFP 策略，误配置可能让整台电脑断网；当前分享版刻�
 ## 隐私与安全
 
 - 健康检查会通过已配置的本地代理访问公开 IP 查询服务和测试站点。
+- IP 风险画像会把实测出口 IP 提交给 `ipapi.is` 与 `proxycheck.io`，展示 ASN、网络类型、
+  风险分、置信度和风险标签。第三方情报仅供参考，接口限流不会被视为代理故障。
 - PuffRoute 不上传配置，不收集遥测，也不保存浏览记录。
 - macOS 管理员权限仅用于读取或修改 PuffRoute 自己的 PF anchor。
 - Windows 版不请求管理员权限，也不修改 Windows Firewall。
