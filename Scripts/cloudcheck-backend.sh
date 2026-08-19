@@ -450,7 +450,7 @@ run_admin() {
     on|off|status)
       [ "$#" -eq 1 ] || { echo "非法的管理员参数"; return 2; }
       ;;
-    install)
+    install|setup-on)
       [ "$#" -eq 3 ] || { echo "缺少 Kill Switch 配置参数"; return 2; }
       server_ipv4="$2"
       interfaces="$3"
@@ -471,7 +471,7 @@ run_admin() {
     return 1
   fi
 
-  if [ "$action_name" = "install" ]; then
+  if [ "$action_name" = "install" ] || [ "$action_name" = "setup-on" ]; then
     admin_output=$("$OSASCRIPT" "$ADMIN_SCRIPT" "$KILL_HELPER" "$action_name" \
       "$server_ipv4" "$interfaces" 2>&1)
   else
@@ -536,8 +536,11 @@ case "${1:-}" in
   kill-install)
     run_admin install "${2:-}" "${3:-}"
     ;;
+  kill-setup-on)
+    run_admin setup-on "${2:-}" "${3:-}"
+    ;;
   *)
-    echo "用法: $0 {discover|probe|health|kill-status|kill-on|kill-off|kill-install}"
+    echo "用法: $0 {discover|probe|health|kill-status|kill-on|kill-off|kill-install|kill-setup-on}"
     exit 2
     ;;
 esac

@@ -322,13 +322,13 @@ final class ProxyModel: ObservableObject {
         runAction("kill-on", title: "已开启 Kill Switch", busy: "正在开启 Kill Switch…")
     }
 
-    func installKillSwitch(serverIPv4: String, interfaces: String) {
+    func setupAndEnableKillSwitch(serverIPv4: String, interfaces: String) {
         showKillSwitchSetup = false
         runAction(
-            "kill-install",
+            "kill-setup-on",
             arguments: [serverIPv4, interfaces],
-            title: "Kill Switch 已配置",
-            busy: "正在安装 Kill Switch 规则…"
+            title: "已开启 Kill Switch",
+            busy: "正在安装并开启 Kill Switch…"
         )
     }
 
@@ -641,35 +641,33 @@ struct KillSwitchCard: View {
                 Text("Kill Switch")
                     .font(CloudTypography.metricLabel)
                     .foregroundStyle(.secondary)
-                Text(metric.value)
+                Text(isUnconfigured ? "未开启" : metric.value)
                     .font(CloudTypography.metricValue())
                     .lineLimit(1)
             }
 
             Spacer(minLength: 0)
 
-            if isUnconfigured {
-                Button(action: configure) {
-                    Label("配置", systemImage: "slider.horizontal.3")
-                        .font(.system(size: 11, weight: .semibold))
-                        .frame(width: 68, height: 26)
+            Toggle("", isOn: Binding(
+                get: { metric.level == .ok },
+                set: { enabled in
+                    if isUnconfigured && enabled {
+                        configure()
+                    } else {
+                        setEnabled(enabled)
+                    }
                 }
-                .buttonStyle(.bordered)
-                .tint(CloudPalette.statusGreen)
-                .disabled(isBusy)
-                .help("配置可选的 PF 防泄漏规则")
-            } else {
-                Toggle("", isOn: Binding(
-                    get: { metric.level == .ok },
-                    set: setEnabled
-                ))
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .tint(CloudPalette.statusGreen)
-                .controlSize(.small)
-                .disabled(isBusy || isChecking)
-                .help(metric.level == .ok ? "关闭防泄漏保护" : "开启防泄漏保护")
-            }
+            ))
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .tint(CloudPalette.statusGreen)
+            .controlSize(.small)
+            .disabled(isBusy || isChecking)
+            .help(
+                isUnconfigured
+                    ? "开启防泄漏保护（首次开启需要安装规则）"
+                    : (metric.level == .ok ? "关闭防泄漏保护" : "开启防泄漏保护")
+            )
         }
         .padding(.horizontal, 16)
         .frame(maxWidth: .infinity, minHeight: 72)
@@ -1874,7 +1872,7 @@ struct RulePackView: View {
 
 private struct KillSwitchSetupView: View {
     let isBusy: Bool
-    let install: (String, String) -> Void
+    let enable: (String, String) -> Void
     let close: () -> Void
 
     @State private var serverIPv4 = ""
@@ -1924,9 +1922,9 @@ private struct KillSwitchSetupView: View {
                 )
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("配置 Kill Switch")
+                    Text("开启 Kill Switch")
                         .font(.system(size: 21, weight: .semibold, design: .rounded))
-                    Text("先安装专属 PF 规则，再由首页开关决定是否启用。")
+                    Text("首次开启需要安装专属 PF 规则。")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
@@ -1935,7 +1933,7 @@ private struct KillSwitchSetupView: View {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(CloudPalette.statusOrange)
-                Text("PF 会影响整台 Mac 的联网。CloudCheck 会先校验规则并备份系统配置；安装完成后保持关闭，不会立即拦截流量。")
+                Text("PF 会影响整台 Mac 的联网。CloudCheck 会先校验规则并备份系统配置，确认后安装并立即开启保护。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1974,8 +1972,8 @@ private struct KillSwitchSetupView: View {
                 Spacer()
                 Button("取消", action: close)
                     .controlSize(.small)
-                Button("安装规则") {
-                    install(normalizedIPv4, normalizedInterfaces)
+                Button("安装并开启") {
+                    enable(normalizedIPv4, normalizedInterfaces)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(CloudPalette.statusGreen)
@@ -2475,7 +2473,7 @@ struct ContentView: View {
         .sheet(isPresented: $model.showKillSwitchSetup) {
             KillSwitchSetupView(
                 isBusy: model.isBusy,
-                install: model.installKillSwitch,
+                enable: model.setupAndEnableKillSwitch,
                 close: { model.showKillSwitchSetup = false }
             )
         }

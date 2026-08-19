@@ -8,7 +8,14 @@ trap '/bin/rm -rf "$TEST_ROOT"' EXIT
 
 /bin/mkdir -p "$TEST_ROOT/etc/pf.anchors" "$TEST_ROOT/bin"
 /usr/bin/printf '%s\n' 'set skip on lo0' > "$TEST_ROOT/etc/pf.conf"
-/usr/bin/printf '%s\n' '#!/bin/bash' 'exit 0' > "$TEST_ROOT/bin/pfctl"
+/usr/bin/printf '%s\n' \
+  '#!/bin/bash' \
+  'case "$*" in' \
+  '  "-s info") echo "Status: Enabled" ;;' \
+  '  "-a cloudcheck -sr") echo "block return out on en0 all" ;;' \
+  '  "-E") echo "Token : 12345" ;;' \
+  'esac' \
+  'exit 0' > "$TEST_ROOT/bin/pfctl"
 /bin/chmod 755 "$TEST_ROOT/bin/pfctl"
 
 run_helper() {
@@ -23,6 +30,11 @@ install_output=$(run_helper install 203.0.113.10 'en0 en1')
 /usr/bin/grep -Fq '203.0.113.10' "$TEST_ROOT/etc/pf.anchors/cloudcheck"
 /usr/bin/grep -Fq 'phys = "{ en0 en1 }"' "$TEST_ROOT/etc/pf.anchors/cloudcheck"
 [ -r "$TEST_ROOT/etc/pf.conf.cloudcheck.bak" ]
+
+setup_output=$(run_helper setup-on 203.0.113.10 'en0 en1')
+/usr/bin/printf '%s\n' "$setup_output" | /usr/bin/grep -Fq '规则安装完成'
+/usr/bin/printf '%s\n' "$setup_output" | /usr/bin/grep -Fq 'Kill Switch 已开启'
+[ -s "$TEST_ROOT/var/run/cloudcheck-killswitch.pf-token" ]
 
 if run_helper install 203.0.113.999 'en0 en1' >/dev/null 2>&1; then
   echo '越界 IPv4 不应通过校验' >&2
@@ -42,7 +54,7 @@ if run_helper install 203.0.113.10 'utun0' >/dev/null 2>&1; then
 fi
 
 /usr/bin/printf '%s\n' 'anchor "killswitch"' > "$TEST_ROOT/etc/pf.conf"
-if run_helper install 203.0.113.10 'en0 en1' >/dev/null 2>&1; then
+if run_helper setup-on 203.0.113.10 'en0 en1' >/dev/null 2>&1; then
   echo '旧版 killswitch 存在时不得自动叠加新 anchor' >&2
   exit 1
 fi

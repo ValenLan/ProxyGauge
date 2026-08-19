@@ -1,6 +1,7 @@
 #!/bin/bash
 # cloudcheck-killswitch — PF 独立 anchor 的安装与防泄漏开关
 #   install <IPv4> <interfaces>  校验、备份并安装规则（保持关闭）
+#   setup-on <IPv4> <interfaces> 校验并安装规则，然后立即开启
 #   on                           加载专属 anchor 并持有 PF enable reference
 #   off                          清空专属 anchor 并释放本工具的 reference
 #   status                       检查 PF 与 anchor 的真实状态
@@ -67,7 +68,7 @@ ACTION="${1:-status}"
 # A much older helper owns the generic "killswitch" anchor. Never install a
 # second rule set beside it automatically; on/off/status remain delegated.
 if /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"killswitch"' "$MAIN_CONF" 2>/dev/null; then
-  if [ "$ACTION" = "install" ]; then
+  if [ "$ACTION" = "install" ] || [ "$ACTION" = "setup-on" ]; then
     echo "❌ 检测到旧版 killswitch anchor，未叠加第二套 PF 规则"
     echo "请先单独迁移旧规则，再重新配置 CloudCheck"
     exit 1
@@ -157,9 +158,10 @@ install_config_file() {
 }
 
 install_rules() {
-  local server_ipv4 interfaces temp_dir backup_path
+  local server_ipv4 interfaces after_install_state temp_dir backup_path
   server_ipv4="$1"
   interfaces="$2"
+  after_install_state="${3:-off}"
 
   if ! valid_ipv4 "$server_ipv4"; then
     echo "❌ 服务器地址必须是有效 IPv4"
@@ -242,7 +244,11 @@ install_rules() {
   fi
   /bin/rm -rf "$temp_dir"
 
-  echo "✅ Kill Switch 规则已安装，当前保持关闭"
+  if [ "$after_install_state" = "on" ]; then
+    echo "✅ Kill Switch 规则安装完成"
+  else
+    echo "✅ Kill Switch 规则已安装，当前保持关闭"
+  fi
   echo "已完成 PF 语法检查，并保留首次配置备份"
 }
 
@@ -268,7 +274,53 @@ release_owned_reference() {
   /bin/rm -f "$TOKEN_FILE"
 }
 
+enable_rules() {
+  if ! /usr/bin/grep -qE "^[[:space:]]*anchor[[:space:]]+\"$ANCHOR\"" "$MAIN_CONF"; then
+    echo "❌ $MAIN_CONF 缺少 $ANCHOR anchor 入口，未做改动"
+    return 1
+  fi
+  if ! "$PFCTL" -a "$ANCHOR" -nf "$ANCHOR_CONF" >/dev/null 2>&1; then
+    echo "❌ $ANCHOR_CONF 语法校验失败，未做改动"
+    return 1
+  fi
+  if ! "$PFCTL" -a "$ANCHOR" -f "$ANCHOR_CONF" >/dev/null 2>&1; then
+    echo "❌ Kill Switch anchor 加载失败"
+    return 1
+  fi
+
+  if [ ! -s "$TOKEN_FILE" ]; then
+    enable_output=$("$PFCTL" -E 2>&1)
+    enable_status=$?
+    token=$(/usr/bin/printf '%s\n' "$enable_output" | /usr/bin/awk '/Token[[:space:]]*:/ {print $NF; exit}')
+    if [ "$enable_status" -ne 0 ]; then
+      "$PFCTL" -a "$ANCHOR" -F rules >/dev/null 2>&1 || true
+      echo "❌ PF 启用失败: $enable_output"
+      return 1
+    fi
+    if [ -n "$token" ]; then
+      /usr/bin/printf '%s\n' "$token" > "$TOKEN_FILE"
+      /bin/chmod 600 "$TOKEN_FILE"
+    fi
+  fi
+
+  if anchor_enabled; then
+    echo "🛡️ Kill Switch 已开启 — 仅 $ANCHOR anchor 生效，不会覆盖其他 PF 规则"
+  else
+    release_owned_reference
+    echo "❌ Kill Switch 启用后验证失败"
+    return 1
+  fi
+}
+
 case "$ACTION" in
+  setup-on)
+    if [ "$#" -ne 3 ]; then
+      echo "用法: cloudcheck-killswitch setup-on <IPv4> <interfaces>"
+      exit 2
+    fi
+    install_rules "$2" "$3" on && enable_rules
+    ;;
+
   install)
     if [ "$#" -ne 3 ]; then
       echo "用法: cloudcheck-killswitch install <IPv4> <interfaces>"
@@ -278,41 +330,7 @@ case "$ACTION" in
     ;;
 
   on)
-    if ! /usr/bin/grep -qE "^[[:space:]]*anchor[[:space:]]+\"$ANCHOR\"" "$MAIN_CONF"; then
-      echo "❌ $MAIN_CONF 缺少 $ANCHOR anchor 入口，未做改动"
-      exit 1
-    fi
-    if ! "$PFCTL" -a "$ANCHOR" -nf "$ANCHOR_CONF" >/dev/null 2>&1; then
-      echo "❌ $ANCHOR_CONF 语法校验失败，未做改动"
-      exit 1
-    fi
-    if ! "$PFCTL" -a "$ANCHOR" -f "$ANCHOR_CONF" >/dev/null 2>&1; then
-      echo "❌ Kill Switch anchor 加载失败"
-      exit 1
-    fi
-
-    if [ ! -s "$TOKEN_FILE" ]; then
-      enable_output=$("$PFCTL" -E 2>&1)
-      enable_status=$?
-      token=$(/usr/bin/printf '%s\n' "$enable_output" | /usr/bin/awk '/Token[[:space:]]*:/ {print $NF; exit}')
-      if [ "$enable_status" -ne 0 ]; then
-        "$PFCTL" -a "$ANCHOR" -F rules >/dev/null 2>&1 || true
-        echo "❌ PF 启用失败: $enable_output"
-        exit 1
-      fi
-      if [ -n "$token" ]; then
-        /usr/bin/printf '%s\n' "$token" > "$TOKEN_FILE"
-        /bin/chmod 600 "$TOKEN_FILE"
-      fi
-    fi
-
-    if anchor_enabled; then
-      echo "🛡️ Kill Switch 已开启 — 仅 $ANCHOR anchor 生效，不会覆盖其他 PF 规则"
-    else
-      release_owned_reference
-      echo "❌ Kill Switch 启用后验证失败"
-      exit 1
-    fi
+    enable_rules
     ;;
 
   off)
@@ -341,7 +359,7 @@ case "$ACTION" in
     ;;
 
   *)
-    echo "用法: cloudcheck-killswitch install <IPv4> <interfaces> | on | off | status"
+    echo "用法: cloudcheck-killswitch setup-on <IPv4> <interfaces> | install <IPv4> <interfaces> | on | off | status"
     exit 2
     ;;
 esac

@@ -3,11 +3,11 @@ on run argv
 
     set helperPath to item 1 of argv
     set actionName to item 2 of argv
-    if actionName is not in {"install", "on", "off", "status"} then
+    if actionName is not in {"install", "setup-on", "on", "off", "status"} then
         error "Invalid CloudCheck administrator action"
     end if
 
-    if actionName is "install" then
+    if actionName is "install" or actionName is "setup-on" then
         if (count of argv) is not 4 then error "Invalid CloudCheck install arguments"
         set serverIPv4 to item 3 of argv
         set interfaceNames to item 4 of argv

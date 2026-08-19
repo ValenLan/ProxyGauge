@@ -170,9 +170,14 @@ esac
 FAKE_OSASCRIPT="$TEMP_DIR/fake-osascript"
 /usr/bin/printf '%s\n' \
   '#!/bin/bash' \
-  'if [ "${3:-}" = "install" ]; then' \
+  'if [ "${3:-}" = "install" ] || [ "${3:-}" = "setup-on" ]; then' \
   '  [ "$#" -eq 5 ] && [ "$4" = "203.0.113.10" ] && [ "$5" = "en0 en1" ] || exit 2' \
-  '  echo "✅ Kill Switch 规则已安装，当前保持关闭"' \
+  '  if [ "$3" = "setup-on" ]; then' \
+  '    echo "✅ Kill Switch 规则安装完成"' \
+  '    echo "🛡️ Kill Switch 已开启"' \
+  '  else' \
+  '    echo "✅ Kill Switch 规则已安装，当前保持关闭"' \
+  '  fi' \
   '  exit 0' \
   'fi' \
   'case "${CLOUDCHECK_FAKE_ADMIN_MODE:-enabled}" in' \
@@ -208,6 +213,13 @@ if /usr/bin/printf '%s\n' "$install_output" | /usr/bin/grep -Fq '203.0.113.10'; 
   echo '管理员操作输出不得回显服务器地址' >&2
   exit 1
 fi
+
+setup_output=$(CLOUDCHECK_ADMIN_SCRIPT="$ADMIN_SCRIPT" \
+  CLOUDCHECK_OSASCRIPT="$FAKE_OSASCRIPT" \
+  CLOUDCHECK_ADMIN_RESULT="$NEW_RESULT" \
+  CLOUDCHECK_KILL_TOKEN="$TEMP_DIR/new-token" \
+  /bin/bash "$BACKEND" kill-setup-on 203.0.113.10 'en0 en1')
+/usr/bin/printf '%s\n' "$setup_output" | /usr/bin/grep -Fq 'Kill Switch 已开启'
 
 if cancel_output=$(CLOUDCHECK_FAKE_ADMIN_MODE=canceled \
   CLOUDCHECK_ADMIN_SCRIPT="$ADMIN_SCRIPT" \

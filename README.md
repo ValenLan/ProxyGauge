@@ -169,9 +169,10 @@ CLOUDCHECK_VPS_IP=""     # 仅 PF Kill Switch 需要
 > PF 配置会影响整台 Mac 的联网行为。请先确认服务器 IPv4 与物理接口，并确保你有可恢复的
 > 本地终端访问。配置错误可能导致暂时断网。
 
-全新安装可直接点击首页 Kill Switch 卡片中的“配置”。CloudCheck 会要求明确确认并请求一次
-管理员授权，依次校验 PF anchor 和系统配置、保留首次备份、安装规则；安装完成后仍保持关闭，
-只有用户随后开启开关才会加载拦截规则。应用启动和普通状态刷新不会自动请求管理员权限。
+全新安装时，首页 Kill Switch 显示“未开启”和关闭状态的开关。用户第一次打开开关时，
+CloudCheck 才会要求必要参数与风险确认，并请求一次管理员授权：依次校验 PF anchor 和系统
+配置、保留首次备份、安装规则并开启保护。取消操作会保持未开启；应用启动和普通状态刷新
+不会自动请求管理员权限。
 
 命令行用户也可以填写 `CLOUDCHECK_VPS_IP` 后运行：
 
@@ -186,7 +187,7 @@ Scripts/install-pf.sh
 3. 先检查 anchor 与系统 PF 配置语法，再安装配置
 4. 首次执行时备份 `/etc/pf.conf.cloudcheck.bak`
 
-安装规则后，可在 CloudCheck 界面中开启或关闭 Kill Switch。
+命令行安装只写入规则并保持关闭；之后可在 CloudCheck 界面中开启或关闭 Kill Switch。
 
 从 CloudLinkGuard、CloudRoute、PuffRoute 或更早的 Proxy Tools 升级时，如果系统仍注册
 `cloudlink-guard`、`cloudroute`、`puffroute` 或 `killswitch` anchor，CloudCheck 会继续调用
@@ -238,7 +239,7 @@ Firewall/WFP 策略，误配置可能让整台电脑断网；当前分享版刻�
 每次 push 与 pull request 都会构建并测试 macOS、Windows x64 和 Windows ARM64，并把
 三个 ZIP 原样保存为 Actions artifacts。只有推送与应用版本完全一致的 `v<版本>` 标签时，
 工作流才会创建 GitHub Release，同时上传三个 ZIP 与 `SHA256SUMS.txt`。例如当前版本对应的
-发布标签应为 `v1.5.1`。
+发布标签应为 `v1.5.2`。
 
 创建标签会产生供仓库授权用户下载的正式发布结果，必须在全部本地测试和普通 push CI
 通过后由维护者明确执行；构建脚本本身不会自动创建标签。
