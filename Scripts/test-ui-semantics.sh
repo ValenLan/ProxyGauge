@@ -49,7 +49,12 @@ WINDOWS_MAIN="$PROJECT_ROOT/Windows/MainWindow.xaml"
 /usr/bin/grep -Fq 'Text("链路检测方案")' "$APP_SOURCE"
 /usr/bin/grep -Fq 'Toggle(isOn: $draft.secondaryEnabled)' "$APP_SOURCE"
 /usr/bin/grep -Fq '@Published var showHealthPlanSetup = false' "$APP_SOURCE"
+/usr/bin/grep -Fq '@Published var isBusy = false' "$APP_SOURCE"
+/usr/bin/grep -Fq '@Published var busyLabel = ""' "$APP_SOURCE"
 /usr/bin/grep -Fq '.foregroundStyle(CloudPalette.networkBlue)' "$APP_SOURCE"
+/usr/bin/grep -Fq '.frame(width: 64, height: 28)' "$APP_SOURCE"
+/usr/bin/grep -Fq '.frame(width: 76, height: 28)' "$APP_SOURCE"
+/usr/bin/grep -Fq '.fixedSize(horizontal: true, vertical: false)' "$APP_SOURCE"
 
 if /usr/bin/grep -q 'MetricCard(metric: .*accent:' "$APP_SOURCE"; then
   echo "Read-only status cards must not use per-card accent colors." >&2
@@ -68,6 +73,11 @@ fi
 
 if /usr/bin/grep -Fq 'ActionTriggerLabel' "$APP_SOURCE"; then
   echo "Diagnostic actions must not regress to standalone pill buttons." >&2
+  exit 1
+fi
+
+if /usr/bin/grep -Fq '.padding(.trailing, 76)' "$APP_SOURCE"; then
+  echo "Health controls must use layout spacing instead of fixed overlay offsets." >&2
   exit 1
 fi
 

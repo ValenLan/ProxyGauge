@@ -1220,6 +1220,8 @@ private struct HealthActionCard: View {
     let openPlan: () -> Void
     let run: () -> Void
 
+    @State private var isHovering = false
+
     private var scopeLabels: [String] {
         if plan.secondaryEnabled {
             return ["基础链路", "IP 风险", "\(plan.secondaryLabel) 分流"]
@@ -1228,39 +1230,123 @@ private struct HealthActionCard: View {
     }
 
     var body: some View {
-        ZStack(alignment: .trailing) {
-            DashboardActionCard(
-                title: "链路检测",
-                detail: isRunning ? "正在按方案检测…" : "按当前方案检查连接",
-                symbol: "stethoscope",
-                actionLabel: "检测",
-                actionSymbol: "play.fill",
-                tint: CloudPalette.networkBlue,
-                scopeLabels: scopeLabels,
-                isRunning: isRunning,
-                isDisabled: isDisabled,
-                showsProgress: true,
-                action: run
-            )
+        VStack(spacing: 7) {
+            HStack(spacing: 9) {
+                ZStack {
+                    Circle()
+                        .fill(CloudPalette.networkBlue.opacity(0.14))
+                    Image(systemName: "stethoscope")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(CloudPalette.networkBlue)
+                }
+                .frame(width: 30, height: 30)
 
-            Button(action: openPlan) {
-                Label("方案", systemImage: "slider.horizontal.3")
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(CloudPalette.networkBlue)
-                    .padding(.horizontal, 8)
-                    .frame(height: 28)
-                    .background(CloudPalette.networkBlue.opacity(0.09), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .stroke(CloudPalette.networkBlue.opacity(0.34), lineWidth: 1)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("链路检测")
+                        .font(CloudTypography.actionTitle)
+                    Text(isRunning ? "正在按方案检测…" : "按当前方案检查连接")
+                        .font(CloudTypography.actionDetail)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .layoutPriority(2)
+
+                Text(scopeLabels.joined(separator: "  ·  "))
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .padding(.leading, 12)
+
+                Spacer(minLength: 8)
+
+                HStack(spacing: 6) {
+                    Button(action: openPlan) {
+                        Label("方案", systemImage: "slider.horizontal.3")
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .foregroundStyle(CloudPalette.networkBlue)
+                            .frame(width: 64, height: 28)
+                            .background(
+                                CloudPalette.networkBlue.opacity(0.09),
+                                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            )
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                    .stroke(CloudPalette.networkBlue.opacity(0.34), lineWidth: 1)
+                            }
                     }
+                    .buttonStyle(.borderless)
+                    .allowsHitTesting(!isDisabled)
+                    .opacity(isDisabled ? 0.48 : 1)
+                    .help("调整链路检测方案")
+
+                    Button(action: run) {
+                        HStack(spacing: 6) {
+                            if isRunning {
+                                ProgressView()
+                                    .controlSize(.mini)
+                                    .tint(CloudPalette.networkBlue)
+                            } else {
+                                Image(systemName: "play.fill")
+                                    .font(.system(size: 10, weight: .bold))
+                            }
+                            Text(isRunning ? "检测中" : "检测")
+                        }
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(CloudPalette.networkBlue)
+                        .frame(width: 76, height: 28)
+                        .background {
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .fill(CloudPalette.networkBlue.opacity(isHovering ? 0.24 : 0.14))
+                        }
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .stroke(
+                                    CloudPalette.networkBlue.opacity(isHovering ? 0.58 : 0.30),
+                                    lineWidth: 1
+                                )
+                        }
+                    }
+                    .buttonStyle(.borderless)
+                    .allowsHitTesting(!isDisabled)
+                    .help(isRunning ? "正在检测代理链路" : "按当前方案检测代理链路")
+                }
+                .fixedSize(horizontal: true, vertical: false)
             }
-            .buttonStyle(.borderless)
-            .padding(.trailing, 76)
-            .disabled(isDisabled)
-            .help("调整链路检测方案")
+
+            if isRunning {
+                ProgressView()
+                    .progressViewStyle(.linear)
+                    .tint(CloudPalette.networkBlue)
+                    .controlSize(.small)
+                    .accessibilityLabel("链路检测正在运行")
+            }
         }
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, minHeight: 72)
+        .background(
+            isHovering && !isDisabled
+                ? CloudPalette.networkBlue.opacity(0.055)
+                : Color(nsColor: .controlBackgroundColor),
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(
+                    isHovering && !isDisabled
+                        ? CloudPalette.networkBlue.opacity(0.32)
+                        : Color.primary.opacity(0.07),
+                    lineWidth: 1
+                )
+        }
+        .opacity(isDisabled && !isRunning ? 0.58 : 1)
+        .accessibilityValue(isRunning ? "正在运行" : "")
         .accessibilityElement(children: .contain)
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.12)) {
+                isHovering = hovering
+            }
+        }
     }
 }
 
