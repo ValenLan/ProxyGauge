@@ -18,6 +18,7 @@ jobs:
         run: |
           chmod +x Scripts/*.sh
           Scripts/test-backend.sh
+          Scripts/test-killswitch.sh
           Scripts/test-ip-risk.sh
           Scripts/test-chain-check.sh
           Scripts/test-low-risk-health.sh

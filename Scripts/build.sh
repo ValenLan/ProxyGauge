@@ -34,6 +34,7 @@ fi
 /bin/cp "$PROJECT_ROOT/Scripts/cloudcheck-ip-risk.jxa" "$APP/Contents/Resources/cloudcheck-ip-risk.jxa"
 /bin/cp "$PROJECT_ROOT/Scripts/cloudcheck-chain-check.jxa" "$APP/Contents/Resources/cloudcheck-chain-check.jxa"
 /bin/cp "$PROJECT_ROOT/Scripts/cloudcheck-private-browser.sh" "$APP/Contents/Resources/cloudcheck-private-browser.sh"
+/bin/cp "$PROJECT_ROOT/PF/cloudcheck.conf.template" "$APP/Contents/Resources/cloudcheck.conf.template"
 /bin/cp "$PROJECT_ROOT/Rules/CloudCheck-Merge.yaml" "$APP/Contents/Resources/Rules/CloudCheck-Merge.yaml"
 /bin/cp "$PROJECT_ROOT/Rules/CloudCheck-Google-Chain-Probe.yaml" "$APP/Contents/Resources/Rules/CloudCheck-Google-Chain-Probe.yaml"
 /bin/cp "$PROJECT_ROOT/Helpers/CloudCheck Admin.applescript" \
@@ -54,6 +55,7 @@ for required_path in \
   "$APP/Contents/Resources/cloudcheck-ip-risk.jxa" \
   "$APP/Contents/Resources/cloudcheck-chain-check.jxa" \
   "$APP/Contents/Resources/cloudcheck-private-browser.sh" \
+  "$APP/Contents/Resources/cloudcheck.conf.template" \
   "$APP/Contents/Resources/cloudcheck-admin.applescript" \
   "$APP/Contents/Resources/Rules/CloudCheck-Merge.yaml" \
   "$APP/Contents/Resources/Rules/CloudCheck-Google-Chain-Probe.yaml"; do

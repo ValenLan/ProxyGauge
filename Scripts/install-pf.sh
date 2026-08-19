@@ -60,47 +60,5 @@ if ! echo "$CLOUDCHECK_INTERFACES" | /usr/bin/grep -qE '^[a-zA-Z0-9 ]+$'; then
   exit 1
 fi
 
-TEMP_DIR=$(/usr/bin/mktemp -d /tmp/cloudcheck-pf.XXXXXX)
-trap '/bin/rm -rf "$TEMP_DIR"' EXIT
-
-ANCHOR_NAME=cloudcheck
-ANCHOR_PATH=/etc/pf.anchors/cloudcheck
-if /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"cloudlink-guard"' /etc/pf.conf \
-  && [ -r /etc/pf.anchors/cloudlink-guard ]; then
-  ANCHOR_NAME=cloudlink-guard
-  ANCHOR_PATH=/etc/pf.anchors/cloudlink-guard
-elif /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"cloudroute"' /etc/pf.conf \
-  && [ -r /etc/pf.anchors/cloudroute ]; then
-  ANCHOR_NAME=cloudroute
-  ANCHOR_PATH=/etc/pf.anchors/cloudroute
-elif /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"puffroute"' /etc/pf.conf \
-  && [ -r /etc/pf.anchors/puffroute ]; then
-  ANCHOR_NAME=puffroute
-  ANCHOR_PATH=/etc/pf.anchors/puffroute
-elif /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"killswitch"' /etc/pf.conf; then
-  echo "Detected the older killswitch anchor; CloudCheck already delegates to its helper." >&2
-  echo "Refusing to add a second PF anchor automatically. Migrate that rule separately." >&2
-  exit 1
-fi
-
-/usr/bin/sed \
-  -e "s/__VPS_IP__/$CLOUDCHECK_VPS_IP/g" \
-  -e "s/__INTERFACES__/$CLOUDCHECK_INTERFACES/g" \
-  "$PROJECT_ROOT/PF/cloudcheck.conf.template" > "$TEMP_DIR/$ANCHOR_NAME"
-
-/bin/cp /etc/pf.conf "$TEMP_DIR/pf.conf"
-if ! /usr/bin/grep -qE "^[[:space:]]*anchor[[:space:]]+\"$ANCHOR_NAME\"" "$TEMP_DIR/pf.conf"; then
-  /bin/echo '' >> "$TEMP_DIR/pf.conf"
-  /bin/echo "anchor \"$ANCHOR_NAME\"" >> "$TEMP_DIR/pf.conf"
-fi
-
-/usr/bin/sudo /usr/bin/install -o root -g wheel -m 644 "$TEMP_DIR/$ANCHOR_NAME" "$ANCHOR_PATH"
-/usr/bin/sudo /sbin/pfctl -nf "$TEMP_DIR/pf.conf"
-
-if [ ! -e /etc/pf.conf.cloudcheck.bak ]; then
-  /usr/bin/sudo /bin/cp -p /etc/pf.conf /etc/pf.conf.cloudcheck.bak
-fi
-/usr/bin/sudo /usr/bin/install -o root -g wheel -m 644 "$TEMP_DIR/pf.conf" /etc/pf.conf
-
-echo "Installed $ANCHOR_PATH and registered anchor $ANCHOR_NAME in /etc/pf.conf"
-echo "Backup: /etc/pf.conf.cloudcheck.bak"
+exec "$PROJECT_ROOT/Scripts/cloudcheck-killswitch" \
+  install "$CLOUDCHECK_VPS_IP" "$CLOUDCHECK_INTERFACES"

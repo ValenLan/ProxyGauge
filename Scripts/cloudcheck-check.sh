@@ -150,7 +150,7 @@ render_risk_profile() {
     extract-asn "$IPAPI_JSON" "$PROXYCHECK_JSON" "$risk_ip" 2>/dev/null || true)
   if printf '%s' "$ASN_NUMBER" | /usr/bin/grep -qE '^[0-9]+$'; then
     /usr/bin/curl -sS --retry 1 --retry-all-errors --retry-delay 1 \
-      -A "CloudCheck/1.5.0 (+https://github.com/ValenLan/CloudCheck)" \
+      -A "CloudCheck/1.5.1 (+https://github.com/ValenLan/CloudCheck)" \
       --proxy "http://$risk_proxy" --max-time "$METADATA_TIMEOUT" \
       "https://www.peeringdb.com/api/net?asn=$ASN_NUMBER" \
       -o "$PEERINGDB_JSON" 2>/dev/null || true

@@ -22,6 +22,8 @@ APP_DIR="$HOME/Applications"
 /usr/bin/install -m 755 "$PROJECT_ROOT/Scripts/cloudcheck-backend.sh" "$SUPPORT_DIR/cloudcheck-backend.sh"
 /usr/bin/install -m 644 "$PROJECT_ROOT/Helpers/CloudCheck Admin.applescript" \
   "$SUPPORT_DIR/cloudcheck-admin.applescript"
+/usr/bin/install -m 644 "$PROJECT_ROOT/PF/cloudcheck.conf.template" \
+  "$SUPPORT_DIR/cloudcheck.conf.template"
 
 # Keep previous command names as upgrade shims rather than stale copies.
 /bin/ln -sfn cloudcheck-check "$USER_BIN/cloudlink-guard-check"
@@ -59,4 +61,4 @@ fi
 
 echo "Installed $APP_DIR/CloudCheck.app"
 echo "Configuration: $CONFIG_DIR/config"
-echo "To configure the optional Kill Switch, review and run Scripts/install-pf.sh"
+echo "Optional Kill Switch rules can now be configured from the CloudCheck app."
