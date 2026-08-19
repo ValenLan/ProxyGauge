@@ -1,7 +1,7 @@
 #!/bin/bash
 # cloudcheck-killswitch — PF 独立 anchor 的安装与防泄漏开关
-#   install <IPv4> <interfaces>  校验、备份并安装规则（保持关闭）
-#   on                           恢复已有 anchor 入口（如有需要）并开启保护
+#   install                      自动发现物理接口并安装内置规则（保持关闭）
+#   on                           必要时安装/恢复内置规则，然后开启保护
 #   off                          清空专属 anchor 并释放本工具的 reference
 #   status                       检查 PF 与 anchor 的真实状态
 
@@ -55,6 +55,7 @@ if [ "$TEST_MODE" -eq 0 ] && [ ! -r "$PF_TEMPLATE" ]; then
 fi
 
 ACTION="${1:-status}"
+BOOTSTRAP_DEFAULT=0
 
 # A much older installation owns the generic "killswitch" anchor. Never
 # install a second rule set beside it automatically; the bundled root helper
@@ -83,23 +84,21 @@ if [ "$ACTION" = "on" ] && ! /usr/bin/grep -qE \
   done
 
   if [ "$existing_count" -eq 0 ]; then
-    echo "❌ 未找到已安装的 Kill Switch 规则，未做改动"
-    exit 1
-  fi
-  if [ "$existing_count" -ne 1 ]; then
+    BOOTSTRAP_DEFAULT=1
+  elif [ "$existing_count" -ne 1 ]; then
     echo "❌ 检测到多套未注册的 Kill Switch 规则，为避免启用错误规则，未做改动"
     exit 1
+  else
+    ANCHOR="$existing_anchor"
+    ANCHOR_CONF="$ANCHOR_DIR/$existing_anchor"
+    case "$existing_anchor" in
+      cloudcheck) TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/cloudcheck-killswitch.pf-token" ;;
+      cloudlink-guard) TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/cloudlink-guard-killswitch.pf-token" ;;
+      cloudroute) TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/cloudroute-killswitch.pf-token" ;;
+      puffroute) TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/puffroute-killswitch.pf-token" ;;
+      killswitch) TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/proxy-tools-killswitch.pf-token" ;;
+    esac
   fi
-
-  ANCHOR="$existing_anchor"
-  ANCHOR_CONF="$ANCHOR_DIR/$existing_anchor"
-  case "$existing_anchor" in
-    cloudcheck) TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/cloudcheck-killswitch.pf-token" ;;
-    cloudlink-guard) TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/cloudlink-guard-killswitch.pf-token" ;;
-    cloudroute) TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/cloudroute-killswitch.pf-token" ;;
-    puffroute) TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/puffroute-killswitch.pf-token" ;;
-    killswitch) TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/proxy-tools-killswitch.pf-token" ;;
-  esac
 fi
 
 # Preserve previous migrations: Proxy Tools -> PuffRoute -> CloudRoute ->
@@ -132,24 +131,6 @@ if [ "$TEST_MODE" -eq 0 ] && [ "$(/usr/bin/id -u)" -ne 0 ]; then
   exec /usr/bin/sudo "$0" "$@"
 fi
 
-valid_ipv4() {
-  local address a b c d octet
-  address="$1"
-  if ! /usr/bin/printf '%s\n' "$address" | /usr/bin/grep -qE '^[0-9]{1,3}(\.[0-9]{1,3}){3}$'; then
-    return 1
-  fi
-  IFS=. read -r a b c d <<EOF
-$address
-EOF
-  for octet in "$a" "$b" "$c" "$d"; do
-    case "$octet" in
-      0|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]) ;;
-      *) return 1 ;;
-    esac
-    [ "$octet" -ge 0 ] 2>/dev/null && [ "$octet" -le 255 ] 2>/dev/null || return 1
-  done
-}
-
 valid_interfaces() {
   local interfaces interface_name count
   local -a interface_names
@@ -176,6 +157,49 @@ EOF
   [ "$count" -gt 0 ]
 }
 
+detect_physical_interfaces() {
+  local interfaces default_interface
+
+  if [ "$TEST_MODE" -eq 1 ] && [ -n "${CLOUDCHECK_KILLSWITCH_TEST_INTERFACES:-}" ]; then
+    interfaces="$CLOUDCHECK_KILLSWITCH_TEST_INTERFACES"
+  else
+    interfaces=$(/sbin/ifconfig -l 2>/dev/null \
+      | /usr/bin/tr ' ' '\n' \
+      | /usr/bin/grep -E '^(en|bridge|ppp)[0-9]+$' \
+      | /usr/bin/sort -u \
+      | /usr/bin/paste -sd ' ' -)
+    if [ -z "$interfaces" ]; then
+      default_interface=$(/sbin/route -n get default 2>/dev/null \
+        | /usr/bin/awk '/interface:/ { print $2; exit }')
+      interfaces="$default_interface"
+    fi
+  fi
+
+  valid_interfaces "$interfaces" || return 1
+  /usr/bin/printf '%s\n' "$interfaces"
+}
+
+proxy_core_runs_as_root() {
+  local pids pid uid found
+  [ "$TEST_MODE" -eq 1 ] && return 0
+
+  pids=$(/usr/bin/pgrep -x verge-mihomo 2>/dev/null || true)
+  found=0
+  for pid in $pids; do
+    uid=$(/bin/ps -o uid= -p "$pid" 2>/dev/null | /usr/bin/tr -d '[:space:]')
+    [ -n "$uid" ] || continue
+    found=1
+    if [ "$uid" != "0" ]; then
+      echo "❌ 当前代理核心不是以系统服务运行，未开启 Kill Switch"
+      return 1
+    fi
+  done
+  if [ "$found" -ne 1 ]; then
+    echo "❌ 未找到正在运行的代理核心，未开启 Kill Switch"
+    return 1
+  fi
+}
+
 install_config_file() {
   local source destination
   source="$1"
@@ -188,17 +212,16 @@ install_config_file() {
 }
 
 install_rules() {
-  local server_ipv4 interfaces temp_dir backup_path
-  server_ipv4="$1"
-  interfaces="$2"
+  local interfaces temp_dir backup_path
 
-  if ! valid_ipv4 "$server_ipv4"; then
-    echo "❌ 服务器地址必须是有效 IPv4"
-    return 2
-  fi
+  proxy_core_runs_as_root || return 1
+  interfaces=$(detect_physical_interfaces) || {
+    echo "❌ 无法自动识别物理网络接口，未做改动"
+    return 1
+  }
   if ! valid_interfaces "$interfaces"; then
-    echo "❌ 网络接口仅支持 en、bridge 或 ppp 加数字，多个接口用空格分隔"
-    return 2
+    echo "❌ 自动识别到的物理网络接口不合法，未做改动"
+    return 1
   fi
   if [ ! -r "$PF_TEMPLATE" ]; then
     echo "❌ 缺少 PF 规则模板，未做改动"
@@ -215,7 +238,6 @@ install_rules() {
 
   temp_dir=$(/usr/bin/mktemp -d /tmp/cloudcheck-pf.XXXXXX) || return 1
   /usr/bin/sed \
-    -e "s/__VPS_IP__/$server_ipv4/g" \
     -e "s/__INTERFACES__/$interfaces/g" \
     "$PF_TEMPLATE" > "$temp_dir/$ANCHOR" || {
       /bin/rm -rf "$temp_dir"
@@ -269,6 +291,14 @@ install_rules() {
     install_config_file "$temp_dir/pf.conf.original" "$MAIN_CONF" >/dev/null 2>&1 || true
     /bin/rm -rf "$temp_dir"
     echo "❌ 无法安装 CloudCheck PF anchor，已恢复系统配置"
+    return 1
+  fi
+  if ! "$PFCTL" -f "$MAIN_CONF" >/dev/null 2>&1; then
+    install_config_file "$temp_dir/pf.conf.original" "$MAIN_CONF" >/dev/null 2>&1 || true
+    /bin/rm -f "$ANCHOR_CONF"
+    "$PFCTL" -f "$MAIN_CONF" >/dev/null 2>&1 || true
+    /bin/rm -rf "$temp_dir"
+    echo "❌ 系统 PF 配置加载失败，已还原安装前状态"
     return 1
   fi
   /bin/rm -rf "$temp_dir"
@@ -375,6 +405,9 @@ release_owned_reference() {
 }
 
 enable_rules() {
+  if [ "$BOOTSTRAP_DEFAULT" -eq 1 ]; then
+    install_rules || return 1
+  fi
   validate_anchor_ownership || return 1
   ensure_existing_anchor_registered || return 1
   if ! "$PFCTL" -a "$ANCHOR" -nf "$ANCHOR_CONF" >/dev/null 2>&1; then
@@ -412,11 +445,23 @@ enable_rules() {
 
 case "$ACTION" in
   install)
-    if [ "$#" -ne 3 ]; then
-      echo "用法: cloudcheck-killswitch install <IPv4> <interfaces>"
+    if [ "$#" -ne 1 ]; then
+      echo "用法: cloudcheck-killswitch install"
       exit 2
     fi
-    install_rules "$2" "$3"
+    if /usr/bin/grep -qE \
+      '^[[:space:]]*anchor[[:space:]]+"(cloudcheck|cloudlink-guard|cloudroute|puffroute|killswitch)"' \
+      "$MAIN_CONF" 2>/dev/null; then
+      echo "❌ 已存在 Kill Switch 规则入口，未覆盖"
+      exit 1
+    fi
+    for candidate_anchor in cloudcheck cloudlink-guard cloudroute puffroute killswitch; do
+      if [ -e "$ANCHOR_DIR/$candidate_anchor" ]; then
+        echo "❌ 已存在 Kill Switch 规则文件，未覆盖"
+        exit 1
+      fi
+    done
+    install_rules
     ;;
 
   on)
@@ -449,7 +494,7 @@ case "$ACTION" in
     ;;
 
   *)
-    echo "用法: cloudcheck-killswitch install <IPv4> <interfaces> | on | off | status"
+    echo "用法: cloudcheck-killswitch install | on | off | status"
     exit 2
     ;;
 esac

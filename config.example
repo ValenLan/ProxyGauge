@@ -22,7 +22,3 @@ CLOUDCHECK_ACTIVE_AI_PROBES="0"
 
 # Optional: Chrome executable used by the isolated browser check.
 CLOUDCHECK_CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-
-# Required only when installing the PF Kill Switch.
-CLOUDCHECK_VPS_IP=""
-CLOUDCHECK_INTERFACES="en0 en1 en2 en3 en4 en5 en6 en7 bridge0 bridge1 ppp0 ppp1"

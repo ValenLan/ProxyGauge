@@ -444,7 +444,7 @@ probe() {
 }
 
 run_admin() {
-  local action_name admin_output action_status result_dir result_tmp
+  local action_name admin_output clean_admin_output action_status result_dir result_tmp
   action_name="$1"
   case "$action_name" in
     on|off|status)
@@ -473,7 +473,9 @@ run_admin() {
       echo "已取消管理员授权，未修改 Kill Switch"
     else
       echo "管理员操作失败"
-      [ -n "$admin_output" ] && /usr/bin/printf '%s\n' "$admin_output"
+      clean_admin_output=$(/usr/bin/printf '%s\n' "$admin_output" \
+        | /usr/bin/sed -E 's/^.*execution error: //; s/ \([-0-9]+\)$//')
+      [ -n "$clean_admin_output" ] && /usr/bin/printf '%s\n' "$clean_admin_output"
     fi
     return 1
   fi

@@ -27,40 +27,34 @@ fi
 run_helper() {
   CLOUDCHECK_KILLSWITCH_TEST_ROOT="$TEST_ROOT" \
   CLOUDCHECK_KILLSWITCH_TEST_PFCTL="$TEST_ROOT/bin/pfctl" \
+  CLOUDCHECK_KILLSWITCH_TEST_INTERFACES="${CLOUDCHECK_KILLSWITCH_TEST_INTERFACES:-en0 en1}" \
   /bin/bash "$HELPER" "$@"
 }
 
-install_output=$(run_helper install 203.0.113.10 'en0 en1')
-/usr/bin/printf '%s\n' "$install_output" | /usr/bin/grep -Fq '规则已安装，当前保持关闭'
+bootstrap_output=$(run_helper on)
+/usr/bin/printf '%s\n' "$bootstrap_output" | /usr/bin/grep -Fq '规则已安装，当前保持关闭'
+/usr/bin/printf '%s\n' "$bootstrap_output" | /usr/bin/grep -Fq 'Kill Switch 已开启'
 /usr/bin/grep -Fq 'anchor "cloudcheck"' "$TEST_ROOT/etc/pf.conf"
-/usr/bin/grep -Fq '203.0.113.10' "$TEST_ROOT/etc/pf.anchors/cloudcheck"
 /usr/bin/grep -Fq 'phys = "{ en0 en1 }"' "$TEST_ROOT/etc/pf.anchors/cloudcheck"
+if /usr/bin/grep -Eq '__VPS_IP__|cloudlink_guard_vps' "$TEST_ROOT/etc/pf.anchors/cloudcheck"; then
+  echo '内置规则不得依赖服务器 IP 参数' >&2
+  exit 1
+fi
 [ -r "$TEST_ROOT/etc/pf.conf.cloudcheck.bak" ]
-
-enable_output=$(run_helper on)
-/usr/bin/printf '%s\n' "$enable_output" | /usr/bin/grep -Fq 'Kill Switch 已开启'
 [ -s "$TEST_ROOT/var/run/cloudcheck-killswitch.pf-token" ]
-
-if run_helper install 203.0.113.999 'en0 en1' >/dev/null 2>&1; then
-  echo '越界 IPv4 不应通过校验' >&2
-  exit 1
-fi
-if run_helper install 203.0.113.010 'en0 en1' >/dev/null 2>&1; then
-  echo '带前导零的 IPv4 不应通过校验' >&2
-  exit 1
-fi
-if run_helper install 203.0.113.10 'en0; reboot' >/dev/null 2>&1; then
-  echo '非法接口参数不应通过校验' >&2
-  exit 1
-fi
-if run_helper install 203.0.113.10 'utun0' >/dev/null 2>&1; then
-  echo '隧道接口不应被当作物理接口' >&2
-  exit 1
-fi
 
 /usr/bin/printf '%s\n' 'set skip on lo0' > "$TEST_ROOT/etc/pf.conf"
 /bin/rm -f "$TEST_ROOT/etc/pf.anchors/cloudcheck" \
   "$TEST_ROOT/var/run/cloudcheck-killswitch.pf-token"
+if CLOUDCHECK_KILLSWITCH_TEST_INTERFACES='en0; reboot' run_helper on >/dev/null 2>&1; then
+  echo '非法接口参数不应通过校验' >&2
+  exit 1
+fi
+if CLOUDCHECK_KILLSWITCH_TEST_INTERFACES='utun0' run_helper on >/dev/null 2>&1; then
+  echo '隧道接口不应被当作物理接口' >&2
+  exit 1
+fi
+
 /usr/bin/printf '%s\n' 'block return out on en0 all' > "$TEST_ROOT/etc/pf.anchors/killswitch"
 anchor_hash_before=$(/usr/bin/shasum -a 256 "$TEST_ROOT/etc/pf.anchors/killswitch" | /usr/bin/awk '{print $1}')
 recovery_output=$(run_helper on)
@@ -72,7 +66,7 @@ recovery_output=$(run_helper on)
 anchor_hash_after=$(/usr/bin/shasum -a 256 "$TEST_ROOT/etc/pf.anchors/killswitch" | /usr/bin/awk '{print $1}')
 [ "$anchor_hash_before" = "$anchor_hash_after" ]
 
-if run_helper install 203.0.113.10 'en0 en1' >/dev/null 2>&1; then
+if run_helper install >/dev/null 2>&1; then
   echo '旧版 killswitch 存在时不得自动叠加新 anchor' >&2
   exit 1
 fi
@@ -85,9 +79,13 @@ if run_helper on >/dev/null 2>&1; then
 fi
 
 /bin/rm -f "$TEST_ROOT/etc/pf.anchors/killswitch" "$TEST_ROOT/etc/pf.anchors/cloudroute"
-if run_helper on >/dev/null 2>&1; then
-  echo '没有已安装规则时不得生成或启用规则' >&2
+fresh_output=$(run_helper on)
+/usr/bin/printf '%s\n' "$fresh_output" | /usr/bin/grep -Fq '规则已安装，当前保持关闭'
+/usr/bin/printf '%s\n' "$fresh_output" | /usr/bin/grep -Fq 'Kill Switch 已开启'
+
+if run_helper install unexpected >/dev/null 2>&1; then
+  echo '内置安装不得接收用户配置参数' >&2
   exit 1
 fi
 
-echo 'CloudCheck Kill Switch installation and recovery safety tests passed.'
+echo 'CloudCheck Kill Switch self-contained installation and recovery safety tests passed.'

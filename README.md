@@ -99,7 +99,8 @@ macOS 首次启动会优先从 Mihomo 本地控制 socket、macOS 系统代理�
 中，标题栏的连接设置按钮可以随时重新检测。
 
 分享包不包含代理客户端、订阅、节点、服务器地址或个人配置。朋友仍需自行安装并配置
-Mihomo/Clash Verge；PF Kill Switch 也不会随普通分享包自动安装。
+Mihomo/Clash Verge；PF Kill Switch 的脚本和默认规则随 App 提供，但只有用户主动打开开关并
+确认管理员授权后才会安装和启用。
 
 ### 安装
 
@@ -122,7 +123,7 @@ Scripts/install.sh
 ### 配置
 
 普通 macOS 图形用户不需要创建配置文件；首次引导确认的本地入口会直接传给 App 内置脚本。
-下面的文件仅用于开发者命令行、高级链式出口和 PF Kill Switch 配置；运行安装脚本时会创建：
+下面的文件仅用于开发者命令行和高级链式出口；运行安装脚本时会创建：
 
 ```text
 ~/.config/cloudcheck/config
@@ -142,7 +143,6 @@ CLOUDCHECK_SECONDARY_DOMAINS="gemini.google.com,generativelanguage.googleapis.co
 CLOUDCHECK_EXPECT_SECONDARY_IP=""  # 可选：校验额外出口基线
 CLOUDCHECK_CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 CLOUDCHECK_ACTIVE_AI_PROBES="0"  # 默认关闭：不主动请求任何 AI 平台
-CLOUDCHECK_VPS_IP=""     # 仅 PF Kill Switch 需要
 ```
 
 从 CloudLinkGuard、CloudRoute 或 PuffRoute 升级时，安装脚本会在新配置不存在的情况下
@@ -166,16 +166,16 @@ CLOUDCHECK_VPS_IP=""     # 仅 PF Kill Switch 需要
 
 ### 可选：PF Kill Switch
 
-首页 Kill Switch 始终只是“开启 / 关闭”开关，不收集服务器 IP 或网卡参数，也不会重新生成、
-覆盖已有规则。开启时若发现兼容的旧规则仍在、但 `/etc/pf.conf` 中的入口被清理，CloudCheck
-会先校验旧规则和系统配置、保留备份，只恢复该入口后再开启保护；原 anchor 内容保持不变。
-应用启动和普通状态刷新不会请求管理员权限，也不会修改 PF。
+首页 Kill Switch 始终只是“开启 / 关闭”开关，不收集服务器 IP、网卡或其他规则参数。
+全新 Mac 第一次开启时，CloudCheck 使用 App 内置模板自动识别物理接口，并确认 Mihomo 核心
+由系统服务运行；随后在一次管理员授权中校验 anchor 与临时主配置、备份 `/etc/pf.conf`、
+安装规则并立即开启。任一步失败都会保持关闭并回滚本次安装。
 
-全新 Mac 如果从未安装过 Kill Switch 规则，开关会保持关闭并报告“未找到已安装的规则”，
-不会临时要求用户填写网络参数。需要新建规则时才使用下面的高级命令行安装流程。PF 配置会
-影响整台 Mac 的联网行为，请先确认服务器 IPv4 与物理接口，并确保有可恢复的本地终端访问。
+如果发现兼容的旧规则仍在、但 `/etc/pf.conf` 中的入口被清理，CloudCheck 只恢复入口并原样
+加载旧 anchor，不覆盖旧规则。应用启动和普通状态刷新不会请求管理员权限，也不会修改 PF。
 
-命令行用户也可以填写 `CLOUDCHECK_VPS_IP` 后运行：
+PF 会影响整台 Mac 的联网行为，因此自动安装只允许 root 身份运行的代理核心经物理接口联网；
+普通应用必须走本机代理或 TUN。命令行用户也可以运行同一套无参数安装流程：
 
 ```bash
 Scripts/install-pf.sh
@@ -188,7 +188,7 @@ Scripts/install-pf.sh
 3. 先检查 anchor 与系统 PF 配置语法，再安装配置
 4. 首次执行时备份 `/etc/pf.conf.cloudcheck.bak`
 
-命令行安装只写入规则并保持关闭；完成后，CloudCheck 界面仍只负责开启或关闭 Kill Switch。
+命令行安装会自动识别接口，只写入内置规则并保持关闭；完成后由 CloudCheck 开关启用。
 
 从 CloudLinkGuard、CloudRoute、PuffRoute 或更早的 Proxy Tools 升级时，如果系统仍注册
 `cloudlink-guard`、`cloudroute`、`puffroute` 或 `killswitch` anchor，CloudCheck 会继续调用
@@ -240,7 +240,7 @@ Firewall/WFP 策略，误配置可能让整台电脑断网；当前分享版刻�
 每次 push 与 pull request 都会构建并测试 macOS、Windows x64 和 Windows ARM64，并把
 三个 ZIP 原样保存为 Actions artifacts。只有推送与应用版本完全一致的 `v<版本>` 标签时，
 工作流才会创建 GitHub Release，同时上传三个 ZIP 与 `SHA256SUMS.txt`。例如当前版本对应的
-发布标签应为 `v1.5.3`。
+发布标签应为 `v1.5.4`。
 
 创建标签会产生供仓库授权用户下载的正式发布结果，必须在全部本地测试和普通 push CI
 通过后由维护者明确执行；构建脚本本身不会自动创建标签。

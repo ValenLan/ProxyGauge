@@ -174,6 +174,7 @@ FAKE_OSASCRIPT="$TEMP_DIR/fake-osascript"
   '  enabled) echo "✅ Kill Switch: Enabled (3 条 anchor 规则)" ;;' \
   '  disabled) echo "⚪️ Kill Switch: Disabled (PF 当前未启用)" ;;' \
   '  canceled) echo "execution error: User canceled. (-128)" >&2; exit 1 ;;' \
+  '  failed) echo "/Applications/CloudCheck.app/Contents/Resources/cloudcheck-admin.applescript:1:2: execution error: ❌ 内置规则校验失败 (1)" >&2; exit 1 ;;' \
   '  *) echo "unexpected test mode" >&2; exit 2 ;;' \
   'esac' > "$FAKE_OSASCRIPT"
 /bin/chmod 755 "$FAKE_OSASCRIPT"
@@ -208,5 +209,20 @@ if cancel_output=$(CLOUDCHECK_FAKE_ADMIN_MODE=canceled \
   exit 1
 fi
 /usr/bin/printf '%s\n' "$cancel_output" | /usr/bin/grep -Fq '已取消管理员授权，未修改 Kill Switch'
+
+if failure_output=$(CLOUDCHECK_FAKE_ADMIN_MODE=failed \
+  CLOUDCHECK_ADMIN_SCRIPT="$ADMIN_SCRIPT" \
+  CLOUDCHECK_OSASCRIPT="$FAKE_OSASCRIPT" \
+  CLOUDCHECK_ADMIN_RESULT="$NEW_RESULT" \
+  CLOUDCHECK_KILL_TOKEN="$TEMP_DIR/new-token" \
+  /bin/bash "$BACKEND" kill-status 2>&1); then
+  echo '管理员失败测试应返回失败' >&2
+  exit 1
+fi
+/usr/bin/printf '%s\n' "$failure_output" | /usr/bin/grep -Fq '❌ 内置规则校验失败'
+if /usr/bin/printf '%s\n' "$failure_output" | /usr/bin/grep -Fq '/Applications/CloudCheck.app'; then
+  echo '用户错误信息不得显示管理员脚本内部路径' >&2
+  exit 1
+fi
 
 echo 'CloudCheck backend state parsing tests passed.'
