@@ -170,16 +170,6 @@ esac
 FAKE_OSASCRIPT="$TEMP_DIR/fake-osascript"
 /usr/bin/printf '%s\n' \
   '#!/bin/bash' \
-  'if [ "${3:-}" = "install" ] || [ "${3:-}" = "setup-on" ]; then' \
-  '  [ "$#" -eq 5 ] && [ "$4" = "203.0.113.10" ] && [ "$5" = "en0 en1" ] || exit 2' \
-  '  if [ "$3" = "setup-on" ]; then' \
-  '    echo "✅ Kill Switch 规则安装完成"' \
-  '    echo "🛡️ Kill Switch 已开启"' \
-  '  else' \
-  '    echo "✅ Kill Switch 规则已安装，当前保持关闭"' \
-  '  fi' \
-  '  exit 0' \
-  'fi' \
   'case "${CLOUDCHECK_FAKE_ADMIN_MODE:-enabled}" in' \
   '  enabled) echo "✅ Kill Switch: Enabled (3 条 anchor 规则)" ;;' \
   '  disabled) echo "⚪️ Kill Switch: Disabled (PF 当前未启用)" ;;' \
@@ -189,6 +179,11 @@ FAKE_OSASCRIPT="$TEMP_DIR/fake-osascript"
 /bin/chmod 755 "$FAKE_OSASCRIPT"
 
 ADMIN_SCRIPT="$SCRIPT_DIR/../Helpers/CloudCheck Admin.applescript"
+if /usr/bin/grep -Fq 'kill-install' "$BACKEND" \
+  || /usr/bin/grep -Fq 'actionName is "install"' "$ADMIN_SCRIPT"; then
+  echo 'App 管理员桥接不得接收 Kill Switch 安装参数' >&2
+  exit 1
+fi
 NEW_RESULT="$TEMP_DIR/cache/admin-result"
 admin_output=$(CLOUDCHECK_ADMIN_SCRIPT="$ADMIN_SCRIPT" \
   CLOUDCHECK_OSASCRIPT="$FAKE_OSASCRIPT" \
@@ -202,24 +197,6 @@ cached_actual=$(CLOUDCHECK_ADMIN_RESULT="$NEW_RESULT" \
   CLOUDCHECK_KILL_TOKEN="$TEMP_DIR/new-token" \
   /bin/bash "$BACKEND" probe | /usr/bin/awk -F '\t' '$1 == "kill" { print $2 "\t" $3 }')
 [ "$cached_actual" = $'已开启\tok' ]
-
-install_output=$(CLOUDCHECK_ADMIN_SCRIPT="$ADMIN_SCRIPT" \
-  CLOUDCHECK_OSASCRIPT="$FAKE_OSASCRIPT" \
-  CLOUDCHECK_ADMIN_RESULT="$NEW_RESULT" \
-  CLOUDCHECK_KILL_TOKEN="$TEMP_DIR/new-token" \
-  /bin/bash "$BACKEND" kill-install 203.0.113.10 'en0 en1')
-/usr/bin/printf '%s\n' "$install_output" | /usr/bin/grep -Fq '规则已安装，当前保持关闭'
-if /usr/bin/printf '%s\n' "$install_output" | /usr/bin/grep -Fq '203.0.113.10'; then
-  echo '管理员操作输出不得回显服务器地址' >&2
-  exit 1
-fi
-
-setup_output=$(CLOUDCHECK_ADMIN_SCRIPT="$ADMIN_SCRIPT" \
-  CLOUDCHECK_OSASCRIPT="$FAKE_OSASCRIPT" \
-  CLOUDCHECK_ADMIN_RESULT="$NEW_RESULT" \
-  CLOUDCHECK_KILL_TOKEN="$TEMP_DIR/new-token" \
-  /bin/bash "$BACKEND" kill-setup-on 203.0.113.10 'en0 en1')
-/usr/bin/printf '%s\n' "$setup_output" | /usr/bin/grep -Fq 'Kill Switch 已开启'
 
 if cancel_output=$(CLOUDCHECK_FAKE_ADMIN_MODE=canceled \
   CLOUDCHECK_ADMIN_SCRIPT="$ADMIN_SCRIPT" \

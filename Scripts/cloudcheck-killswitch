@@ -1,8 +1,7 @@
 #!/bin/bash
 # cloudcheck-killswitch — PF 独立 anchor 的安装与防泄漏开关
 #   install <IPv4> <interfaces>  校验、备份并安装规则（保持关闭）
-#   setup-on <IPv4> <interfaces> 校验并安装规则，然后立即开启
-#   on                           加载专属 anchor 并持有 PF enable reference
+#   on                           恢复已有 anchor 入口（如有需要）并开启保护
 #   off                          清空专属 anchor 并释放本工具的 reference
 #   status                       检查 PF 与 anchor 的真实状态
 
@@ -35,7 +34,6 @@ fi
 
 ANCHOR=cloudcheck
 ANCHOR_CONF="$ANCHOR_DIR/cloudcheck"
-LEGACY_HELPER="$SCRIPT_DIR/killswitch"
 
 console_home() {
   local console_user
@@ -56,25 +54,52 @@ if [ "$TEST_MODE" -eq 0 ] && [ ! -r "$PF_TEMPLATE" ]; then
   fi
 fi
 
-if [ ! -x "$LEGACY_HELPER" ] && [ "$TEST_MODE" -eq 0 ]; then
-  CONSOLE_HOME="${CONSOLE_HOME:-$(console_home)}"
-  if [ -n "$CONSOLE_HOME" ]; then
-    LEGACY_HELPER="$CONSOLE_HOME/.local/bin/killswitch"
-  fi
-fi
-
 ACTION="${1:-status}"
 
-# A much older helper owns the generic "killswitch" anchor. Never install a
-# second rule set beside it automatically; on/off/status remain delegated.
+# A much older installation owns the generic "killswitch" anchor. Never
+# install a second rule set beside it automatically; the bundled root helper
+# operates the existing root-owned anchor directly.
 if /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"killswitch"' "$MAIN_CONF" 2>/dev/null; then
-  if [ "$ACTION" = "install" ] || [ "$ACTION" = "setup-on" ]; then
+  if [ "$ACTION" = "install" ]; then
     echo "❌ 检测到旧版 killswitch anchor，未叠加第二套 PF 规则"
     echo "请先单独迁移旧规则，再重新配置 CloudCheck"
     exit 1
-  elif [ -x "$LEGACY_HELPER" ]; then
-    exec "$LEGACY_HELPER" "$@"
   fi
+fi
+
+# The switch controls an already installed rule set. If a cleanup or migration
+# removed only its /etc/pf.conf entry, recover that entry without regenerating
+# the anchor or asking the user for server/network parameters again.
+if [ "$ACTION" = "on" ] && ! /usr/bin/grep -qE \
+  '^[[:space:]]*anchor[[:space:]]+"(cloudcheck|cloudlink-guard|cloudroute|puffroute|killswitch)"' \
+  "$MAIN_CONF" 2>/dev/null; then
+  existing_count=0
+  existing_anchor=""
+  for candidate_anchor in cloudcheck cloudlink-guard cloudroute puffroute killswitch; do
+    if [ -r "$ANCHOR_DIR/$candidate_anchor" ]; then
+      existing_count=$((existing_count + 1))
+      existing_anchor="$candidate_anchor"
+    fi
+  done
+
+  if [ "$existing_count" -eq 0 ]; then
+    echo "❌ 未找到已安装的 Kill Switch 规则，未做改动"
+    exit 1
+  fi
+  if [ "$existing_count" -ne 1 ]; then
+    echo "❌ 检测到多套未注册的 Kill Switch 规则，为避免启用错误规则，未做改动"
+    exit 1
+  fi
+
+  ANCHOR="$existing_anchor"
+  ANCHOR_CONF="$ANCHOR_DIR/$existing_anchor"
+  case "$existing_anchor" in
+    cloudcheck) TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/cloudcheck-killswitch.pf-token" ;;
+    cloudlink-guard) TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/cloudlink-guard-killswitch.pf-token" ;;
+    cloudroute) TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/cloudroute-killswitch.pf-token" ;;
+    puffroute) TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/puffroute-killswitch.pf-token" ;;
+    killswitch) TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/proxy-tools-killswitch.pf-token" ;;
+  esac
 fi
 
 # Preserve previous migrations: Proxy Tools -> PuffRoute -> CloudRoute ->
@@ -95,6 +120,11 @@ if ! /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"cloudcheck"' "$MAIN_CONF
     ANCHOR=puffroute
     ANCHOR_CONF="$ANCHOR_DIR/puffroute"
     TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/puffroute-killswitch.pf-token"
+  elif /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"killswitch"' "$MAIN_CONF" 2>/dev/null \
+    && [ -r "$ANCHOR_DIR/killswitch" ]; then
+    ANCHOR=killswitch
+    ANCHOR_CONF="$ANCHOR_DIR/killswitch"
+    TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/proxy-tools-killswitch.pf-token"
   fi
 fi
 
@@ -158,10 +188,9 @@ install_config_file() {
 }
 
 install_rules() {
-  local server_ipv4 interfaces after_install_state temp_dir backup_path
+  local server_ipv4 interfaces temp_dir backup_path
   server_ipv4="$1"
   interfaces="$2"
-  after_install_state="${3:-off}"
 
   if ! valid_ipv4 "$server_ipv4"; then
     echo "❌ 服务器地址必须是有效 IPv4"
@@ -244,12 +273,83 @@ install_rules() {
   fi
   /bin/rm -rf "$temp_dir"
 
-  if [ "$after_install_state" = "on" ]; then
-    echo "✅ Kill Switch 规则安装完成"
-  else
-    echo "✅ Kill Switch 规则已安装，当前保持关闭"
-  fi
+  echo "✅ Kill Switch 规则已安装，当前保持关闭"
   echo "已完成 PF 语法检查，并保留首次配置备份"
+}
+
+ensure_existing_anchor_registered() {
+  local temp_dir backup_path
+
+  if /usr/bin/grep -qE "^[[:space:]]*anchor[[:space:]]+\"$ANCHOR\"" "$MAIN_CONF" 2>/dev/null; then
+    return 0
+  fi
+  if [ ! -r "$ANCHOR_CONF" ]; then
+    echo "❌ 未找到已安装的 Kill Switch 规则，未做改动"
+    return 1
+  fi
+  if ! "$PFCTL" -a "$ANCHOR" -nf "$ANCHOR_CONF" >/dev/null 2>&1; then
+    echo "❌ 已有 Kill Switch 规则校验失败，未做改动"
+    return 1
+  fi
+  if [ ! -r "$MAIN_CONF" ]; then
+    echo "❌ 无法读取 $MAIN_CONF，未做改动"
+    return 1
+  fi
+
+  temp_dir=$(/usr/bin/mktemp -d /tmp/cloudcheck-pf-entry.XXXXXX) || return 1
+  /bin/cp "$MAIN_CONF" "$temp_dir/pf.conf.original" || {
+    /bin/rm -rf "$temp_dir"
+    return 1
+  }
+  /bin/cp "$MAIN_CONF" "$temp_dir/pf.conf" || {
+    /bin/rm -rf "$temp_dir"
+    return 1
+  }
+  /usr/bin/printf '\nanchor "%s"\n' "$ANCHOR" >> "$temp_dir/pf.conf"
+
+  if ! "$PFCTL" -nf "$temp_dir/pf.conf" >/dev/null 2>&1; then
+    /bin/rm -rf "$temp_dir"
+    echo "❌ 系统 PF 配置校验失败，未做改动"
+    return 1
+  fi
+
+  backup_path="$MAIN_CONF.cloudcheck-entry.bak"
+  if [ ! -e "$backup_path" ]; then
+    /bin/cp -p "$MAIN_CONF" "$backup_path" || {
+      /bin/rm -rf "$temp_dir"
+      echo "❌ 无法备份系统 PF 配置，未做改动"
+      return 1
+    }
+  fi
+  if ! install_config_file "$temp_dir/pf.conf" "$MAIN_CONF"; then
+    /bin/rm -rf "$temp_dir"
+    echo "❌ 无法恢复 Kill Switch 规则入口，未做改动"
+    return 1
+  fi
+  if ! "$PFCTL" -f "$MAIN_CONF" >/dev/null 2>&1; then
+    install_config_file "$temp_dir/pf.conf.original" "$MAIN_CONF" >/dev/null 2>&1 || true
+    "$PFCTL" -f "$MAIN_CONF" >/dev/null 2>&1 || true
+    /bin/rm -rf "$temp_dir"
+    echo "❌ Kill Switch 规则入口恢复失败，已还原系统配置"
+    return 1
+  fi
+  /bin/rm -rf "$temp_dir"
+  echo "✅ 已恢复原有 Kill Switch 规则入口"
+}
+
+validate_anchor_ownership() {
+  local owner mode
+  if [ ! -r "$ANCHOR_CONF" ]; then
+    echo "❌ 未找到已安装的 Kill Switch 规则，未做改动"
+    return 1
+  fi
+  [ "$TEST_MODE" -eq 1 ] && return 0
+  owner=$(/usr/bin/stat -f '%u' "$ANCHOR_CONF" 2>/dev/null || true)
+  mode=$(/usr/bin/stat -f '%Lp' "$ANCHOR_CONF" 2>/dev/null || true)
+  if [ "$owner" != "0" ] || [ -z "$mode" ] || [ $((8#$mode & 022)) -ne 0 ]; then
+    echo "❌ Kill Switch 规则文件权限不安全，未做改动"
+    return 1
+  fi
 }
 
 pf_enabled() {
@@ -275,10 +375,8 @@ release_owned_reference() {
 }
 
 enable_rules() {
-  if ! /usr/bin/grep -qE "^[[:space:]]*anchor[[:space:]]+\"$ANCHOR\"" "$MAIN_CONF"; then
-    echo "❌ $MAIN_CONF 缺少 $ANCHOR anchor 入口，未做改动"
-    return 1
-  fi
+  validate_anchor_ownership || return 1
+  ensure_existing_anchor_registered || return 1
   if ! "$PFCTL" -a "$ANCHOR" -nf "$ANCHOR_CONF" >/dev/null 2>&1; then
     echo "❌ $ANCHOR_CONF 语法校验失败，未做改动"
     return 1
@@ -313,14 +411,6 @@ enable_rules() {
 }
 
 case "$ACTION" in
-  setup-on)
-    if [ "$#" -ne 3 ]; then
-      echo "用法: cloudcheck-killswitch setup-on <IPv4> <interfaces>"
-      exit 2
-    fi
-    install_rules "$2" "$3" on && enable_rules
-    ;;
-
   install)
     if [ "$#" -ne 3 ]; then
       echo "用法: cloudcheck-killswitch install <IPv4> <interfaces>"
@@ -359,7 +449,7 @@ case "$ACTION" in
     ;;
 
   *)
-    echo "用法: cloudcheck-killswitch setup-on <IPv4> <interfaces> | install <IPv4> <interfaces> | on | off | status"
+    echo "用法: cloudcheck-killswitch install <IPv4> <interfaces> | on | off | status"
     exit 2
     ;;
 esac

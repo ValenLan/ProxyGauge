@@ -444,16 +444,11 @@ probe() {
 }
 
 run_admin() {
-  local action_name server_ipv4 interfaces admin_output action_status result_dir result_tmp
+  local action_name admin_output action_status result_dir result_tmp
   action_name="$1"
   case "$action_name" in
     on|off|status)
       [ "$#" -eq 1 ] || { echo "非法的管理员参数"; return 2; }
-      ;;
-    install|setup-on)
-      [ "$#" -eq 3 ] || { echo "缺少 Kill Switch 配置参数"; return 2; }
-      server_ipv4="$2"
-      interfaces="$3"
       ;;
     *) echo "非法的管理员操作: $action_name"; return 2 ;;
   esac
@@ -471,12 +466,7 @@ run_admin() {
     return 1
   fi
 
-  if [ "$action_name" = "install" ] || [ "$action_name" = "setup-on" ]; then
-    admin_output=$("$OSASCRIPT" "$ADMIN_SCRIPT" "$KILL_HELPER" "$action_name" \
-      "$server_ipv4" "$interfaces" 2>&1)
-  else
-    admin_output=$("$OSASCRIPT" "$ADMIN_SCRIPT" "$KILL_HELPER" "$action_name" 2>&1)
-  fi
+  admin_output=$("$OSASCRIPT" "$ADMIN_SCRIPT" "$KILL_HELPER" "$action_name" 2>&1)
   action_status=$?
   if [ "$action_status" -ne 0 ]; then
     if /usr/bin/printf '%s\n' "$admin_output" | /usr/bin/grep -qE '(^|[^0-9])-128([^0-9]|$)|User canceled|用户已取消'; then
@@ -533,14 +523,8 @@ case "${1:-}" in
   kill-off)
     run_admin off
     ;;
-  kill-install)
-    run_admin install "${2:-}" "${3:-}"
-    ;;
-  kill-setup-on)
-    run_admin setup-on "${2:-}" "${3:-}"
-    ;;
   *)
-    echo "用法: $0 {discover|probe|health|kill-status|kill-on|kill-off|kill-install|kill-setup-on}"
+    echo "用法: $0 {discover|probe|health|kill-status|kill-on|kill-off}"
     exit 2
     ;;
 esac

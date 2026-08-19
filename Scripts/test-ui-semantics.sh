@@ -68,11 +68,14 @@ WINDOWS_MAIN="$PROJECT_ROOT/Windows/MainWindow.xaml"
 /usr/bin/grep -Fq 'tint: CloudPalette.networkBlue' "$APP_SOURCE"
 /usr/bin/grep -Fq 'metric.value == "未配置"' "$APP_SOURCE"
 /usr/bin/grep -Fq 'Text(isUnconfigured ? "未开启" : metric.value)' "$APP_SOURCE"
-/usr/bin/grep -Fq 'if isUnconfigured && enabled' "$APP_SOURCE"
-/usr/bin/grep -Fq 'private struct KillSwitchSetupView: View' "$APP_SOURCE"
-/usr/bin/grep -Fq 'Text("开启 Kill Switch")' "$APP_SOURCE"
-/usr/bin/grep -Fq 'Button("安装并开启")' "$APP_SOURCE"
-/usr/bin/grep -Fq '@Published var showKillSwitchSetup = false' "$APP_SOURCE"
+/usr/bin/grep -Fq 'set: setEnabled' "$APP_SOURCE"
+
+if /usr/bin/grep -Fq 'KillSwitchSetupView' "$APP_SOURCE" \
+  || /usr/bin/grep -Fq '代理出口服务器 IPv4' "$APP_SOURCE" \
+  || /usr/bin/grep -Fq '安装并开启' "$APP_SOURCE"; then
+  echo "Kill Switch toggle must not ask for rule-installation parameters." >&2
+  exit 1
+fi
 
 if /usr/bin/grep -Fq 'Label("配置"' "$APP_SOURCE"; then
   echo "Unconfigured Kill Switch must remain an off switch, not a configuration button." >&2

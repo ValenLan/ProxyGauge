@@ -224,7 +224,6 @@ final class ProxyModel: ObservableObject {
     @Published var busyLabel = ""
     @Published var resultSheet: ResultSheet?
     @Published var showDisableConfirmation = false
-    @Published var showKillSwitchSetup = false
     @Published var showConnectionSetup = false
     @Published var showHealthPlanSetup = false
     @Published var isDiscoveringConnection = false
@@ -320,16 +319,6 @@ final class ProxyModel: ObservableObject {
 
     func enableKillSwitch() {
         runAction("kill-on", title: "已开启 Kill Switch", busy: "正在开启 Kill Switch…")
-    }
-
-    func setupAndEnableKillSwitch(serverIPv4: String, interfaces: String) {
-        showKillSwitchSetup = false
-        runAction(
-            "kill-setup-on",
-            arguments: [serverIPv4, interfaces],
-            title: "已开启 Kill Switch",
-            busy: "正在安装并开启 Kill Switch…"
-        )
     }
 
     func disableKillSwitch() {
@@ -607,7 +596,6 @@ struct MetricCard: View {
 struct KillSwitchCard: View {
     let metric: MetricState
     let isBusy: Bool
-    let configure: () -> Void
     let setEnabled: (Bool) -> Void
 
     private var iconColor: Color {
@@ -650,13 +638,7 @@ struct KillSwitchCard: View {
 
             Toggle("", isOn: Binding(
                 get: { metric.level == .ok },
-                set: { enabled in
-                    if isUnconfigured && enabled {
-                        configure()
-                    } else {
-                        setEnabled(enabled)
-                    }
-                }
+                set: setEnabled
             ))
             .labelsHidden()
             .toggleStyle(.switch)
@@ -664,9 +646,7 @@ struct KillSwitchCard: View {
             .controlSize(.small)
             .disabled(isBusy || isChecking)
             .help(
-                isUnconfigured
-                    ? "开启防泄漏保护（首次开启需要安装规则）"
-                    : (metric.level == .ok ? "关闭防泄漏保护" : "开启防泄漏保护")
+                metric.level == .ok ? "关闭防泄漏保护" : "开启防泄漏保护"
             )
         }
         .padding(.horizontal, 16)
@@ -1870,149 +1850,6 @@ struct RulePackView: View {
     }
 }
 
-private struct KillSwitchSetupView: View {
-    let isBusy: Bool
-    let enable: (String, String) -> Void
-    let close: () -> Void
-
-    @State private var serverIPv4 = ""
-    @State private var interfaces = "en0 en1"
-    @State private var confirmed = false
-
-    private var normalizedIPv4: String {
-        serverIPv4.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var normalizedInterfaces: String {
-        interfaces
-            .split(whereSeparator: { $0.isWhitespace })
-            .map(String.init)
-            .joined(separator: " ")
-    }
-
-    private var validIPv4: Bool {
-        let octets = normalizedIPv4.split(separator: ".", omittingEmptySubsequences: false)
-        guard octets.count == 4 else { return false }
-        return octets.allSatisfy { octet in
-            !octet.isEmpty
-                && octet.count <= 3
-                && octet.allSatisfy(\.isNumber)
-                && (octet == "0" || octet.first != "0")
-                && (Int(octet) ?? 256) <= 255
-        }
-    }
-
-    private var validInterfaces: Bool {
-        let names = normalizedInterfaces.split(separator: " ").map(String.init)
-        guard !names.isEmpty else { return false }
-        return names.allSatisfy { name in
-            name.range(of: #"^(en|bridge|ppp)[0-9]+$"#, options: .regularExpression) != nil
-        }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 17) {
-            HStack(alignment: .top, spacing: 13) {
-                CloudIconBadge(
-                    symbol: CloudSymbols.killSwitch,
-                    tint: CloudPalette.statusGreen,
-                    containerSize: 46,
-                    cornerRadius: 13,
-                    glyphSize: 19
-                )
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("开启 Kill Switch")
-                        .font(.system(size: 21, weight: .semibold, design: .rounded))
-                    Text("首次开启需要安装专属 PF 规则。")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(CloudPalette.statusOrange)
-                Text("PF 会影响整台 Mac 的联网。CloudCheck 会先校验规则并备份系统配置，确认后安装并立即开启保护。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(12)
-            .background(CloudPalette.statusOrange.opacity(0.10), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 13) {
-                setupField(
-                    title: "代理出口服务器 IPv4",
-                    detail: "只写入本机 PF 规则，不上传。",
-                    placeholder: "例如 203.0.113.10",
-                    text: $serverIPv4,
-                    valid: serverIPv4.isEmpty || validIPv4
-                )
-
-                setupField(
-                    title: "物理网络接口",
-                    detail: "常见为 en0 / en1；多个接口用空格分隔。",
-                    placeholder: "en0 en1",
-                    text: $interfaces,
-                    valid: interfaces.isEmpty || validInterfaces
-                )
-            }
-
-            Toggle("我已了解：接口或地址填写错误可能导致暂时断网", isOn: $confirmed)
-                .toggleStyle(.checkbox)
-                .font(.caption)
-
-            HStack {
-                if (!serverIPv4.isEmpty && !validIPv4) || (!interfaces.isEmpty && !validInterfaces) {
-                    Text("请填写有效 IPv4；接口仅支持 en、bridge 或 ppp 加数字。")
-                        .font(.caption)
-                        .foregroundStyle(CloudPalette.statusRed)
-                }
-                Spacer()
-                Button("取消", action: close)
-                    .controlSize(.small)
-                Button("安装并开启") {
-                    enable(normalizedIPv4, normalizedInterfaces)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(CloudPalette.statusGreen)
-                .disabled(!validIPv4 || !validInterfaces || !confirmed || isBusy)
-            }
-        }
-        .padding(22)
-        .frame(width: 520, height: 430)
-        .interactiveDismissDisabled(isBusy)
-    }
-
-    private func setupField(
-        title: String,
-        detail: String,
-        placeholder: String,
-        text: Binding<String>,
-        valid: Bool
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 6) {
-                Text(title)
-                    .font(.system(size: 12, weight: .semibold))
-                Text(detail)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-            TextField(placeholder, text: text)
-                .textFieldStyle(.roundedBorder)
-                .font(.system(size: 12, design: .monospaced))
-                .overlay {
-                    if !valid {
-                        RoundedRectangle(cornerRadius: 5)
-                            .stroke(CloudPalette.statusRed.opacity(0.7), lineWidth: 1)
-                    }
-                }
-        }
-    }
-}
-
 private struct HealthPlanSetupView: View {
     let save: (HealthCheckPlan) -> Void
     let close: () -> Void
@@ -2414,8 +2251,7 @@ struct ContentView: View {
                 MetricCard(metric: model.entry)
                 KillSwitchCard(
                     metric: model.killSwitch,
-                    isBusy: model.isBusy,
-                    configure: { model.showKillSwitchSetup = true }
+                    isBusy: model.isBusy
                 ) { enabled in
                     if enabled {
                         model.enableKillSwitch()
@@ -2468,13 +2304,6 @@ struct ContentView: View {
                 plan: model.healthPlan,
                 save: model.saveHealthPlan,
                 close: { model.showHealthPlanSetup = false }
-            )
-        }
-        .sheet(isPresented: $model.showKillSwitchSetup) {
-            KillSwitchSetupView(
-                isBusy: model.isBusy,
-                enable: model.setupAndEnableKillSwitch,
-                close: { model.showKillSwitchSetup = false }
             )
         }
         .alert("关闭 Kill Switch？", isPresented: $model.showDisableConfirmation) {
