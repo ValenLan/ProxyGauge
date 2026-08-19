@@ -1400,7 +1400,7 @@ private struct HealthActionCard: View {
                         }
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(CloudPalette.networkBlue)
-                        .frame(width: 64, height: 28)
+                        .frame(width: 76, height: 28)
                         .background(
                             CloudPalette.networkBlue.opacity(0.09),
                             in: RoundedRectangle(cornerRadius: 7, style: .continuous)
