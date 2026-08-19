@@ -1,7 +1,7 @@
 <Window x:Class="CloudLinkGuard.HealthReportWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="CloudLink Guard 链路检测"
+        Title="CloudCheck 链路检测"
         Width="720"
         Height="640"
         MaxHeight="720"

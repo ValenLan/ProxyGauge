@@ -87,4 +87,4 @@ extended_output=$(CLOUDLINK_GUARD_CONFIG=/dev/null \
 /usr/bin/grep -Fq '检测方案: 通用检测 + Google / Gemini' <<< "$extended_output"
 [ "$(/usr/bin/grep -c '^===== [1-8]\.' <<< "$extended_output")" = "8" ]
 
-echo "CloudLink Guard low-risk health tests passed."
+echo "CloudCheck low-risk health tests passed."

@@ -175,4 +175,4 @@ if cancel_output=$(CLOUDLINK_GUARD_FAKE_ADMIN_MODE=canceled \
 fi
 /usr/bin/printf '%s\n' "$cancel_output" | /usr/bin/grep -Fq '已取消管理员授权，未修改 Kill Switch'
 
-echo 'CloudLink Guard backend state parsing tests passed.'
+echo 'CloudCheck backend state parsing tests passed.'

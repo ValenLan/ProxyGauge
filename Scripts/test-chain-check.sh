@@ -31,4 +31,4 @@ custom_output=$(/usr/bin/osascript -l JavaScript \
 /usr/bin/grep -q '1 个目标域名均命中 Google-Chain' <<< "$custom_output"
 /usr/bin/grep -q '工作出口 中性 204 探测: 198 ms' <<< "$custom_output"
 
-echo "CloudLink Guard chain proxy tests passed."
+echo "CloudCheck chain proxy tests passed."

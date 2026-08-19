@@ -54,4 +54,4 @@ custom_secondary_output=$(CLOUDLINK_GUARD_CONFIG=/dev/null \
 /usr/bin/grep -Fq 'environment["CLOUDLINK_GUARD_MIXED"] = endpoint' "$APP_SOURCE"
 /usr/bin/grep -Fq 'environment["CLOUDLINK_GUARD_SECONDARY_MIXED"] = plan.secondaryEndpoint' "$APP_SOURCE"
 
-echo "CloudLink Guard isolated browser tests passed."
+echo "CloudCheck isolated browser tests passed."

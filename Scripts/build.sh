@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR=$(/usr/bin/dirname "$0")
 PROJECT_ROOT=$(cd "$SCRIPT_DIR/.." && /bin/pwd)
 BUILD_DIR="$PROJECT_ROOT/build"
-APP="$BUILD_DIR/CloudLink Guard.app"
+APP="$BUILD_DIR/CloudCheck.app"
 
 if [ -d "$APP" ]; then
   /bin/rm -rf "$APP"

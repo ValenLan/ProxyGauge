@@ -57,7 +57,7 @@ elif /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"puffroute"' /etc/pf.conf
   ANCHOR_NAME=puffroute
   ANCHOR_PATH=/etc/pf.anchors/puffroute
 elif /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"killswitch"' /etc/pf.conf; then
-  echo "Detected the older killswitch anchor; CloudLink Guard already delegates to its helper." >&2
+  echo "Detected the older killswitch anchor; CloudCheck already delegates to its helper." >&2
   echo "Refusing to add a second PF anchor automatically. Migrate that rule separately." >&2
   exit 1
 fi

@@ -5,12 +5,12 @@
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>CloudLinkGuard</AssemblyName>
+    <AssemblyName>CloudCheck</AssemblyName>
     <RootNamespace>CloudLinkGuard</RootNamespace>
     <ApplicationIcon>Assets\CloudLinkGuard.ico</ApplicationIcon>
-    <Version>1.4.0</Version>
-    <AssemblyVersion>1.4.0.0</AssemblyVersion>
-    <FileVersion>1.4.0.0</FileVersion>
+    <Version>1.4.1</Version>
+    <AssemblyVersion>1.4.1.0</AssemblyVersion>
+    <FileVersion>1.4.1.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>

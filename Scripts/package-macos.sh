@@ -3,9 +3,9 @@ set -euo pipefail
 
 SCRIPT_DIR=$(/usr/bin/dirname "$0")
 PROJECT_ROOT=$(cd "$SCRIPT_DIR/.." && /bin/pwd)
-APP="$PROJECT_ROOT/build/CloudLink Guard.app"
+APP="$PROJECT_ROOT/build/CloudCheck.app"
 VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PROJECT_ROOT/Info.plist")
-DEFAULT_ARCHIVE="$PROJECT_ROOT/dist/CloudLinkGuard-$VERSION-macOS-arm64.zip"
+DEFAULT_ARCHIVE="$PROJECT_ROOT/dist/CloudCheck-$VERSION-macOS-arm64.zip"
 ARCHIVE=${1:-$DEFAULT_ARCHIVE}
 
 if [ ! -d "$APP" ]; then
@@ -31,7 +31,7 @@ cleanup() {
 trap cleanup EXIT
 
 /usr/bin/ditto -x -k "$ARCHIVE" "$VERIFY_DIR"
-EXTRACTED_APP="$VERIFY_DIR/CloudLink Guard.app"
+EXTRACTED_APP="$VERIFY_DIR/CloudCheck.app"
 
 if [ ! -x "$EXTRACTED_APP/Contents/MacOS/CloudLinkGuard" ]; then
   echo "Packaged app is missing its executable bit." >&2

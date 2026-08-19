@@ -20,7 +20,7 @@ if [ ! -x "$LEGACY_HELPER" ]; then
   fi
 fi
 
-# Preserve previous migrations: Proxy Tools -> PuffRoute -> CloudRoute -> CloudLink Guard.
+# Preserve previous migrations: Proxy Tools -> PuffRoute -> CloudRoute -> CloudCheck.
 # New installations use cloudlink-guard; existing CloudRoute and PuffRoute anchors remain valid.
 if ! /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"cloudlink-guard"' "$MAIN_CONF" 2>/dev/null; then
   if /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"cloudroute"' "$MAIN_CONF" 2>/dev/null \

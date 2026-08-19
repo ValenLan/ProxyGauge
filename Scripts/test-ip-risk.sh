@@ -67,4 +67,4 @@ if /usr/bin/grep -qE '^[[:space:]]*(proxies|proxy-providers):' "$PROJECT_ROOT/Ru
   exit 1
 fi
 
-echo "CloudLink Guard IP risk and portable rule pack tests passed."
+echo "CloudCheck IP risk and portable rule pack tests passed."

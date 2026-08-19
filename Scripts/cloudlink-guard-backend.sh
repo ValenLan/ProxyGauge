@@ -244,7 +244,7 @@ discover() {
   if [ -z "$endpoint" ] && [ -n "$CONFIGURED_MIXED" ] \
     && valid_local_endpoint "$CONFIGURED_MIXED"; then
     endpoint="$CONFIGURED_MIXED"
-    source="CloudLink Guard 设置"
+    source="CloudCheck 设置"
   fi
 
   if [ -z "$endpoint" ]; then

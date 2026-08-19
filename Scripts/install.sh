@@ -40,10 +40,10 @@ if [ ! -e "$CONFIG_DIR/config" ]; then
   /bin/chmod 600 "$CONFIG_DIR/config"
 fi
 
-/usr/bin/ditto "$PROJECT_ROOT/build/CloudLink Guard.app" "$APP_DIR/CloudLink Guard.app"
+/usr/bin/ditto "$PROJECT_ROOT/build/CloudCheck.app" "$APP_DIR/CloudCheck.app"
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
-  -f "$APP_DIR/CloudLink Guard.app"
+  -f "$APP_DIR/CloudCheck.app"
 
-echo "Installed $APP_DIR/CloudLink Guard.app"
+echo "Installed $APP_DIR/CloudCheck.app"
 echo "Configuration: $CONFIG_DIR/config"
 echo "To configure the optional Kill Switch, review and run Scripts/install-pf.sh"

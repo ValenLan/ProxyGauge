@@ -7,7 +7,7 @@ CLOUDLINK_GUARD_TIMEOUT="6"
 CLOUDLINK_GUARD_EXPECT_IP=""
 
 # Optional extra route/rule template. Disabled for a generic single-exit setup.
-# The prefilled values preserve CloudLink Guard's original Google/Gemini template.
+# The prefilled values preserve CloudCheck's original Google/Gemini template.
 CLOUDLINK_GUARD_MIHOMO_SOCKET="/private/tmp/verge/verge-mihomo.sock"
 CLOUDLINK_GUARD_SECONDARY_ENABLED="0"
 CLOUDLINK_GUARD_SECONDARY_LABEL="Google / Gemini"

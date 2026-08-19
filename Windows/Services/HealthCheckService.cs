@@ -53,7 +53,7 @@ public sealed class HealthCheckService
             // probes. Match the macOS metadata budget without changing connect timeout.
             Timeout = TimeSpan.FromSeconds(Math.Max(config.TimeoutSeconds, 12))
         };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("CloudLinkGuard/1.4.0 (+https://github.com/ValenLan/CloudRoute)");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("CloudCheck/1.4.1 (+https://github.com/ValenLan/CloudRoute)");
 
         var exitResult = await CheckExitIpAsync(client, config, cancellationToken);
         var riskTask = CheckIpRiskAsync(client, exitResult.Address, cancellationToken);

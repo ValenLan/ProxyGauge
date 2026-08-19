@@ -34,7 +34,7 @@ public partial class RulePackWindow : Window
     {
         var dialog = new SaveFileDialog
         {
-            Title = "导出 CloudLink Guard 规则包",
+            Title = "导出 CloudCheck 规则包",
             FileName = "CloudLinkGuard-Merge.yaml",
             DefaultExt = ".yaml",
             Filter = "YAML 配置 (*.yaml)|*.yaml|所有文件 (*.*)|*.*"

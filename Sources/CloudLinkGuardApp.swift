@@ -1568,7 +1568,7 @@ struct AdvancedCheckView: View {
         let scriptPath = bundledPath ?? fallbackPath
 
         guard FileManager.default.isExecutableFile(atPath: scriptPath) else {
-            message = "高级检测组件不可用，请重新安装 CloudLink Guard。"
+            message = "高级检测组件不可用，请重新安装 CloudCheck。"
             return
         }
 
@@ -1636,7 +1636,7 @@ struct RulePackView: View {
                 .frame(width: 50, height: 50)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("CloudLink Guard 规则包")
+                    Text("CloudCheck 规则包")
                         .font(.system(size: 21, weight: .semibold, design: .rounded))
                     Text("分流规则与 TUN DNS · 版本 \(version)")
                         .font(.callout)
@@ -1736,7 +1736,7 @@ struct RulePackView: View {
         }
 
         let panel = NSSavePanel()
-        panel.title = "导出 CloudLink Guard 规则包"
+        panel.title = "导出 CloudCheck 规则包"
         panel.nameFieldStringValue = "CloudLinkGuard-Merge.yaml"
         panel.canCreateDirectories = true
         if let yamlType = UTType(filenameExtension: "yaml") {
@@ -1961,8 +1961,8 @@ private struct ConnectionSetupView: View {
                     Text(discovery.found ? "已找到本地代理" : "连接本地代理")
                         .font(.system(size: 21, weight: .semibold, design: .rounded))
                     Text(discovery.found
-                         ? "确认一次即可开始使用 CloudLink Guard。"
-                         : "启动 Clash Verge 或 Mihomo，CloudLink Guard 会自动识别。")
+                         ? "确认一次即可开始使用 CloudCheck。"
+                         : "启动 Clash Verge 或 Mihomo，CloudCheck 会自动识别。")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
@@ -2365,7 +2365,7 @@ struct CloudLinkGuardApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        Window("CloudLink Guard", id: "main") {
+        Window("CloudCheck", id: "main") {
             ContentView()
         }
         .defaultSize(

@@ -1,4 +1,4 @@
-# CloudLink Guard PF Kill Switch anchor.
+# CloudCheck PF Kill Switch anchor.
 # Root-owned proxy cores may use physical interfaces. Regular applications
 # must use the proxy/TUN path, except for LAN, DNS, and the configured VPS.
 

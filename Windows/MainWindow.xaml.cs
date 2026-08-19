@@ -50,7 +50,7 @@ public partial class MainWindow : Window
             MessageBox.Show(
                 this,
                 $"链路检测没有完成。\n\n{exception.Message}",
-                "CloudLink Guard",
+                "CloudCheck",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
         }
