@@ -3,9 +3,9 @@ set -euo pipefail
 
 SCRIPT_DIR=$(/usr/bin/dirname "$0")
 PROJECT_ROOT=$(cd "$SCRIPT_DIR/.." && /bin/pwd)
-APP="$PROJECT_ROOT/build/CloudRoute.app"
+APP="$PROJECT_ROOT/build/CloudLink Guard.app"
 VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PROJECT_ROOT/Info.plist")
-DEFAULT_ARCHIVE="$PROJECT_ROOT/dist/CloudRoute-$VERSION-macOS-arm64.zip"
+DEFAULT_ARCHIVE="$PROJECT_ROOT/dist/CloudLinkGuard-$VERSION-macOS-arm64.zip"
 ARCHIVE=${1:-$DEFAULT_ARCHIVE}
 
 if [ ! -d "$APP" ]; then
@@ -24,16 +24,16 @@ fi
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP"
 /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$APP" "$ARCHIVE"
 
-VERIFY_DIR=$(/usr/bin/mktemp -d /tmp/cloudroute-package.XXXXXX)
+VERIFY_DIR=$(/usr/bin/mktemp -d /tmp/cloudlink-guard-package.XXXXXX)
 cleanup() {
   /bin/rm -rf "$VERIFY_DIR"
 }
 trap cleanup EXIT
 
 /usr/bin/ditto -x -k "$ARCHIVE" "$VERIFY_DIR"
-EXTRACTED_APP="$VERIFY_DIR/CloudRoute.app"
+EXTRACTED_APP="$VERIFY_DIR/CloudLink Guard.app"
 
-if [ ! -x "$EXTRACTED_APP/Contents/MacOS/CloudRoute" ]; then
+if [ ! -x "$EXTRACTED_APP/Contents/MacOS/CloudLinkGuard" ]; then
   echo "Packaged app is missing its executable bit." >&2
   exit 1
 fi

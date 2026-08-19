@@ -1,11 +1,11 @@
 using System.IO;
 using System.Reflection;
 
-namespace CloudRoute.Services;
+namespace CloudLinkGuard.Services;
 
 public sealed class RulePackService
 {
-    private const string ResourceName = "CloudRoute.Rules.CloudRoute-Merge.yaml";
+    private const string ResourceName = "CloudLinkGuard.Rules.CloudLinkGuard-Merge.yaml";
 
     public string Version => "2026.08";
 

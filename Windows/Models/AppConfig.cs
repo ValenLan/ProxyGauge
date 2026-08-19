@@ -1,4 +1,4 @@
-namespace CloudRoute.Models;
+namespace CloudLinkGuard.Models;
 
 public sealed class AppConfig
 {

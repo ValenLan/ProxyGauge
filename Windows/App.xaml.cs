@@ -1,6 +1,6 @@
 using System.Windows;
 
-namespace CloudRoute;
+namespace CloudLinkGuard;
 
 public partial class App : Application
 {

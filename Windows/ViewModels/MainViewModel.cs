@@ -1,8 +1,8 @@
 using System.Windows.Media;
-using CloudRoute.Models;
-using CloudRoute.Services;
+using CloudLinkGuard.Models;
+using CloudLinkGuard.Services;
 
-namespace CloudRoute.ViewModels;
+namespace CloudLinkGuard.ViewModels;
 
 public sealed class MainViewModel : ObservableObject
 {
@@ -11,7 +11,7 @@ public sealed class MainViewModel : ObservableObject
     private readonly HealthCheckService _healthCheckService;
     private AppConfig _config;
     private string _headline = "正在读取代理状态";
-    private string _detail = "稍等片刻，CloudRoute 正在检查本地流量入口";
+    private string _detail = "稍等片刻，CloudLink Guard 正在检查本地流量入口";
     private HealthLevel _overallLevel = HealthLevel.Idle;
     private bool _isBusy;
     private bool _isHealthCheckRunning;

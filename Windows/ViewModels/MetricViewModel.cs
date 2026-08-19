@@ -1,7 +1,7 @@
 using System.Windows.Media;
-using CloudRoute.Models;
+using CloudLinkGuard.Models;
 
-namespace CloudRoute.ViewModels;
+namespace CloudLinkGuard.ViewModels;
 
 public sealed class MetricViewModel : ObservableObject
 {

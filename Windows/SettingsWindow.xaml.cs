@@ -1,9 +1,9 @@
 using System.Net;
 using System.Windows;
 using System.Windows.Input;
-using CloudRoute.Models;
+using CloudLinkGuard.Models;
 
-namespace CloudRoute;
+namespace CloudLinkGuard;
 
 public partial class SettingsWindow : Window
 {

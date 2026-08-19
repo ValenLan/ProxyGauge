@@ -1,14 +1,14 @@
 #!/bin/bash
-# cloudroute-killswitch — 代理防泄漏开关 (PF 独立 anchor)
-#   on      只加载 cloudroute anchor 并持有一个 PF enable reference
-#   off     只清空 cloudroute anchor 并释放本工具的 reference
+# cloudlink-guard-killswitch — 代理防泄漏开关 (PF 独立 anchor)
+#   on      只加载 cloudlink-guard anchor 并持有一个 PF enable reference
+#   off     只清空 cloudlink-guard anchor 并释放本工具的 reference
 #   status  同时检查 PF 与 anchor 真实状态
 
 PFCTL=/sbin/pfctl
 MAIN_CONF=/etc/pf.conf
-ANCHOR_CONF=/etc/pf.anchors/cloudroute
-ANCHOR=cloudroute
-TOKEN_FILE=/var/run/cloudroute-killswitch.pf-token
+ANCHOR_CONF=/etc/pf.anchors/cloudlink-guard
+ANCHOR=cloudlink-guard
+TOKEN_FILE=/var/run/cloudlink-guard-killswitch.pf-token
 SCRIPT_DIR=$(/usr/bin/dirname "$0")
 LEGACY_HELPER="$SCRIPT_DIR/killswitch"
 
@@ -20,10 +20,15 @@ if [ ! -x "$LEGACY_HELPER" ]; then
   fi
 fi
 
-# Preserve both previous migrations: Proxy Tools -> PuffRoute -> CloudRoute.
-# New installations use cloudroute; an existing PuffRoute anchor remains valid.
-if ! /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"cloudroute"' "$MAIN_CONF" 2>/dev/null; then
-  if /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"puffroute"' "$MAIN_CONF" 2>/dev/null \
+# Preserve previous migrations: Proxy Tools -> PuffRoute -> CloudRoute -> CloudLink Guard.
+# New installations use cloudlink-guard; existing CloudRoute and PuffRoute anchors remain valid.
+if ! /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"cloudlink-guard"' "$MAIN_CONF" 2>/dev/null; then
+  if /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"cloudroute"' "$MAIN_CONF" 2>/dev/null \
+    && [ -r /etc/pf.anchors/cloudroute ]; then
+    ANCHOR_CONF=/etc/pf.anchors/cloudroute
+    ANCHOR=cloudroute
+    TOKEN_FILE=/var/run/cloudroute-killswitch.pf-token
+  elif /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"puffroute"' "$MAIN_CONF" 2>/dev/null \
     && [ -r /etc/pf.anchors/puffroute ]; then
     ANCHOR_CONF=/etc/pf.anchors/puffroute
     ANCHOR=puffroute
@@ -125,7 +130,7 @@ case "${1:-status}" in
     ;;
 
   *)
-    echo "用法: cloudroute-killswitch on | off | status"
+    echo "用法: cloudlink-guard-killswitch on | off | status"
     exit 2
     ;;
 esac

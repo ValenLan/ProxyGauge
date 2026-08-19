@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace CloudRoute.Models;
+namespace CloudLinkGuard.Models;
 
 public sealed record HealthCheckItem(string Label, string Detail, HealthLevel Level)
 {
@@ -66,7 +66,7 @@ public sealed class HealthReport
     public string ToPlainText()
     {
         var text = new StringBuilder();
-        text.AppendLine($"CloudRoute Windows 链路检测 · {CheckedAt:yyyy-MM-dd HH:mm:ss}");
+        text.AppendLine($"CloudLink Guard Windows 链路检测 · {CheckedAt:yyyy-MM-dd HH:mm:ss}");
         text.AppendLine($"链路分：{Score}/100 · {ScoreLabel}");
         text.AppendLine($"结果：{PassedCount} 通过 / {WarningCount} 提示 / {FailedCount} 失败");
         text.AppendLine();

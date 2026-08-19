@@ -1,9 +1,9 @@
 using Microsoft.Win32;
 using System.Windows;
 using System.Windows.Input;
-using CloudRoute.Services;
+using CloudLinkGuard.Services;
 
-namespace CloudRoute;
+namespace CloudLinkGuard;
 
 public partial class RulePackWindow : Window
 {
@@ -34,8 +34,8 @@ public partial class RulePackWindow : Window
     {
         var dialog = new SaveFileDialog
         {
-            Title = "导出 CloudRoute 规则包",
-            FileName = "CloudRoute-Merge.yaml",
+            Title = "导出 CloudLink Guard 规则包",
+            FileName = "CloudLinkGuard-Merge.yaml",
             DefaultExt = ".yaml",
             Filter = "YAML 配置 (*.yaml)|*.yaml|所有文件 (*.*)|*.*"
         };

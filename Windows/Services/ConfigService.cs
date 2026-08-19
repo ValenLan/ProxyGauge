@@ -1,8 +1,8 @@
 using System.IO;
 using System.Text.Json;
-using CloudRoute.Models;
+using CloudLinkGuard.Models;
 
-namespace CloudRoute.Services;
+namespace CloudLinkGuard.Services;
 
 public sealed class ConfigService
 {
@@ -14,13 +14,18 @@ public sealed class ConfigService
 
     public string ConfigPath { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "CloudRoute",
+        "CloudLinkGuard",
         "config.json");
 
-    private string LegacyConfigPath { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "PuffRoute",
-        "config.json");
+    private IEnumerable<string> LegacyConfigPaths
+    {
+        get
+        {
+            var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            yield return Path.Combine(appData, "CloudRoute", "config.json");
+            yield return Path.Combine(appData, "PuffRoute", "config.json");
+        }
+    }
 
     public AppConfig Load()
     {
@@ -28,15 +33,15 @@ public sealed class ConfigService
         {
             var sourcePath = File.Exists(ConfigPath)
                 ? ConfigPath
-                : LegacyConfigPath;
-            if (!File.Exists(sourcePath))
+                : LegacyConfigPaths.FirstOrDefault(File.Exists);
+            if (sourcePath is null)
             {
                 return new AppConfig();
             }
 
             var json = File.ReadAllText(sourcePath);
             var config = Normalize(JsonSerializer.Deserialize<AppConfig>(json) ?? new AppConfig());
-            if (sourcePath == LegacyConfigPath && !File.Exists(ConfigPath))
+            if (sourcePath != ConfigPath && !File.Exists(ConfigPath))
             {
                 Save(config);
             }

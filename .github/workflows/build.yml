@@ -14,7 +14,7 @@ jobs:
       version: ${{ steps.package.outputs.version }}
     steps:
       - uses: actions/checkout@v6
-      - name: Build CloudRoute
+      - name: Build CloudLink Guard
         run: |
           chmod +x Scripts/*.sh
           Scripts/test-backend.sh
@@ -25,12 +25,12 @@ jobs:
           Scripts/test-ui-semantics.sh
           Scripts/build.sh
       - name: Verify bundle
-        run: codesign --verify --deep --strict --verbose=2 build/CloudRoute.app
+        run: codesign --verify --deep --strict --verbose=2 "build/CloudLink Guard.app"
       - name: Package macOS app
         id: package
         run: |
           VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)
-          ARCHIVE="dist/CloudRoute-$VERSION-macOS-arm64.zip"
+          ARCHIVE="dist/CloudLinkGuard-$VERSION-macOS-arm64.zip"
           Scripts/package-macos.sh "$ARCHIVE"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "archive=$ARCHIVE" >> "$GITHUB_OUTPUT"
@@ -51,10 +51,10 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 8.0.x
-      - name: Publish CloudRoute for Windows
+      - name: Publish CloudLink Guard for Windows
         shell: pwsh
         run: |
-          dotnet publish Windows/CloudRoute.Windows.csproj `
+          dotnet publish Windows/CloudLinkGuard.Windows.csproj `
             --configuration Release `
             --runtime ${{ matrix.runtime }} `
             --self-contained true `
@@ -65,9 +65,9 @@ jobs:
             -p:DebugType=None `
             -p:DebugSymbols=false
           Copy-Item Windows/README.md "publish/${{ matrix.runtime }}/README-Windows.md"
-          $Project = [xml](Get-Content Windows/CloudRoute.Windows.csproj -Raw)
+          $Project = [xml](Get-Content Windows/CloudLinkGuard.Windows.csproj -Raw)
           $Version = $Project.Project.PropertyGroup.Version
-          $Archive = "CloudRoute-$Version-${{ matrix.runtime }}.zip"
+          $Archive = "CloudLinkGuard-$Version-${{ matrix.runtime }}.zip"
           Compress-Archive `
             -Path "publish/${{ matrix.runtime }}/*" `
             -DestinationPath $Archive
@@ -98,27 +98,27 @@ jobs:
       - name: Download release packages
         uses: actions/download-artifact@v8
         with:
-          pattern: CloudRoute-*.zip
+          pattern: CloudLinkGuard-*.zip
           path: release-assets
           merge-multiple: true
           skip-decompress: true
       - name: Generate checksums
         run: |
           shopt -s nullglob
-          ASSETS=(release-assets/CloudRoute-*.zip)
+          ASSETS=(release-assets/CloudLinkGuard-*.zip)
           if [ "${#ASSETS[@]}" -ne 3 ]; then
             echo "Expected 3 release packages, found ${#ASSETS[@]}." >&2
             exit 1
           fi
           cd release-assets
-          sha256sum CloudRoute-*.zip > SHA256SUMS.txt
+          sha256sum CloudLinkGuard-*.zip > SHA256SUMS.txt
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" \
-            release-assets/CloudRoute-*.zip \
+            release-assets/CloudLinkGuard-*.zip \
             release-assets/SHA256SUMS.txt \
             --verify-tag \
             --generate-notes \
-            --title "CloudRoute Monitor $GITHUB_REF_NAME"
+            --title "CloudLink Guard $GITHUB_REF_NAME"

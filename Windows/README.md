@@ -1,13 +1,13 @@
-# CloudRoute Monitor for Windows
+# CloudLink Guard for Windows
 
 ## 快速开始
 
-1. 双击 `CloudRoute.exe`
+1. 双击 `CloudLinkGuard.exe`
 2. 点击右上角设置按钮
 3. mixed 地址通常为 `127.0.0.1`，默认端口为 `7890`
 4. 回到主界面刷新状态，或运行“链路检测”
 
-CloudRoute 会读取 Mihomo/Clash Verge 的本地进程、端口、系统代理和 TUN 状态，并在
+CloudLink Guard 会读取 Mihomo/Clash Verge 的本地进程、端口、系统代理和 TUN 状态，并在
 链路检测中分别显示网络归属、PeeringDB ASN 属性、IP 段用途、proxycheck.io 风险分与
 ipapi.is / proxycheck.io 地址风险标签；三个出口查询源会交叉验证结果。默认不会主动
 请求 Claude、ChatGPT、Gemini 的网页或 API，避免检测制造机器人式访问记录。
@@ -22,19 +22,20 @@ ipapi.is / proxycheck.io 地址风险标签；三个出口查询源会交叉验�
 ## 配置位置
 
 ```text
-%APPDATA%\CloudRoute\config.json
+%APPDATA%\CloudLinkGuard\config.json
 ```
 
 删除该文件即可恢复默认设置。
 
-从 PuffRoute 升级时，CloudRoute 会读取旧的 `%APPDATA%\PuffRoute\config.json` 并复制到
-新目录，旧配置文件不会被删除。
+从 CloudRoute 或 PuffRoute 升级时，CloudLink Guard 会依次读取旧的
+`%APPDATA%\CloudRoute\config.json`、`%APPDATA%\PuffRoute\config.json` 并复制到新目录，
+旧配置文件不会被删除。
 
 ## Windows 安全提醒
 
-- CloudRoute 不需要管理员权限
-- CloudRoute 不修改 Windows Firewall
-- CloudRoute 不收集遥测或浏览记录
+- CloudLink Guard 不需要管理员权限
+- CloudLink Guard 不修改 Windows Firewall
+- CloudLink Guard 不收集遥测或浏览记录
 - 个人构建未购买代码签名证书，Windows SmartScreen 可能在首次运行时显示提醒
 
 如果链路检测失败，请先确认 Clash Verge/Mihomo 正在运行，并核对 mixed 端口。

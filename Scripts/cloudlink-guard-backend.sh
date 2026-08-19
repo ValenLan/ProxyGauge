@@ -1,54 +1,87 @@
 #!/bin/bash
 
 RESOURCE_DIR=$(/usr/bin/dirname "$0")
-CHECK="$RESOURCE_DIR/cloudroute-check.sh"
-[ -x "$CHECK" ] || CHECK="$HOME/.local/bin/cloudroute-check"
-ADMIN_SCRIPT="${CLOUDROUTE_ADMIN_SCRIPT:-${PUFFROUTE_ADMIN_SCRIPT:-$RESOURCE_DIR/cloudroute-admin.applescript}}"
-[ -r "$ADMIN_SCRIPT" ] || ADMIN_SCRIPT="$HOME/.local/share/cloudroute/cloudroute-admin.applescript"
-OSASCRIPT="${CLOUDROUTE_OSASCRIPT:-${PUFFROUTE_OSASCRIPT:-/usr/bin/osascript}}"
-KILL_HELPER="${CLOUDROUTE_KILLSWITCH:-${PUFFROUTE_KILLSWITCH:-$RESOURCE_DIR/cloudroute-killswitch}}"
-[ -x "$KILL_HELPER" ] || KILL_HELPER="$HOME/.local/bin/cloudroute-killswitch"
+
+import_cloudroute_compat() {
+  local suffix current legacy
+  for suffix in "$@"; do
+    current="CLOUDLINK_GUARD_$suffix"
+    legacy="CLOUDROUTE_$suffix"
+    if ! declare -p "$current" >/dev/null 2>&1 \
+      && declare -p "$legacy" >/dev/null 2>&1; then
+      printf -v "$current" '%s' "${!legacy}"
+      export "$current"
+    fi
+  done
+}
+
+import_cloudroute_compat \
+  ADMIN_SCRIPT OSASCRIPT KILLSWITCH ADMIN_RESULT KILL_TOKEN CONFIG MIXED \
+  SECONDARY_ENABLED SECONDARY_LABEL SECONDARY_GROUP DEFAULT_GROUP \
+  SECONDARY_MIXED SECONDARY_DOMAINS TUN_ACTIVE SYSTEM_PROXY_ACTIVE \
+  DISCOVERY_PORT_ACTIVE DISCOVERY_SYSTEM_PROXY DISCOVERY_SOCKET \
+  DISCOVERY_SOCKET_JSON DISCOVERY_CLIENT DISCOVERY_CONFIG
+
+CHECK="$RESOURCE_DIR/cloudlink-guard-check.sh"
+[ -x "$CHECK" ] || CHECK="$HOME/.local/bin/cloudlink-guard-check"
+ADMIN_SCRIPT="${CLOUDLINK_GUARD_ADMIN_SCRIPT:-${PUFFROUTE_ADMIN_SCRIPT:-$RESOURCE_DIR/cloudlink-guard-admin.applescript}}"
+[ -r "$ADMIN_SCRIPT" ] || ADMIN_SCRIPT="$HOME/.local/share/cloudlink-guard/cloudlink-guard-admin.applescript"
+OSASCRIPT="${CLOUDLINK_GUARD_OSASCRIPT:-${PUFFROUTE_OSASCRIPT:-/usr/bin/osascript}}"
+KILL_HELPER="${CLOUDLINK_GUARD_KILLSWITCH:-${PUFFROUTE_KILLSWITCH:-$RESOURCE_DIR/cloudlink-guard-killswitch}}"
+[ -x "$KILL_HELPER" ] || KILL_HELPER="$HOME/.local/bin/cloudlink-guard-killswitch"
 CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
-ADMIN_RESULT="${CLOUDROUTE_ADMIN_RESULT:-${PUFFROUTE_ADMIN_RESULT:-$CACHE_HOME/cloudroute/admin-result}}"
-KILL_TOKEN="${CLOUDROUTE_KILL_TOKEN:-${PUFFROUTE_KILL_TOKEN:-/var/run/cloudroute-killswitch.pf-token}}"
-if [ -z "${CLOUDROUTE_KILL_TOKEN:-}" ] && [ -z "${PUFFROUTE_KILL_TOKEN:-}" ] \
-  && [ ! -e "$KILL_TOKEN" ] && [ -e /var/run/puffroute-killswitch.pf-token ]; then
-  KILL_TOKEN=/var/run/puffroute-killswitch.pf-token
+ADMIN_RESULT="${CLOUDLINK_GUARD_ADMIN_RESULT:-${PUFFROUTE_ADMIN_RESULT:-$CACHE_HOME/cloudlink-guard/admin-result}}"
+KILL_TOKEN="${CLOUDLINK_GUARD_KILL_TOKEN:-${PUFFROUTE_KILL_TOKEN:-/var/run/cloudlink-guard-killswitch.pf-token}}"
+if [ -z "${CLOUDLINK_GUARD_KILL_TOKEN:-}" ] && [ -z "${PUFFROUTE_KILL_TOKEN:-}" ] \
+  && [ ! -e "$KILL_TOKEN" ]; then
+  if [ -e /var/run/cloudroute-killswitch.pf-token ]; then
+    KILL_TOKEN=/var/run/cloudroute-killswitch.pf-token
+  elif [ -e /var/run/puffroute-killswitch.pf-token ]; then
+    KILL_TOKEN=/var/run/puffroute-killswitch.pf-token
+  fi
 fi
-DEFAULT_CONFIG="$HOME/.config/cloudroute/config"
-LEGACY_CONFIG="$HOME/.config/puffroute/config"
-CONFIG_FILE="${CLOUDROUTE_CONFIG:-${PUFFROUTE_CONFIG:-$DEFAULT_CONFIG}}"
-ENV_CLOUDROUTE_MIXED="${CLOUDROUTE_MIXED:-${PUFFROUTE_MIXED:-}}"
-ENV_SECONDARY_ENABLED="${CLOUDROUTE_SECONDARY_ENABLED:-}"
-ENV_SECONDARY_LABEL="${CLOUDROUTE_SECONDARY_LABEL:-}"
-ENV_SECONDARY_GROUP="${CLOUDROUTE_SECONDARY_GROUP:-}"
-ENV_DEFAULT_GROUP="${CLOUDROUTE_DEFAULT_GROUP:-}"
-ENV_SECONDARY_MIXED="${CLOUDROUTE_SECONDARY_MIXED:-}"
-ENV_SECONDARY_DOMAINS="${CLOUDROUTE_SECONDARY_DOMAINS:-}"
-if [ -z "${CLOUDROUTE_CONFIG:-}" ] && [ -z "${PUFFROUTE_CONFIG:-}" ] \
-  && [ ! -r "$CONFIG_FILE" ] && [ -r "$LEGACY_CONFIG" ]; then
-  CONFIG_FILE="$LEGACY_CONFIG"
+DEFAULT_CONFIG="$HOME/.config/cloudlink-guard/config"
+CLOUDROUTE_CONFIG_PATH="$HOME/.config/cloudroute/config"
+PUFFROUTE_CONFIG_PATH="$HOME/.config/puffroute/config"
+CONFIG_FILE="${CLOUDLINK_GUARD_CONFIG:-${PUFFROUTE_CONFIG:-$DEFAULT_CONFIG}}"
+ENV_CLOUDLINK_GUARD_MIXED="${CLOUDLINK_GUARD_MIXED:-${PUFFROUTE_MIXED:-}}"
+ENV_SECONDARY_ENABLED="${CLOUDLINK_GUARD_SECONDARY_ENABLED:-}"
+ENV_SECONDARY_LABEL="${CLOUDLINK_GUARD_SECONDARY_LABEL:-}"
+ENV_SECONDARY_GROUP="${CLOUDLINK_GUARD_SECONDARY_GROUP:-}"
+ENV_DEFAULT_GROUP="${CLOUDLINK_GUARD_DEFAULT_GROUP:-}"
+ENV_SECONDARY_MIXED="${CLOUDLINK_GUARD_SECONDARY_MIXED:-}"
+ENV_SECONDARY_DOMAINS="${CLOUDLINK_GUARD_SECONDARY_DOMAINS:-}"
+if [ -z "${CLOUDLINK_GUARD_CONFIG:-}" ] && [ -z "${PUFFROUTE_CONFIG:-}" ] \
+  && [ ! -r "$CONFIG_FILE" ]; then
+  if [ -r "$CLOUDROUTE_CONFIG_PATH" ]; then
+    CONFIG_FILE="$CLOUDROUTE_CONFIG_PATH"
+  elif [ -r "$PUFFROUTE_CONFIG_PATH" ]; then
+    CONFIG_FILE="$PUFFROUTE_CONFIG_PATH"
+  fi
 fi
 [ -r "$CONFIG_FILE" ] && . "$CONFIG_FILE"
-if [ -n "$ENV_CLOUDROUTE_MIXED" ]; then
-  CLOUDROUTE_MIXED="$ENV_CLOUDROUTE_MIXED"
+import_cloudroute_compat \
+  MIXED SECONDARY_ENABLED SECONDARY_LABEL SECONDARY_GROUP DEFAULT_GROUP \
+  SECONDARY_MIXED SECONDARY_DOMAINS
+if [ -n "$ENV_CLOUDLINK_GUARD_MIXED" ]; then
+  CLOUDLINK_GUARD_MIXED="$ENV_CLOUDLINK_GUARD_MIXED"
 fi
-if [ -n "$ENV_SECONDARY_ENABLED" ]; then CLOUDROUTE_SECONDARY_ENABLED="$ENV_SECONDARY_ENABLED"; fi
-if [ -n "$ENV_SECONDARY_LABEL" ]; then CLOUDROUTE_SECONDARY_LABEL="$ENV_SECONDARY_LABEL"; fi
-if [ -n "$ENV_SECONDARY_GROUP" ]; then CLOUDROUTE_SECONDARY_GROUP="$ENV_SECONDARY_GROUP"; fi
-if [ -n "$ENV_DEFAULT_GROUP" ]; then CLOUDROUTE_DEFAULT_GROUP="$ENV_DEFAULT_GROUP"; fi
-if [ -n "$ENV_SECONDARY_MIXED" ]; then CLOUDROUTE_SECONDARY_MIXED="$ENV_SECONDARY_MIXED"; fi
-if [ -n "$ENV_SECONDARY_DOMAINS" ]; then CLOUDROUTE_SECONDARY_DOMAINS="$ENV_SECONDARY_DOMAINS"; fi
-CONFIGURED_MIXED="${CLOUDROUTE_MIXED:-${PUFFROUTE_MIXED:-}}"
-MIXED="${CLOUDROUTE_MIXED:-${PUFFROUTE_MIXED:-127.0.0.1:7890}}"
+if [ -n "$ENV_SECONDARY_ENABLED" ]; then CLOUDLINK_GUARD_SECONDARY_ENABLED="$ENV_SECONDARY_ENABLED"; fi
+if [ -n "$ENV_SECONDARY_LABEL" ]; then CLOUDLINK_GUARD_SECONDARY_LABEL="$ENV_SECONDARY_LABEL"; fi
+if [ -n "$ENV_SECONDARY_GROUP" ]; then CLOUDLINK_GUARD_SECONDARY_GROUP="$ENV_SECONDARY_GROUP"; fi
+if [ -n "$ENV_DEFAULT_GROUP" ]; then CLOUDLINK_GUARD_DEFAULT_GROUP="$ENV_DEFAULT_GROUP"; fi
+if [ -n "$ENV_SECONDARY_MIXED" ]; then CLOUDLINK_GUARD_SECONDARY_MIXED="$ENV_SECONDARY_MIXED"; fi
+if [ -n "$ENV_SECONDARY_DOMAINS" ]; then CLOUDLINK_GUARD_SECONDARY_DOMAINS="$ENV_SECONDARY_DOMAINS"; fi
+CONFIGURED_MIXED="${CLOUDLINK_GUARD_MIXED:-${PUFFROUTE_MIXED:-}}"
+MIXED="${CLOUDLINK_GUARD_MIXED:-${PUFFROUTE_MIXED:-127.0.0.1:7890}}"
 MIXED_HOST="${MIXED%:*}"
 MIXED_PORT="${MIXED##*:}"
-export CLOUDROUTE_MIXED="$MIXED"
-export CLOUDROUTE_SECONDARY_ENABLED CLOUDROUTE_SECONDARY_LABEL CLOUDROUTE_SECONDARY_GROUP
-export CLOUDROUTE_DEFAULT_GROUP CLOUDROUTE_SECONDARY_MIXED CLOUDROUTE_SECONDARY_DOMAINS
+export CLOUDLINK_GUARD_MIXED="$MIXED"
+export CLOUDLINK_GUARD_SECONDARY_ENABLED CLOUDLINK_GUARD_SECONDARY_LABEL CLOUDLINK_GUARD_SECONDARY_GROUP
+export CLOUDLINK_GUARD_DEFAULT_GROUP CLOUDLINK_GUARD_SECONDARY_MIXED CLOUDLINK_GUARD_SECONDARY_DOMAINS
 
 has_tun_route() {
-  case "${CLOUDROUTE_TUN_ACTIVE:-}" in
+  case "${CLOUDLINK_GUARD_TUN_ACTIVE:-}" in
     1|true|yes) return 0 ;;
     0|false|no) return 1 ;;
   esac
@@ -59,7 +92,7 @@ has_tun_route() {
 }
 
 system_proxy_active() {
-  case "${CLOUDROUTE_SYSTEM_PROXY_ACTIVE:-}" in
+  case "${CLOUDLINK_GUARD_SYSTEM_PROXY_ACTIVE:-}" in
     1|true|yes) return 0 ;;
     0|false|no) return 1 ;;
   esac
@@ -70,7 +103,7 @@ discovery_port_open() {
   local host port
   host="$1"
   port="$2"
-  case "${CLOUDROUTE_DISCOVERY_PORT_ACTIVE:-}" in
+  case "${CLOUDLINK_GUARD_DISCOVERY_PORT_ACTIVE:-}" in
     1|true|yes) return 0 ;;
     0|false|no) return 1 ;;
   esac
@@ -93,8 +126,8 @@ valid_local_endpoint() {
 }
 
 system_proxy_endpoint() {
-  if [ -n "${CLOUDROUTE_DISCOVERY_SYSTEM_PROXY:-}" ]; then
-    /usr/bin/printf '%s\n' "$CLOUDROUTE_DISCOVERY_SYSTEM_PROXY"
+  if [ -n "${CLOUDLINK_GUARD_DISCOVERY_SYSTEM_PROXY:-}" ]; then
+    /usr/bin/printf '%s\n' "$CLOUDLINK_GUARD_DISCOVERY_SYSTEM_PROXY"
     return
   fi
 
@@ -128,11 +161,11 @@ yaml_mixed_port() {
 
 runtime_mixed_port() {
   local socket_path json port
-  socket_path="${CLOUDROUTE_DISCOVERY_SOCKET:-/private/tmp/verge/verge-mihomo.sock}"
+  socket_path="${CLOUDLINK_GUARD_DISCOVERY_SOCKET:-/private/tmp/verge/verge-mihomo.sock}"
 
-  if [ -n "${CLOUDROUTE_DISCOVERY_SOCKET_JSON:-}" ]; then
-    [ -r "$CLOUDROUTE_DISCOVERY_SOCKET_JSON" ] || return 1
-    json=$(/bin/cat "$CLOUDROUTE_DISCOVERY_SOCKET_JSON")
+  if [ -n "${CLOUDLINK_GUARD_DISCOVERY_SOCKET_JSON:-}" ]; then
+    [ -r "$CLOUDLINK_GUARD_DISCOVERY_SOCKET_JSON" ] || return 1
+    json=$(/bin/cat "$CLOUDLINK_GUARD_DISCOVERY_SOCKET_JSON")
   else
     [ -S "$socket_path" ] || return 1
     json=$(/usr/bin/curl -fsS --max-time 2 --unix-socket "$socket_path" \
@@ -159,8 +192,8 @@ discover() {
   system_active=""
   tun_active=""
 
-  if [ -n "${CLOUDROUTE_DISCOVERY_CLIENT:-}" ]; then
-    client="$CLOUDROUTE_DISCOVERY_CLIENT"
+  if [ -n "${CLOUDLINK_GUARD_DISCOVERY_CLIENT:-}" ]; then
+    client="$CLOUDLINK_GUARD_DISCOVERY_CLIENT"
   elif /usr/bin/pgrep -x verge-mihomo >/dev/null 2>&1; then
     client="Clash Verge Rev"
   elif /usr/bin/pgrep -x mihomo >/dev/null 2>&1; then
@@ -198,7 +231,7 @@ discover() {
     fi
   fi
 
-  config_path="${CLOUDROUTE_DISCOVERY_CONFIG:-$HOME/Library/Application Support/io.github.clash-verge-rev.clash-verge-rev/clash-verge.yaml}"
+  config_path="${CLOUDLINK_GUARD_DISCOVERY_CONFIG:-$HOME/Library/Application Support/io.github.clash-verge-rev.clash-verge-rev/clash-verge.yaml}"
   if [ -z "$endpoint" ]; then
     port=$(yaml_mixed_port "$config_path" 2>/dev/null || true)
     if [ -n "$port" ]; then
@@ -211,7 +244,7 @@ discover() {
   if [ -z "$endpoint" ] && [ -n "$CONFIGURED_MIXED" ] \
     && valid_local_endpoint "$CONFIGURED_MIXED"; then
     endpoint="$CONFIGURED_MIXED"
-    source="CloudRoute 设置"
+    source="CloudLink Guard 设置"
   fi
 
   if [ -z "$endpoint" ]; then
@@ -249,7 +282,7 @@ kill_switch_snapshot() {
   local action_status result_file legacy_result
 
   result_file="$ADMIN_RESULT"
-  if [ ! -r "$result_file" ] && [ -z "${CLOUDROUTE_ADMIN_RESULT:-}" ] \
+  if [ ! -r "$result_file" ] && [ -z "${CLOUDLINK_GUARD_ADMIN_RESULT:-}" ] \
     && [ -z "${PUFFROUTE_ADMIN_RESULT:-}" ]; then
     for legacy_result in /var/run/cloudroute/admin-result /var/run/puffroute/admin-result; do
       if [ -r "$legacy_result" ]; then

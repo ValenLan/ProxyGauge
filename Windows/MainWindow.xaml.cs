@@ -1,9 +1,9 @@
 using System.Windows;
 using System.Windows.Input;
-using CloudRoute.Services;
-using CloudRoute.ViewModels;
+using CloudLinkGuard.Services;
+using CloudLinkGuard.ViewModels;
 
-namespace CloudRoute;
+namespace CloudLinkGuard;
 
 public partial class MainWindow : Window
 {
@@ -50,7 +50,7 @@ public partial class MainWindow : Window
             MessageBox.Show(
                 this,
                 $"链路检测没有完成。\n\n{exception.Message}",
-                "CloudRoute",
+                "CloudLink Guard",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
         }

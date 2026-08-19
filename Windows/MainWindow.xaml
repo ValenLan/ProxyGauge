@@ -1,7 +1,7 @@
-<Window x:Class="CloudRoute.MainWindow"
+<Window x:Class="CloudLinkGuard.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="CloudRoute"
+        Title="CloudLink Guard"
         Width="880"
         Height="580"
         WindowStartupLocation="CenterScreen"
@@ -9,7 +9,7 @@
         ResizeMode="NoResize"
         AllowsTransparency="True"
         Background="Transparent"
-        Icon="Assets/CloudRoute.ico"
+        Icon="Assets/CloudLinkGuard.ico"
         UseLayoutRounding="True">
     <Border Background="{StaticResource CanvasBrush}"
             BorderBrush="{StaticResource BorderBrush}"
@@ -33,8 +33,8 @@
                     </Grid.ColumnDefinitions>
 
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
-                        <Image Source="Assets/CloudRoute.ico" Width="24" Height="24" />
-                        <TextBlock Text="CloudRoute" FontSize="13" FontWeight="SemiBold" Margin="9,0,0,0" VerticalAlignment="Center" />
+                        <Image Source="Assets/CloudLinkGuard.ico" Width="24" Height="24" />
+                        <TextBlock Text="CloudLink Guard" FontSize="13" FontWeight="SemiBold" Margin="9,0,0,0" VerticalAlignment="Center" />
                         <Border Background="#1F3045" CornerRadius="8" Padding="8,3" Margin="9,0,0,0">
                             <TextBlock Text="WINDOWS" Foreground="{StaticResource AccentBrush}" FontSize="9" FontWeight="Bold" />
                         </Border>
@@ -66,7 +66,7 @@
                     </Grid.ColumnDefinitions>
 
                     <Border Width="68" Height="68" CornerRadius="17" Background="#EAF5FF" VerticalAlignment="Top">
-                        <Image Source="Assets/CloudRoute.ico" Width="62" Height="62" />
+                        <Image Source="Assets/CloudLinkGuard.ico" Width="62" Height="62" />
                     </Border>
 
                     <StackPanel Grid.Column="1" Margin="17,1,0,0">

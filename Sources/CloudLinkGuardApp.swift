@@ -90,21 +90,85 @@ struct HealthCheckPlan: Sendable, Equatable {
         return !secondaryEnabled || (
             labelsAreValid
                 && groupsAreValid
-                && CloudRoutePreferences.validLocalEndpoint(secondaryEndpoint)
+                && CloudLinkGuardPreferences.validLocalEndpoint(secondaryEndpoint)
                 && domainsAreValid
         )
     }
 }
 
-private enum CloudRoutePreferences {
-    static let setupCompletedKey = "cloudroute.connectionSetupCompleted.v1"
-    static let selectedEndpointKey = "cloudroute.selectedMixedEndpoint"
-    static let secondaryEnabledKey = "cloudroute.health.secondaryEnabled.v1"
-    static let secondaryLabelKey = "cloudroute.health.secondaryLabel.v1"
-    static let secondaryGroupKey = "cloudroute.health.secondaryGroup.v1"
-    static let defaultGroupKey = "cloudroute.health.defaultGroup.v1"
-    static let secondaryEndpointKey = "cloudroute.health.secondaryEndpoint.v1"
-    static let secondaryDomainsKey = "cloudroute.health.secondaryDomains.v1"
+private enum CloudLinkGuardPreferences {
+    static let setupCompletedKey = "cloudlink-guard.connectionSetupCompleted.v1"
+    static let selectedEndpointKey = "cloudlink-guard.selectedMixedEndpoint"
+    static let secondaryEnabledKey = "cloudlink-guard.health.secondaryEnabled.v1"
+    static let secondaryLabelKey = "cloudlink-guard.health.secondaryLabel.v1"
+    static let secondaryGroupKey = "cloudlink-guard.health.secondaryGroup.v1"
+    static let defaultGroupKey = "cloudlink-guard.health.defaultGroup.v1"
+    static let secondaryEndpointKey = "cloudlink-guard.health.secondaryEndpoint.v1"
+    static let secondaryDomainsKey = "cloudlink-guard.health.secondaryDomains.v1"
+
+    private struct MigrationKey {
+        let current: String
+        let legacy: [String]
+    }
+
+    private static let migrationKeys = [
+        MigrationKey(current: setupCompletedKey, legacy: [
+            "cloudroute.connectionSetupCompleted.v1",
+            "puffroute.connectionSetupCompleted.v1"
+        ]),
+        MigrationKey(current: selectedEndpointKey, legacy: [
+            "cloudroute.selectedMixedEndpoint",
+            "puffroute.selectedMixedEndpoint"
+        ]),
+        MigrationKey(current: secondaryEnabledKey, legacy: [
+            "cloudroute.health.secondaryEnabled.v1",
+            "puffroute.health.secondaryEnabled.v1"
+        ]),
+        MigrationKey(current: secondaryLabelKey, legacy: [
+            "cloudroute.health.secondaryLabel.v1",
+            "puffroute.health.secondaryLabel.v1"
+        ]),
+        MigrationKey(current: secondaryGroupKey, legacy: [
+            "cloudroute.health.secondaryGroup.v1",
+            "puffroute.health.secondaryGroup.v1"
+        ]),
+        MigrationKey(current: defaultGroupKey, legacy: [
+            "cloudroute.health.defaultGroup.v1",
+            "puffroute.health.defaultGroup.v1"
+        ]),
+        MigrationKey(current: secondaryEndpointKey, legacy: [
+            "cloudroute.health.secondaryEndpoint.v1",
+            "puffroute.health.secondaryEndpoint.v1"
+        ]),
+        MigrationKey(current: secondaryDomainsKey, legacy: [
+            "cloudroute.health.secondaryDomains.v1",
+            "puffroute.health.secondaryDomains.v1"
+        ])
+    ]
+
+    private static func migrateLegacySettingsIfNeeded() {
+        let current = UserDefaults.standard
+        let legacySuites = [
+            UserDefaults(suiteName: "com.valenlan.cloudroute"),
+            UserDefaults(suiteName: "com.valenlan.puffroute")
+        ].compactMap { $0 }
+
+        for mapping in migrationKeys where current.object(forKey: mapping.current) == nil {
+            var migratedValue: Any?
+            for suite in legacySuites {
+                for legacyKey in mapping.legacy {
+                    if let value = suite.object(forKey: legacyKey) {
+                        migratedValue = value
+                        break
+                    }
+                }
+                if migratedValue != nil { break }
+            }
+            if let migratedValue {
+                current.set(migratedValue, forKey: mapping.current)
+            }
+        }
+    }
 
     static func validLocalEndpoint(_ endpoint: String) -> Bool {
         let parts = endpoint.split(separator: ":", omittingEmptySubsequences: false)
@@ -116,6 +180,7 @@ private enum CloudRoutePreferences {
     }
 
     static func loadHealthPlan() -> HealthCheckPlan {
+        migrateLegacySettingsIfNeeded()
         let defaults = UserDefaults.standard
         let template = HealthCheckPlan.currentTemplate
         return HealthCheckPlan(
@@ -154,21 +219,21 @@ final class ProxyModel: ObservableObject {
     @Published var showHealthPlanSetup = false
     @Published var isDiscoveringConnection = false
     @Published var discovery = ProxyDiscovery()
-    @Published var healthPlan = CloudRoutePreferences.loadHealthPlan()
+    @Published var healthPlan = CloudLinkGuardPreferences.loadHealthPlan()
 
     @Published var core = MetricState(title: "代理核心", symbol: "cpu", value: "检查中", level: .idle)
     @Published var port = MetricState(title: "本地端口", symbol: "network", value: "检查中", level: .idle)
     @Published var entry = MetricState(title: "流量入口", symbol: "arrow.triangle.branch", value: "检查中", level: .idle)
     @Published var killSwitch = MetricState(title: "Kill Switch", symbol: "shield.fill", value: "未确认", level: .idle)
 
-    private let backendPath = Bundle.main.path(forResource: "cloudroute-backend", ofType: "sh")
+    private let backendPath = Bundle.main.path(forResource: "cloudlink-guard-backend", ofType: "sh")
         ?? FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".local/share/cloudroute/cloudroute-backend.sh").path
+            .appendingPathComponent(".local/share/cloudlink-guard/cloudlink-guard-backend.sh").path
     init() {
         Task { [weak self] in
             guard let self else { return }
             await self.refresh()
-            if !UserDefaults.standard.bool(forKey: CloudRoutePreferences.setupCompletedKey) {
+            if !UserDefaults.standard.bool(forKey: CloudLinkGuardPreferences.setupCompletedKey) {
                 await self.discoverConnection(showSheet: true)
             }
         }
@@ -204,9 +269,9 @@ final class ProxyModel: ObservableObject {
     }
 
     func confirmConnection(endpoint: String) {
-        guard CloudRoutePreferences.validLocalEndpoint(endpoint) else { return }
-        UserDefaults.standard.set(endpoint, forKey: CloudRoutePreferences.selectedEndpointKey)
-        UserDefaults.standard.set(true, forKey: CloudRoutePreferences.setupCompletedKey)
+        guard CloudLinkGuardPreferences.validLocalEndpoint(endpoint) else { return }
+        UserDefaults.standard.set(endpoint, forKey: CloudLinkGuardPreferences.selectedEndpointKey)
+        UserDefaults.standard.set(true, forKey: CloudLinkGuardPreferences.setupCompletedKey)
         showConnectionSetup = false
         Task { [weak self] in
             await self?.refresh()
@@ -238,8 +303,8 @@ final class ProxyModel: ObservableObject {
 
     func saveHealthPlan(_ plan: HealthCheckPlan) {
         guard plan.isValid else { return }
-        CloudRoutePreferences.saveHealthPlan(plan)
-        healthPlan = CloudRoutePreferences.loadHealthPlan()
+        CloudLinkGuardPreferences.saveHealthPlan(plan)
+        healthPlan = CloudLinkGuardPreferences.loadHealthPlan()
         showHealthPlanSetup = false
     }
 
@@ -313,7 +378,7 @@ final class ProxyModel: ObservableObject {
 
         let endpoint = fields["endpoint"] ?? "127.0.0.1:7890"
         return ProxyDiscovery(
-            found: fields["found"] == "1" && CloudRoutePreferences.validLocalEndpoint(endpoint),
+            found: fields["found"] == "1" && CloudLinkGuardPreferences.validLocalEndpoint(endpoint),
             client: fields["client"] ?? "未识别",
             endpoint: endpoint,
             mode: fields["mode"] ?? "未开启",
@@ -336,9 +401,9 @@ final class ProxyModel: ObservableObject {
     private func execute(_ action: String) async -> (status: Int32, output: String) {
         let path = backendPath
         let healthPlan = healthPlan
-        let selectedEndpoint = UserDefaults.standard.string(forKey: CloudRoutePreferences.selectedEndpointKey)
+        let selectedEndpoint = UserDefaults.standard.string(forKey: CloudLinkGuardPreferences.selectedEndpointKey)
         let validSelectedEndpoint = selectedEndpoint.flatMap {
-            CloudRoutePreferences.validLocalEndpoint($0) ? $0 : nil
+            CloudLinkGuardPreferences.validLocalEndpoint($0) ? $0 : nil
         }
         return await Task.detached(priority: .userInitiated) {
             let process = Process()
@@ -349,16 +414,16 @@ final class ProxyModel: ObservableObject {
             process.standardError = pipe
             if let validSelectedEndpoint {
                 var environment = ProcessInfo.processInfo.environment
-                environment["CLOUDROUTE_MIXED"] = validSelectedEndpoint
+                environment["CLOUDLINK_GUARD_MIXED"] = validSelectedEndpoint
                 process.environment = environment
             }
             var environment = process.environment ?? ProcessInfo.processInfo.environment
-            environment["CLOUDROUTE_SECONDARY_ENABLED"] = healthPlan.secondaryEnabled ? "1" : "0"
-            environment["CLOUDROUTE_SECONDARY_LABEL"] = healthPlan.secondaryLabel
-            environment["CLOUDROUTE_SECONDARY_GROUP"] = healthPlan.secondaryGroup
-            environment["CLOUDROUTE_DEFAULT_GROUP"] = healthPlan.defaultGroup
-            environment["CLOUDROUTE_SECONDARY_MIXED"] = healthPlan.secondaryEndpoint
-            environment["CLOUDROUTE_SECONDARY_DOMAINS"] = healthPlan.normalizedDomains.joined(separator: ",")
+            environment["CLOUDLINK_GUARD_SECONDARY_ENABLED"] = healthPlan.secondaryEnabled ? "1" : "0"
+            environment["CLOUDLINK_GUARD_SECONDARY_LABEL"] = healthPlan.secondaryLabel
+            environment["CLOUDLINK_GUARD_SECONDARY_GROUP"] = healthPlan.secondaryGroup
+            environment["CLOUDLINK_GUARD_DEFAULT_GROUP"] = healthPlan.defaultGroup
+            environment["CLOUDLINK_GUARD_SECONDARY_MIXED"] = healthPlan.secondaryEndpoint
+            environment["CLOUDLINK_GUARD_SECONDARY_DOMAINS"] = healthPlan.normalizedDomains.joined(separator: ",")
             process.environment = environment
 
             do {
@@ -1497,13 +1562,13 @@ struct AdvancedCheckView: View {
     }
 
     private func launchIsolatedBrowser(_ route: IsolatedBrowserRoute) {
-        let bundledPath = Bundle.main.path(forResource: "cloudroute-private-browser", ofType: "sh")
+        let bundledPath = Bundle.main.path(forResource: "cloudlink-guard-private-browser", ofType: "sh")
         let fallbackPath = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".local/bin/cloudroute-private-browser").path
+            .appendingPathComponent(".local/bin/cloudlink-guard-private-browser").path
         let scriptPath = bundledPath ?? fallbackPath
 
         guard FileManager.default.isExecutableFile(atPath: scriptPath) else {
-            message = "高级检测组件不可用，请重新安装 CloudRoute。"
+            message = "高级检测组件不可用，请重新安装 CloudLink Guard。"
             return
         }
 
@@ -1513,12 +1578,12 @@ struct AdvancedCheckView: View {
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         var environment = ProcessInfo.processInfo.environment
-        if let endpoint = UserDefaults.standard.string(forKey: CloudRoutePreferences.selectedEndpointKey),
-           CloudRoutePreferences.validLocalEndpoint(endpoint) {
-            environment["CLOUDROUTE_MIXED"] = endpoint
+        if let endpoint = UserDefaults.standard.string(forKey: CloudLinkGuardPreferences.selectedEndpointKey),
+           CloudLinkGuardPreferences.validLocalEndpoint(endpoint) {
+            environment["CLOUDLINK_GUARD_MIXED"] = endpoint
         }
-        environment["CLOUDROUTE_SECONDARY_MIXED"] = plan.secondaryEndpoint
-        environment["CLOUDROUTE_SECONDARY_LABEL"] = plan.secondaryLabel
+        environment["CLOUDLINK_GUARD_SECONDARY_MIXED"] = plan.secondaryEndpoint
+        environment["CLOUDLINK_GUARD_SECONDARY_LABEL"] = plan.secondaryLabel
         process.environment = environment
 
         do {
@@ -1571,7 +1636,7 @@ struct RulePackView: View {
                 .frame(width: 50, height: 50)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("CloudRoute 规则包")
+                    Text("CloudLink Guard 规则包")
                         .font(.system(size: 21, weight: .semibold, design: .rounded))
                     Text("分流规则与 TUN DNS · 版本 \(version)")
                         .font(.callout)
@@ -1644,7 +1709,7 @@ struct RulePackView: View {
     }
 
     private var bundledRuleURL: URL? {
-        Bundle.main.url(forResource: "CloudRoute-Merge", withExtension: "yaml", subdirectory: "Rules")
+        Bundle.main.url(forResource: "CloudLinkGuard-Merge", withExtension: "yaml", subdirectory: "Rules")
     }
 
     private func loadPreview() {
@@ -1671,8 +1736,8 @@ struct RulePackView: View {
         }
 
         let panel = NSSavePanel()
-        panel.title = "导出 CloudRoute 规则包"
-        panel.nameFieldStringValue = "CloudRoute-Merge.yaml"
+        panel.title = "导出 CloudLink Guard 规则包"
+        panel.nameFieldStringValue = "CloudLinkGuard-Merge.yaml"
         panel.canCreateDirectories = true
         if let yamlType = UTType(filenameExtension: "yaml") {
             panel.allowedContentTypes = [yamlType]
@@ -1896,8 +1961,8 @@ private struct ConnectionSetupView: View {
                     Text(discovery.found ? "已找到本地代理" : "连接本地代理")
                         .font(.system(size: 21, weight: .semibold, design: .rounded))
                     Text(discovery.found
-                         ? "确认一次即可开始使用 CloudRoute。"
-                         : "启动 Clash Verge 或 Mihomo，CloudRoute 会自动识别。")
+                         ? "确认一次即可开始使用 CloudLink Guard。"
+                         : "启动 Clash Verge 或 Mihomo，CloudLink Guard 会自动识别。")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
@@ -2240,7 +2305,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         let lockPath = (NSTemporaryDirectory() as NSString)
-            .appendingPathComponent("com.valenlan.cloudroute.lock")
+            .appendingPathComponent("com.valenlan.cloudlinkguard.lock")
         singletonLockFD = Darwin.open(lockPath, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
 
         guard singletonLockFD >= 0,
@@ -2252,7 +2317,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             let currentPID = ProcessInfo.processInfo.processIdentifier
             let existing = NSRunningApplication
-                .runningApplications(withBundleIdentifier: "com.valenlan.cloudroute")
+                .runningApplications(withBundleIdentifier: "com.valenlan.cloudlinkguard")
                 .first { $0.processIdentifier != currentPID && !$0.isTerminated }
             existing?.activate(options: [.activateAllWindows])
 
@@ -2277,7 +2342,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func applyApplicationIcon() {
-        guard let iconURL = Bundle.main.url(forResource: "CloudRoute", withExtension: "icns"),
+        guard let iconURL = Bundle.main.url(forResource: "CloudLinkGuard", withExtension: "icns"),
               let icon = NSImage(contentsOf: iconURL) else { return }
         NSApp.applicationIconImage = icon
         NSApp.dockTile.display()
@@ -2296,11 +2361,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 @main
-struct CloudRouteApp: App {
+struct CloudLinkGuardApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        Window("CloudRoute", id: "main") {
+        Window("CloudLink Guard", id: "main") {
             ContentView()
         }
         .defaultSize(

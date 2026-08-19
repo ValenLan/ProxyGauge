@@ -1,7 +1,7 @@
-<Window x:Class="CloudRoute.SettingsWindow"
+<Window x:Class="CloudLinkGuard.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="CloudRoute 设置"
+        Title="CloudLink Guard 设置"
         Width="510"
         Height="486"
         WindowStartupLocation="CenterOwner"
@@ -10,7 +10,7 @@
         AllowsTransparency="True"
         Background="Transparent"
         ShowInTaskbar="False"
-        Icon="Assets/CloudRoute.ico">
+        Icon="Assets/CloudLinkGuard.ico">
     <Border Background="{StaticResource CanvasBrush}"
             BorderBrush="{StaticResource BorderBrush}"
             BorderThickness="1"
