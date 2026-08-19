@@ -12,6 +12,7 @@ Mihomo/Clash Verge 的核心、混合端口和流量入口状态，并提供结�
 
 - macOS 使用 SwiftUI，Windows 使用原生 WPF
 - 检测 Mihomo 核心、mixed 端口、系统代理与 TUN 路由
+- macOS 首次启动自动识别 Clash Verge Rev / Mihomo 的本地入口与流量模式；检测失败才要求手动填写端口
 - 流量入口卡片按实际状态切换：仅系统代理或仅 TUN 显示绿色，两者同时开启显示橙色提示，两者均未开启显示灰色
 - 用三个独立查询源交叉验证代理出口，识别出口漂移、分流或透明代理干扰
 - TUN 生效时验证 DNS 是否返回 `198.18.x.x` Fake-IP，直接发现域名分流配置缺失
@@ -91,6 +92,12 @@ Mac 用户解压后把 `CloudRoute.app` 移到“应用程序”即可；正常�
 设置 → 隐私与安全性”选择“仍要打开”。面向更广泛用户公开分发前，应补齐 Developer ID
 签名与公证。
 
+macOS 首次启动会优先从 Mihomo 本地控制 socket、macOS 系统代理和 Clash Verge Rev 根设置
+文件中识别当前 mixed 端口，并展示“代理客户端 → 本地入口 → 流量模式”供用户一次确认。
+自动检测只提取端口与运行模式，不读取或保存订阅 URL、节点、UUID、密码或密钥；检测失败
+时才显示只允许本机回环地址的手动端口输入。确认结果保存在 CloudRoute 自己的 macOS 偏好
+中，标题栏的连接设置按钮可以随时重新检测。
+
 分享包不包含代理客户端、订阅、节点、服务器地址或个人配置。朋友仍需自行安装并配置
 Mihomo/Clash Verge；PF Kill Switch 也不会随普通分享包自动安装。
 
@@ -114,7 +121,8 @@ Scripts/install.sh
 
 ### 配置
 
-安装脚本首次运行时会创建：
+普通 macOS 图形用户不需要创建配置文件；首次引导确认的本地入口会直接传给 App 内置脚本。
+下面的文件仅用于开发者命令行、高级链式出口和 PF Kill Switch 配置；运行安装脚本时会创建：
 
 ```text
 ~/.config/cloudroute/config
@@ -211,8 +219,8 @@ Firewall/WFP 策略，误配置可能让整台电脑断网；当前分享版刻�
 
 每次 push 与 pull request 都会构建并测试 macOS、Windows x64 和 Windows ARM64，并把
 三个 ZIP 原样保存为 Actions artifacts。只有推送与应用版本完全一致的 `v<版本>` 标签时，
-工作流才会创建 GitHub Release，同时上传三个 ZIP 与 `SHA256SUMS.txt`。例如当前版本的
-发布标签是 `v1.3.14`。
+工作流才会创建 GitHub Release，同时上传三个 ZIP 与 `SHA256SUMS.txt`。例如当前版本对应的
+发布标签应为 `v1.3.15`。
 
 创建标签会产生供仓库授权用户下载的正式发布结果，必须在全部本地测试和普通 push CI
 通过后由维护者明确执行；构建脚本本身不会自动创建标签。

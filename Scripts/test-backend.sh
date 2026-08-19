@@ -50,6 +50,73 @@ assert_entry_state 0 1 $'已接管\tok\tTUN 路由\tarrow.triangle.2.circlepath'
 assert_entry_state 1 1 $'同时开启\twarning\t双重入口\texclamationmark.triangle.fill'
 assert_entry_state 0 0 $'未启用\tidle\t流量入口\tarrow.triangle.branch'
 
+/usr/bin/printf '%s\n' \
+  'mixed-port: 7897' \
+  'secret: test-must-not-be-returned' > "$TEMP_DIR/clash-verge.yaml"
+/usr/bin/printf '%s\n' \
+  '{"mixed-port":7788,"secret":"test-must-not-be-returned"}' \
+  > "$TEMP_DIR/mihomo-configs.json"
+/usr/bin/printf '%s\n' 'CLOUDROUTE_MIXED="127.0.0.1:7000"' > "$TEMP_DIR/cloudroute-config"
+
+saved_endpoint_probe=$(CLOUDROUTE_CONFIG="$TEMP_DIR/cloudroute-config" \
+  CLOUDROUTE_MIXED=127.0.0.1:7898 \
+  CLOUDROUTE_SYSTEM_PROXY_ACTIVE=0 \
+  CLOUDROUTE_TUN_ACTIVE=0 \
+  /bin/bash "$BACKEND" probe | /usr/bin/awk -F '\t' '$1 == "port" { print $2 }')
+case "$saved_endpoint_probe" in
+  '7898 监听中'|'7898 未监听') ;;
+  *) echo "App 保存的入口没有覆盖配置文件: $saved_endpoint_probe" >&2; exit 1 ;;
+esac
+
+assert_discovery() {
+  local expected output
+  expected="$1"
+  shift
+  output=$(env \
+    CLOUDROUTE_CONFIG=/dev/null \
+    CLOUDROUTE_DISCOVERY_SOCKET="$TEMP_DIR/missing.sock" \
+    CLOUDROUTE_SYSTEM_PROXY_ACTIVE=0 \
+    CLOUDROUTE_TUN_ACTIVE=0 \
+    "$@" /bin/bash "$BACKEND" discover)
+
+  /usr/bin/printf '%s\n' "$output" | /usr/bin/grep -Fq "$expected"
+  if /usr/bin/printf '%s\n' "$output" | /usr/bin/grep -Fq 'test-must-not-be-returned'; then
+    echo '自动检测不得输出配置中的其他字段' >&2
+    exit 1
+  fi
+}
+
+assert_discovery $'endpoint\t127.0.0.1:7897' \
+  CLOUDROUTE_DISCOVERY_CLIENT='Clash Verge Rev' \
+  CLOUDROUTE_DISCOVERY_CONFIG="$TEMP_DIR/clash-verge.yaml" \
+  CLOUDROUTE_DISCOVERY_PORT_ACTIVE=1
+
+assert_discovery $'source\tMihomo 运行状态' \
+  CLOUDROUTE_DISCOVERY_SOCKET_JSON="$TEMP_DIR/mihomo-configs.json" \
+  CLOUDROUTE_DISCOVERY_CONFIG="$TEMP_DIR/missing.yaml" \
+  CLOUDROUTE_DISCOVERY_PORT_ACTIVE=1
+
+system_discovery=$(CLOUDROUTE_CONFIG=/dev/null \
+  CLOUDROUTE_DISCOVERY_SYSTEM_PROXY=127.0.0.1:7891 \
+  CLOUDROUTE_DISCOVERY_CONFIG="$TEMP_DIR/missing.yaml" \
+  CLOUDROUTE_DISCOVERY_SOCKET="$TEMP_DIR/missing.sock" \
+  CLOUDROUTE_DISCOVERY_PORT_ACTIVE=1 \
+  CLOUDROUTE_SYSTEM_PROXY_ACTIVE=1 \
+  CLOUDROUTE_TUN_ACTIVE=0 \
+  /bin/bash "$BACKEND" discover)
+/usr/bin/printf '%s\n' "$system_discovery" | /usr/bin/grep -Fq $'source\tmacOS 系统代理'
+/usr/bin/printf '%s\n' "$system_discovery" | /usr/bin/grep -Fq $'mode\t系统代理'
+
+missing_discovery=$(CLOUDROUTE_CONFIG=/dev/null \
+  CLOUDROUTE_DISCOVERY_CONFIG="$TEMP_DIR/missing.yaml" \
+  CLOUDROUTE_DISCOVERY_SOCKET="$TEMP_DIR/missing.sock" \
+  CLOUDROUTE_DISCOVERY_PORT_ACTIVE=0 \
+  CLOUDROUTE_SYSTEM_PROXY_ACTIVE=0 \
+  CLOUDROUTE_TUN_ACTIVE=0 \
+  /bin/bash "$BACKEND" discover)
+/usr/bin/printf '%s\n' "$missing_discovery" | /usr/bin/grep -Fq $'found\t0'
+/usr/bin/printf '%s\n' "$missing_discovery" | /usr/bin/grep -Fq $'source\t手动设置'
+
 /usr/bin/printf '%s\n__STATUS__=0\n' 'Kill Switch: Enabled' > "$TEMP_DIR/legacy-admin-result"
 legacy_actual=$(PUFFROUTE_ADMIN_RESULT="$TEMP_DIR/legacy-admin-result" \
   PUFFROUTE_KILL_TOKEN="$TEMP_DIR/legacy-token" \

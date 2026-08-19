@@ -18,14 +18,20 @@ fi
 DEFAULT_CONFIG="$HOME/.config/cloudroute/config"
 LEGACY_CONFIG="$HOME/.config/puffroute/config"
 CONFIG_FILE="${CLOUDROUTE_CONFIG:-${PUFFROUTE_CONFIG:-$DEFAULT_CONFIG}}"
+ENV_CLOUDROUTE_MIXED="${CLOUDROUTE_MIXED:-${PUFFROUTE_MIXED:-}}"
 if [ -z "${CLOUDROUTE_CONFIG:-}" ] && [ -z "${PUFFROUTE_CONFIG:-}" ] \
   && [ ! -r "$CONFIG_FILE" ] && [ -r "$LEGACY_CONFIG" ]; then
   CONFIG_FILE="$LEGACY_CONFIG"
 fi
 [ -r "$CONFIG_FILE" ] && . "$CONFIG_FILE"
+if [ -n "$ENV_CLOUDROUTE_MIXED" ]; then
+  CLOUDROUTE_MIXED="$ENV_CLOUDROUTE_MIXED"
+fi
+CONFIGURED_MIXED="${CLOUDROUTE_MIXED:-${PUFFROUTE_MIXED:-}}"
 MIXED="${CLOUDROUTE_MIXED:-${PUFFROUTE_MIXED:-127.0.0.1:7890}}"
 MIXED_HOST="${MIXED%:*}"
 MIXED_PORT="${MIXED##*:}"
+export CLOUDROUTE_MIXED="$MIXED"
 
 has_tun_route() {
   case "${CLOUDROUTE_TUN_ACTIVE:-}" in
@@ -44,6 +50,185 @@ system_proxy_active() {
     0|false|no) return 1 ;;
   esac
   /usr/sbin/scutil --proxy 2>/dev/null | /usr/bin/grep -qE '(HTTP|SOCKS)Enable : 1'
+}
+
+discovery_port_open() {
+  local host port
+  host="$1"
+  port="$2"
+  case "${CLOUDROUTE_DISCOVERY_PORT_ACTIVE:-}" in
+    1|true|yes) return 0 ;;
+    0|false|no) return 1 ;;
+  esac
+  (exec 3<>/dev/tcp/"$host"/"$port") 2>/dev/null
+}
+
+valid_local_endpoint() {
+  local endpoint host port
+  endpoint="$1"
+  host="${endpoint%:*}"
+  port="${endpoint##*:}"
+  case "$host" in
+    127.0.0.1|localhost) ;;
+    *) return 1 ;;
+  esac
+  case "$port" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  [ "$port" -gt 0 ] && [ "$port" -lt 65536 ]
+}
+
+system_proxy_endpoint() {
+  if [ -n "${CLOUDROUTE_DISCOVERY_SYSTEM_PROXY:-}" ]; then
+    /usr/bin/printf '%s\n' "$CLOUDROUTE_DISCOVERY_SYSTEM_PROXY"
+    return
+  fi
+
+  /usr/sbin/scutil --proxy 2>/dev/null | /usr/bin/awk '
+    /HTTPEnable : 1/ { enabled = 1 }
+    /HTTPProxy :/ { host = $3 }
+    /HTTPPort :/ { port = $3 }
+    END {
+      if (enabled && host != "" && port ~ /^[0-9]+$/) {
+        print host ":" port
+      }
+    }
+  '
+}
+
+yaml_mixed_port() {
+  local config_path
+  config_path="$1"
+  [ -r "$config_path" ] || return 1
+  /usr/bin/awk -F ':' '
+    /^[[:space:]]*mixed-port[[:space:]]*:/ {
+      value = $2
+      gsub(/[[:space:]"]/, "", value)
+      if (value ~ /^[0-9]+$/ && value + 0 > 0 && value + 0 < 65536) {
+        print value
+        exit
+      }
+    }
+  ' "$config_path"
+}
+
+runtime_mixed_port() {
+  local socket_path json port
+  socket_path="${CLOUDROUTE_DISCOVERY_SOCKET:-/private/tmp/verge/verge-mihomo.sock}"
+
+  if [ -n "${CLOUDROUTE_DISCOVERY_SOCKET_JSON:-}" ]; then
+    [ -r "$CLOUDROUTE_DISCOVERY_SOCKET_JSON" ] || return 1
+    json=$(/bin/cat "$CLOUDROUTE_DISCOVERY_SOCKET_JSON")
+  else
+    [ -S "$socket_path" ] || return 1
+    json=$(/usr/bin/curl -fsS --max-time 2 --unix-socket "$socket_path" \
+      http://localhost/configs 2>/dev/null) || return 1
+  fi
+
+  port=$(/usr/bin/printf '%s' "$json" \
+    | /usr/bin/plutil -extract 'mixed-port' raw -o - -- - 2>/dev/null) || return 1
+  case "$port" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  [ "$port" -gt 0 ] && [ "$port" -lt 65536 ] || return 1
+  /usr/bin/printf '%s\n' "$port"
+}
+
+discover() {
+  local client endpoint source active mode config_path port candidate
+  local system_active tun_active
+
+  client="未识别"
+  endpoint=""
+  source=""
+  active="idle"
+  system_active=""
+  tun_active=""
+
+  if [ -n "${CLOUDROUTE_DISCOVERY_CLIENT:-}" ]; then
+    client="$CLOUDROUTE_DISCOVERY_CLIENT"
+  elif /usr/bin/pgrep -x verge-mihomo >/dev/null 2>&1; then
+    client="Clash Verge Rev"
+  elif /usr/bin/pgrep -x mihomo >/dev/null 2>&1; then
+    client="Mihomo"
+  elif /usr/bin/pgrep -x clash-meta >/dev/null 2>&1; then
+    client="Clash Meta"
+  fi
+
+  if system_proxy_active; then system_active=1; fi
+  if has_tun_route; then tun_active=1; fi
+  if [ -n "$system_active" ] && [ -n "$tun_active" ]; then
+    mode="双重入口"
+  elif [ -n "$tun_active" ]; then
+    mode="TUN"
+  elif [ -n "$system_active" ]; then
+    mode="系统代理"
+  else
+    mode="未开启"
+  fi
+
+  if [ -z "$endpoint" ] && [ -n "$system_active" ]; then
+    candidate=$(system_proxy_endpoint)
+    if [ -n "$candidate" ] && valid_local_endpoint "$candidate"; then
+      endpoint="$candidate"
+      source="macOS 系统代理"
+    fi
+  fi
+
+  if [ -z "$endpoint" ]; then
+    port=$(runtime_mixed_port 2>/dev/null || true)
+    if [ -n "$port" ]; then
+      endpoint="127.0.0.1:$port"
+      source="Mihomo 运行状态"
+      [ "$client" = "未识别" ] && client="Mihomo"
+    fi
+  fi
+
+  config_path="${CLOUDROUTE_DISCOVERY_CONFIG:-$HOME/Library/Application Support/io.github.clash-verge-rev.clash-verge-rev/clash-verge.yaml}"
+  if [ -z "$endpoint" ]; then
+    port=$(yaml_mixed_port "$config_path" 2>/dev/null || true)
+    if [ -n "$port" ]; then
+      endpoint="127.0.0.1:$port"
+      source="Clash Verge 本地设置"
+      [ "$client" = "未识别" ] && client="Clash Verge Rev"
+    fi
+  fi
+
+  if [ -z "$endpoint" ] && [ -n "$CONFIGURED_MIXED" ] \
+    && valid_local_endpoint "$CONFIGURED_MIXED"; then
+    endpoint="$CONFIGURED_MIXED"
+    source="CloudRoute 设置"
+  fi
+
+  if [ -z "$endpoint" ]; then
+    for port in 7890 7897; do
+      if discovery_port_open 127.0.0.1 "$port"; then
+        endpoint="127.0.0.1:$port"
+        source="本地监听端口"
+        break
+      fi
+    done
+  fi
+
+  if [ -n "$endpoint" ]; then
+    candidate="${endpoint%:*}"
+    port="${endpoint##*:}"
+    if discovery_port_open "$candidate" "$port"; then
+      active="ok"
+    fi
+    /usr/bin/printf 'found\t1\n'
+  else
+    endpoint="127.0.0.1:7890"
+    source="手动设置"
+    /usr/bin/printf 'found\t0\n'
+  fi
+
+  /usr/bin/printf 'client\t%s\n' "$client"
+  /usr/bin/printf 'endpoint\t%s\n' "$endpoint"
+  /usr/bin/printf 'mode\t%s\n' "$mode"
+  /usr/bin/printf 'source\t%s\n' "$source"
+  /usr/bin/printf 'active\t%s\n' "$active"
+  /usr/bin/printf 'privacy\t仅读取本地端口与运行模式，不读取订阅和节点\n'
 }
 
 kill_switch_snapshot() {
@@ -246,6 +431,9 @@ run_admin() {
 }
 
 case "${1:-}" in
+  discover)
+    discover
+    ;;
   probe)
     probe
     ;;
@@ -266,7 +454,7 @@ case "${1:-}" in
     run_admin off
     ;;
   *)
-    echo "用法: $0 {probe|health|kill-status|kill-on|kill-off}"
+    echo "用法: $0 {discover|probe|health|kill-status|kill-on|kill-off}"
     exit 2
     ;;
 esac

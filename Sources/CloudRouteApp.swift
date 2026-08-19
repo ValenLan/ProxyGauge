@@ -48,6 +48,30 @@ struct ResultSheet: Identifiable {
     let success: Bool
 }
 
+struct ProxyDiscovery: Sendable, Equatable {
+    var found = false
+    var client = "正在检测"
+    var endpoint = "127.0.0.1:7890"
+    var mode = "正在读取"
+    var source = "本地运行状态"
+    var active = false
+    var privacy = "仅读取本地端口与运行模式，不读取订阅和节点"
+}
+
+private enum CloudRoutePreferences {
+    static let setupCompletedKey = "cloudroute.connectionSetupCompleted.v1"
+    static let selectedEndpointKey = "cloudroute.selectedMixedEndpoint"
+
+    static func validLocalEndpoint(_ endpoint: String) -> Bool {
+        let parts = endpoint.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2,
+              ["127.0.0.1", "localhost"].contains(String(parts[0])),
+              let port = Int(parts[1]),
+              (1...65535).contains(port) else { return false }
+        return true
+    }
+}
+
 @MainActor
 final class ProxyModel: ObservableObject {
     @Published var headline = "正在读取状态"
@@ -58,6 +82,9 @@ final class ProxyModel: ObservableObject {
     @Published var busyLabel = ""
     @Published var resultSheet: ResultSheet?
     @Published var showDisableConfirmation = false
+    @Published var showConnectionSetup = false
+    @Published var isDiscoveringConnection = false
+    @Published var discovery = ProxyDiscovery()
 
     @Published var core = MetricState(title: "代理核心", symbol: "cpu", value: "检查中", level: .idle)
     @Published var port = MetricState(title: "本地端口", symbol: "network", value: "检查中", level: .idle)
@@ -67,11 +94,57 @@ final class ProxyModel: ObservableObject {
     private let backendPath = Bundle.main.path(forResource: "cloudroute-backend", ofType: "sh")
         ?? FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".local/share/cloudroute/cloudroute-backend.sh").path
-
     init() {
+        Task { [weak self] in
+            guard let self else { return }
+            await self.refresh()
+            if !UserDefaults.standard.bool(forKey: CloudRoutePreferences.setupCompletedKey) {
+                await self.discoverConnection(showSheet: true)
+            }
+        }
+    }
+
+    func openConnectionSetup() {
+        Task { [weak self] in
+            await self?.discoverConnection(showSheet: true)
+        }
+    }
+
+    func discoverConnection(showSheet: Bool = false) async {
+        guard !isDiscoveringConnection else { return }
+        isDiscoveringConnection = true
+        if showSheet {
+            showConnectionSetup = true
+        }
+
+        let result = await execute("discover")
+        if result.status == 0 {
+            discovery = parseDiscovery(result.output)
+        } else {
+            discovery = ProxyDiscovery(
+                found: false,
+                client: "未发现代理客户端",
+                endpoint: "127.0.0.1:7890",
+                mode: "未开启",
+                source: "请手动设置",
+                active: false
+            )
+        }
+        isDiscoveringConnection = false
+    }
+
+    func confirmConnection(endpoint: String) {
+        guard CloudRoutePreferences.validLocalEndpoint(endpoint) else { return }
+        UserDefaults.standard.set(endpoint, forKey: CloudRoutePreferences.selectedEndpointKey)
+        UserDefaults.standard.set(true, forKey: CloudRoutePreferences.setupCompletedKey)
+        showConnectionSetup = false
         Task { [weak self] in
             await self?.refresh()
         }
+    }
+
+    func deferConnectionSetup() {
+        showConnectionSetup = false
     }
 
     func refresh() async {
@@ -153,6 +226,26 @@ final class ProxyModel: ObservableObject {
         updateMetric(&killSwitch, from: parsed["kill"])
     }
 
+    private func parseDiscovery(_ output: String) -> ProxyDiscovery {
+        var fields: [String: String] = [:]
+        for line in output.split(separator: "\n") {
+            let parts = line.split(separator: "\t", maxSplits: 1, omittingEmptySubsequences: false)
+            guard parts.count == 2 else { continue }
+            fields[String(parts[0])] = String(parts[1])
+        }
+
+        let endpoint = fields["endpoint"] ?? "127.0.0.1:7890"
+        return ProxyDiscovery(
+            found: fields["found"] == "1" && CloudRoutePreferences.validLocalEndpoint(endpoint),
+            client: fields["client"] ?? "未识别",
+            endpoint: endpoint,
+            mode: fields["mode"] ?? "未开启",
+            source: fields["source"] ?? "手动设置",
+            active: fields["active"] == "ok",
+            privacy: fields["privacy"] ?? "仅读取本地端口与运行模式，不读取订阅和节点"
+        )
+    }
+
     private func updateMetric(_ metric: inout MetricState, from fields: [String]?) {
         guard let fields, fields.count >= 2 else { return }
         metric.value = fields[0]
@@ -165,6 +258,10 @@ final class ProxyModel: ObservableObject {
 
     private func execute(_ action: String) async -> (status: Int32, output: String) {
         let path = backendPath
+        let selectedEndpoint = UserDefaults.standard.string(forKey: CloudRoutePreferences.selectedEndpointKey)
+        let validSelectedEndpoint = selectedEndpoint.flatMap {
+            CloudRoutePreferences.validLocalEndpoint($0) ? $0 : nil
+        }
         return await Task.detached(priority: .userInitiated) {
             let process = Process()
             let pipe = Pipe()
@@ -172,6 +269,11 @@ final class ProxyModel: ObservableObject {
             process.arguments = [path, action]
             process.standardOutput = pipe
             process.standardError = pipe
+            if let validSelectedEndpoint {
+                var environment = ProcessInfo.processInfo.environment
+                environment["CLOUDROUTE_MIXED"] = validSelectedEndpoint
+                process.environment = environment
+            }
 
             do {
                 try process.run()
@@ -1158,6 +1260,12 @@ struct AdvancedCheckView: View {
         process.arguments = [scriptPath, route.rawValue, ""]
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
+        if let endpoint = UserDefaults.standard.string(forKey: CloudRoutePreferences.selectedEndpointKey),
+           CloudRoutePreferences.validLocalEndpoint(endpoint) {
+            var environment = ProcessInfo.processInfo.environment
+            environment["CLOUDROUTE_MIXED"] = endpoint
+            process.environment = environment
+        }
 
         do {
             try process.run()
@@ -1328,6 +1436,232 @@ struct RulePackView: View {
     }
 }
 
+private struct ConnectionSetupView: View {
+    let discovery: ProxyDiscovery
+    let isDiscovering: Bool
+    let confirm: (String) -> Void
+    let redetect: () -> Void
+    let deferSetup: () -> Void
+
+    @State private var manualMode = false
+    @State private var manualPort = "7890"
+
+    private var parsedPort: Int? {
+        guard let port = Int(manualPort), (1...65535).contains(port) else { return nil }
+        return port
+    }
+
+    private var modeColor: Color {
+        switch discovery.mode {
+        case "TUN", "系统代理": return CloudPalette.statusGreen
+        case "双重入口": return CloudPalette.statusOrange
+        default: return CloudPalette.statusGray
+        }
+    }
+
+    private var modeSymbol: String {
+        switch discovery.mode {
+        case "TUN": return "arrow.triangle.2.circlepath"
+        case "系统代理": return "network"
+        case "双重入口": return "exclamationmark.triangle.fill"
+        default: return "arrow.triangle.branch"
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .top, spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(CloudPalette.networkBlue.opacity(0.14))
+                    Image(systemName: discovery.found ? "point.3.connected.trianglepath.dotted" : "network.slash")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(CloudPalette.networkBlue)
+                }
+                .frame(width: 50, height: 50)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(discovery.found ? "已找到本地代理" : "连接本地代理")
+                        .font(.system(size: 21, weight: .semibold, design: .rounded))
+                    Text(discovery.found
+                         ? "确认一次即可开始使用 CloudRoute。"
+                         : "启动 Clash Verge 或 Mihomo，CloudRoute 会自动识别。")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Button(action: redetect) {
+                    if isDiscovering {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Label("重新检测", systemImage: "arrow.clockwise")
+                            .labelStyle(.iconOnly)
+                    }
+                }
+                .buttonStyle(.borderless)
+                .padding(7)
+                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .disabled(isDiscovering)
+                .help("重新检测本地代理")
+            }
+
+            if manualMode {
+                manualSetup
+            } else {
+                detectedRoute
+            }
+
+            Label(discovery.privacy, systemImage: "lock.shield")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 10) {
+                Button("稍后", action: deferSetup)
+                    .controlSize(.small)
+
+                Spacer()
+
+                if discovery.found {
+                    Button(manualMode ? "使用检测结果" : "手动设置") {
+                        manualMode.toggle()
+                    }
+                    .controlSize(.small)
+                }
+
+                Button(manualMode ? "保存并继续" : "使用检测结果") {
+                    if manualMode, let port = parsedPort {
+                        confirm("127.0.0.1:\(port)")
+                    } else {
+                        confirm(discovery.endpoint)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(isDiscovering || (manualMode && parsedPort == nil) || (!manualMode && !discovery.found))
+            }
+        }
+        .padding(22)
+        .frame(width: 540, height: manualMode ? 350 : 330)
+        .interactiveDismissDisabled()
+        .onAppear(perform: syncFromDiscovery)
+        .onChange(of: discovery) { _, _ in
+            syncFromDiscovery()
+        }
+    }
+
+    private var detectedRoute: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            HStack(spacing: 0) {
+                routeNode(
+                    symbol: "app.connected.to.app.below.fill",
+                    title: "代理客户端",
+                    value: discovery.client,
+                    color: CloudPalette.networkBlue
+                )
+                routeConnector(color: discovery.found ? CloudPalette.networkBlue : CloudPalette.statusGray)
+                routeNode(
+                    symbol: discovery.active ? "checkmark.circle.fill" : "pause.circle.fill",
+                    title: "本地入口",
+                    value: discovery.endpoint,
+                    color: discovery.active ? CloudPalette.statusGreen : CloudPalette.statusOrange
+                )
+                routeConnector(color: modeColor)
+                routeNode(
+                    symbol: modeSymbol,
+                    title: "流量模式",
+                    value: discovery.mode,
+                    color: modeColor
+                )
+            }
+
+            HStack {
+                Text(discovery.active ? "入口正在监听" : "已找到设置，端口当前未监听")
+                    .foregroundStyle(discovery.active ? CloudPalette.statusGreen : CloudPalette.statusOrange)
+                Spacer()
+                Text("来源：\(discovery.source)")
+                    .foregroundStyle(.secondary)
+            }
+            .font(.caption)
+        }
+        .padding(14)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+        }
+    }
+
+    private var manualSetup: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("本地代理端口")
+                .font(.system(size: 13, weight: .semibold))
+
+            HStack(spacing: 8) {
+                Text("127.0.0.1 :")
+                    .font(.system(size: 14, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                TextField("7890", text: $manualPort)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 14, design: .monospaced))
+                    .frame(width: 94)
+                Spacer()
+            }
+
+            Text(parsedPort == nil
+                 ? "请输入 1–65535 之间的端口。"
+                 : "只连接本机回环地址，不会访问局域网或远程代理。")
+                .font(.caption)
+                .foregroundStyle(parsedPort == nil ? CloudPalette.statusRed : .secondary)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, minHeight: 126, alignment: .topLeading)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+        }
+    }
+
+    private func routeNode(symbol: String, title: String, value: String, color: Color) -> some View {
+        VStack(spacing: 6) {
+            ZStack {
+                Circle().fill(color.opacity(0.14))
+                Image(systemName: symbol)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(color)
+            }
+            .frame(width: 30, height: 30)
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(size: 11, weight: .semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+        }
+        .frame(width: 132)
+    }
+
+    private func routeConnector(color: Color) -> some View {
+        Rectangle()
+            .fill(color.opacity(0.42))
+            .frame(height: 2)
+            .frame(maxWidth: .infinity)
+            .offset(y: -18)
+    }
+
+    private func syncFromDiscovery() {
+        if let port = discovery.endpoint.split(separator: ":").last,
+           Int(port) != nil {
+            manualPort = String(port)
+        }
+        manualMode = !discovery.found
+    }
+}
+
 struct ContentView: View {
     @StateObject private var model = ProxyModel()
     @State private var showingAdvanced = false
@@ -1380,6 +1714,17 @@ struct ContentView: View {
                 showingAdvanced = false
             }
         }
+        .sheet(isPresented: $model.showConnectionSetup) {
+            ConnectionSetupView(
+                discovery: model.discovery,
+                isDiscovering: model.isDiscoveringConnection,
+                confirm: model.confirmConnection,
+                redetect: {
+                    Task { await model.discoverConnection() }
+                },
+                deferSetup: model.deferConnectionSetup
+            )
+        }
         .alert("关闭 Kill Switch？", isPresented: $model.showDisableConfirmation) {
             Button("取消", role: .cancel) {}
             Button("确认关闭", role: .destructive) {
@@ -1412,24 +1757,37 @@ struct ContentView: View {
 
             Spacer()
 
-            Button {
-                Task { await model.refresh() }
-            } label: {
-                if model.isRefreshing {
-                    ProgressView()
-                        .controlSize(.small)
-                        .frame(width: 18, height: 18)
-                } else {
-                    Image(systemName: "arrow.clockwise")
-                        .foregroundStyle(CloudPalette.networkBlue)
+            HStack(spacing: 7) {
+                Button(action: model.openConnectionSetup) {
+                    Image(systemName: "slider.horizontal.3")
+                        .foregroundStyle(.secondary)
                         .frame(width: 18, height: 18)
                 }
+                .buttonStyle(.borderless)
+                .padding(8)
+                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .disabled(model.isBusy || model.isRefreshing)
+                .help("连接设置")
+
+                Button {
+                    Task { await model.refresh() }
+                } label: {
+                    if model.isRefreshing {
+                        ProgressView()
+                            .controlSize(.small)
+                            .frame(width: 18, height: 18)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                            .foregroundStyle(CloudPalette.networkBlue)
+                            .frame(width: 18, height: 18)
+                    }
+                }
+                .buttonStyle(.borderless)
+                .padding(8)
+                .background(CloudPalette.networkBlue.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .disabled(model.isBusy || model.isRefreshing)
+                .help("刷新状态")
             }
-            .buttonStyle(.borderless)
-            .padding(8)
-            .background(CloudPalette.networkBlue.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-            .disabled(model.isBusy || model.isRefreshing)
-            .help("刷新状态")
         }
     }
 

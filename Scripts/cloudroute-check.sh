@@ -6,11 +6,15 @@
 DEFAULT_CONFIG="$HOME/.config/cloudroute/config"
 LEGACY_CONFIG="$HOME/.config/puffroute/config"
 CONFIG_FILE="${CLOUDROUTE_CONFIG:-${PUFFROUTE_CONFIG:-$DEFAULT_CONFIG}}"
+ENV_CLOUDROUTE_MIXED="${CLOUDROUTE_MIXED:-${PUFFROUTE_MIXED:-}}"
 if [ -z "${CLOUDROUTE_CONFIG:-}" ] && [ -z "${PUFFROUTE_CONFIG:-}" ] \
   && [ ! -r "$CONFIG_FILE" ] && [ -r "$LEGACY_CONFIG" ]; then
   CONFIG_FILE="$LEGACY_CONFIG"
 fi
 [ -r "$CONFIG_FILE" ] && . "$CONFIG_FILE"
+if [ -n "$ENV_CLOUDROUTE_MIXED" ]; then
+  CLOUDROUTE_MIXED="$ENV_CLOUDROUTE_MIXED"
+fi
 
 EXPECT_IP="${CLOUDROUTE_EXPECT_IP:-${PUFFROUTE_EXPECT_IP:-}}"
 MIXED="${CLOUDROUTE_MIXED:-${PUFFROUTE_MIXED:-127.0.0.1:7890}}"
@@ -85,7 +89,7 @@ render_risk_profile() {
     extract-asn "$IPAPI_JSON" "$PROXYCHECK_JSON" "$risk_ip" 2>/dev/null || true)
   if printf '%s' "$ASN_NUMBER" | /usr/bin/grep -qE '^[0-9]+$'; then
     /usr/bin/curl -sS --retry 1 --retry-all-errors --retry-delay 1 \
-      -A "CloudRoute/1.3.14 (+https://github.com/ValenLan/CloudRoute)" \
+      -A "CloudRoute/1.3.15 (+https://github.com/ValenLan/CloudRoute)" \
       --proxy "http://$risk_proxy" --max-time "$METADATA_TIMEOUT" \
       "https://www.peeringdb.com/api/net?asn=$ASN_NUMBER" \
       -o "$PEERINGDB_JSON" 2>/dev/null || true

@@ -39,6 +39,11 @@ WINDOWS_MAIN="$PROJECT_ROOT/Windows/MainWindow.xaml"
 /usr/bin/grep -Fq '.buttonStyle(DiagnosticActionButtonStyle())' "$APP_SOURCE"
 /usr/bin/grep -Fq '.allowsHitTesting(!isDisabled)' "$APP_SOURCE"
 /usr/bin/grep -Fq 'showsProgress: true' "$APP_SOURCE"
+/usr/bin/grep -Fq 'Text(discovery.found ? "已找到本地代理" : "连接本地代理")' "$APP_SOURCE"
+/usr/bin/grep -Fq 'confirm("127.0.0.1:\(port)")' "$APP_SOURCE"
+/usr/bin/grep -Fq '仅读取本地端口与运行模式，不读取订阅和节点' "$APP_SOURCE"
+/usr/bin/grep -Fq 'Button(action: model.openConnectionSetup)' "$APP_SOURCE"
+/usr/bin/grep -Fq '.interactiveDismissDisabled()' "$APP_SOURCE"
 
 if /usr/bin/grep -q 'MetricCard(metric: .*accent:' "$APP_SOURCE"; then
   echo "Read-only status cards must not use per-card accent colors." >&2
