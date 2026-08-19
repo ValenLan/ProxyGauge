@@ -1,4 +1,4 @@
-namespace CloudLinkGuard.Models;
+namespace CloudCheck.Models;
 
 public sealed class AppConfig
 {

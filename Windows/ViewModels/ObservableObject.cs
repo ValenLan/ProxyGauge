@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 
-namespace CloudLinkGuard.ViewModels;
+namespace CloudCheck.ViewModels;
 
 public abstract class ObservableObject : INotifyPropertyChanged
 {

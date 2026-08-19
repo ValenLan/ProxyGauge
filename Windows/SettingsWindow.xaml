@@ -1,4 +1,4 @@
-<Window x:Class="CloudLinkGuard.SettingsWindow"
+<Window x:Class="CloudCheck.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="CloudCheck 设置"
@@ -10,7 +10,7 @@
         AllowsTransparency="True"
         Background="Transparent"
         ShowInTaskbar="False"
-        Icon="Assets/CloudLinkGuard.ico">
+        Icon="Assets/CloudCheck.ico">
     <Border Background="{StaticResource CanvasBrush}"
             BorderBrush="{StaticResource BorderBrush}"
             BorderThickness="1"

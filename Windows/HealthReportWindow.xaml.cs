@@ -3,10 +3,10 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using CloudLinkGuard.Models;
-using CloudLinkGuard.ViewModels;
+using CloudCheck.Models;
+using CloudCheck.ViewModels;
 
-namespace CloudLinkGuard;
+namespace CloudCheck;
 
 public partial class HealthReportWindow : Window
 {

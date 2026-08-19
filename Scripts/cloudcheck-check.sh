@@ -1,90 +1,95 @@
 #!/bin/bash
 # CloudCheck 代理链路检测脚本
-# 用法: bash ~/.local/bin/cloudlink-guard-check
+# 用法: bash ~/.local/bin/cloudcheck-check
 # 退出码: 0 = 链路检查通过; 1 = 有失败项
 
-DEFAULT_CONFIG="$HOME/.config/cloudlink-guard/config"
+DEFAULT_CONFIG="$HOME/.config/cloudcheck/config"
+CLOUDLINK_GUARD_CONFIG_PATH="$HOME/.config/cloudlink-guard/config"
 CLOUDROUTE_CONFIG_PATH="$HOME/.config/cloudroute/config"
 PUFFROUTE_CONFIG_PATH="$HOME/.config/puffroute/config"
 
-import_cloudroute_compat() {
-  local suffix current legacy
+import_legacy_compat() {
+  local suffix current legacy_prefix legacy
   for suffix in "$@"; do
-    current="CLOUDLINK_GUARD_$suffix"
-    legacy="CLOUDROUTE_$suffix"
-    if ! declare -p "$current" >/dev/null 2>&1 \
-      && declare -p "$legacy" >/dev/null 2>&1; then
-      printf -v "$current" '%s' "${!legacy}"
-      export "$current"
-    fi
+    current="CLOUDCHECK_$suffix"
+    declare -p "$current" >/dev/null 2>&1 && continue
+    for legacy_prefix in CLOUDLINK_GUARD CLOUDROUTE PUFFROUTE; do
+      legacy="${legacy_prefix}_$suffix"
+      if declare -p "$legacy" >/dev/null 2>&1; then
+        printf -v "$current" '%s' "${!legacy}"
+        export "$current"
+        break
+      fi
+    done
   done
 }
 
-import_cloudroute_compat \
+import_legacy_compat \
   CONFIG MIXED EXPECT_IP TIMEOUT METADATA_TIMEOUT MIHOMO_SOCKET \
   SECONDARY_ENABLED SECONDARY_LABEL SECONDARY_GROUP DEFAULT_GROUP \
   SECONDARY_MIXED SECONDARY_DOMAINS EXPECT_SECONDARY_IP ACTIVE_AI_PROBES \
   RISK_PARSER CHAIN_PARSER GOOGLE_GROUP GOOGLE_MIXED EXPECT_GOOGLE_IP
 
-CONFIG_FILE="${CLOUDLINK_GUARD_CONFIG:-${PUFFROUTE_CONFIG:-$DEFAULT_CONFIG}}"
-ENV_CLOUDLINK_GUARD_MIXED="${CLOUDLINK_GUARD_MIXED:-${PUFFROUTE_MIXED:-}}"
-ENV_SECONDARY_ENABLED="${CLOUDLINK_GUARD_SECONDARY_ENABLED:-}"
-ENV_SECONDARY_LABEL="${CLOUDLINK_GUARD_SECONDARY_LABEL:-}"
-ENV_SECONDARY_GROUP="${CLOUDLINK_GUARD_SECONDARY_GROUP:-}"
-ENV_DEFAULT_GROUP="${CLOUDLINK_GUARD_DEFAULT_GROUP:-}"
-ENV_SECONDARY_MIXED="${CLOUDLINK_GUARD_SECONDARY_MIXED:-}"
-ENV_SECONDARY_DOMAINS="${CLOUDLINK_GUARD_SECONDARY_DOMAINS:-}"
-if [ -z "${CLOUDLINK_GUARD_CONFIG:-}" ] && [ -z "${PUFFROUTE_CONFIG:-}" ] \
-  && [ ! -r "$CONFIG_FILE" ]; then
-  if [ -r "$CLOUDROUTE_CONFIG_PATH" ]; then
+CONFIG_FILE="${CLOUDCHECK_CONFIG:-$DEFAULT_CONFIG}"
+ENV_CLOUDCHECK_MIXED="${CLOUDCHECK_MIXED:-}"
+ENV_SECONDARY_ENABLED="${CLOUDCHECK_SECONDARY_ENABLED:-}"
+ENV_SECONDARY_LABEL="${CLOUDCHECK_SECONDARY_LABEL:-}"
+ENV_SECONDARY_GROUP="${CLOUDCHECK_SECONDARY_GROUP:-}"
+ENV_DEFAULT_GROUP="${CLOUDCHECK_DEFAULT_GROUP:-}"
+ENV_SECONDARY_MIXED="${CLOUDCHECK_SECONDARY_MIXED:-}"
+ENV_SECONDARY_DOMAINS="${CLOUDCHECK_SECONDARY_DOMAINS:-}"
+if [ -z "${CLOUDCHECK_CONFIG:-}" ] && [ ! -r "$CONFIG_FILE" ]; then
+  if [ -r "$CLOUDLINK_GUARD_CONFIG_PATH" ]; then
+    CONFIG_FILE="$CLOUDLINK_GUARD_CONFIG_PATH"
+  elif [ -r "$CLOUDROUTE_CONFIG_PATH" ]; then
     CONFIG_FILE="$CLOUDROUTE_CONFIG_PATH"
   elif [ -r "$PUFFROUTE_CONFIG_PATH" ]; then
     CONFIG_FILE="$PUFFROUTE_CONFIG_PATH"
   fi
 fi
 [ -r "$CONFIG_FILE" ] && . "$CONFIG_FILE"
-import_cloudroute_compat \
+import_legacy_compat \
   MIXED EXPECT_IP TIMEOUT METADATA_TIMEOUT MIHOMO_SOCKET SECONDARY_ENABLED \
   SECONDARY_LABEL SECONDARY_GROUP DEFAULT_GROUP SECONDARY_MIXED \
   SECONDARY_DOMAINS EXPECT_SECONDARY_IP ACTIVE_AI_PROBES RISK_PARSER \
   CHAIN_PARSER GOOGLE_GROUP GOOGLE_MIXED EXPECT_GOOGLE_IP
-if [ -n "$ENV_CLOUDLINK_GUARD_MIXED" ]; then
-  CLOUDLINK_GUARD_MIXED="$ENV_CLOUDLINK_GUARD_MIXED"
+if [ -n "$ENV_CLOUDCHECK_MIXED" ]; then
+  CLOUDCHECK_MIXED="$ENV_CLOUDCHECK_MIXED"
 fi
-if [ -n "$ENV_SECONDARY_ENABLED" ]; then CLOUDLINK_GUARD_SECONDARY_ENABLED="$ENV_SECONDARY_ENABLED"; fi
-if [ -n "$ENV_SECONDARY_LABEL" ]; then CLOUDLINK_GUARD_SECONDARY_LABEL="$ENV_SECONDARY_LABEL"; fi
-if [ -n "$ENV_SECONDARY_GROUP" ]; then CLOUDLINK_GUARD_SECONDARY_GROUP="$ENV_SECONDARY_GROUP"; fi
-if [ -n "$ENV_DEFAULT_GROUP" ]; then CLOUDLINK_GUARD_DEFAULT_GROUP="$ENV_DEFAULT_GROUP"; fi
-if [ -n "$ENV_SECONDARY_MIXED" ]; then CLOUDLINK_GUARD_SECONDARY_MIXED="$ENV_SECONDARY_MIXED"; fi
-if [ -n "$ENV_SECONDARY_DOMAINS" ]; then CLOUDLINK_GUARD_SECONDARY_DOMAINS="$ENV_SECONDARY_DOMAINS"; fi
+if [ -n "$ENV_SECONDARY_ENABLED" ]; then CLOUDCHECK_SECONDARY_ENABLED="$ENV_SECONDARY_ENABLED"; fi
+if [ -n "$ENV_SECONDARY_LABEL" ]; then CLOUDCHECK_SECONDARY_LABEL="$ENV_SECONDARY_LABEL"; fi
+if [ -n "$ENV_SECONDARY_GROUP" ]; then CLOUDCHECK_SECONDARY_GROUP="$ENV_SECONDARY_GROUP"; fi
+if [ -n "$ENV_DEFAULT_GROUP" ]; then CLOUDCHECK_DEFAULT_GROUP="$ENV_DEFAULT_GROUP"; fi
+if [ -n "$ENV_SECONDARY_MIXED" ]; then CLOUDCHECK_SECONDARY_MIXED="$ENV_SECONDARY_MIXED"; fi
+if [ -n "$ENV_SECONDARY_DOMAINS" ]; then CLOUDCHECK_SECONDARY_DOMAINS="$ENV_SECONDARY_DOMAINS"; fi
 
-EXPECT_IP="${CLOUDLINK_GUARD_EXPECT_IP:-${PUFFROUTE_EXPECT_IP:-}}"
-MIXED="${CLOUDLINK_GUARD_MIXED:-${PUFFROUTE_MIXED:-127.0.0.1:7890}}"
-TIMEOUT="${CLOUDLINK_GUARD_TIMEOUT:-${PUFFROUTE_TIMEOUT:-6}}"
-METADATA_TIMEOUT="${CLOUDLINK_GUARD_METADATA_TIMEOUT:-${PUFFROUTE_METADATA_TIMEOUT:-12}}"
-MIHOMO_SOCKET="${CLOUDLINK_GUARD_MIHOMO_SOCKET:-${PUFFROUTE_MIHOMO_SOCKET:-/private/tmp/verge/verge-mihomo.sock}}"
-SECONDARY_ENABLED="${CLOUDLINK_GUARD_SECONDARY_ENABLED:-auto}"
-SECONDARY_LABEL="${CLOUDLINK_GUARD_SECONDARY_LABEL:-Google / Gemini}"
-GOOGLE_GROUP="${CLOUDLINK_GUARD_SECONDARY_GROUP:-${CLOUDLINK_GUARD_GOOGLE_GROUP:-${PUFFROUTE_GOOGLE_GROUP:-Google-Chain}}}"
-DEFAULT_GROUP="${CLOUDLINK_GUARD_DEFAULT_GROUP:-${PUFFROUTE_DEFAULT_GROUP:-PROXY}}"
-GOOGLE_MIXED="${CLOUDLINK_GUARD_SECONDARY_MIXED:-${CLOUDLINK_GUARD_GOOGLE_MIXED:-${PUFFROUTE_GOOGLE_MIXED:-127.0.0.1:7891}}}"
-EXPECT_GOOGLE_IP="${CLOUDLINK_GUARD_EXPECT_SECONDARY_IP:-${CLOUDLINK_GUARD_EXPECT_GOOGLE_IP:-${PUFFROUTE_EXPECT_GOOGLE_IP:-}}}"
-SECONDARY_DOMAINS="${CLOUDLINK_GUARD_SECONDARY_DOMAINS:-gemini.google.com,generativelanguage.googleapis.com,www.google.com}"
-ACTIVE_AI_PROBES="${CLOUDLINK_GUARD_ACTIVE_AI_PROBES:-${PUFFROUTE_ACTIVE_AI_PROBES:-0}}"
+EXPECT_IP="${CLOUDCHECK_EXPECT_IP:-}"
+MIXED="${CLOUDCHECK_MIXED:-127.0.0.1:7890}"
+TIMEOUT="${CLOUDCHECK_TIMEOUT:-6}"
+METADATA_TIMEOUT="${CLOUDCHECK_METADATA_TIMEOUT:-12}"
+MIHOMO_SOCKET="${CLOUDCHECK_MIHOMO_SOCKET:-/private/tmp/verge/verge-mihomo.sock}"
+SECONDARY_ENABLED="${CLOUDCHECK_SECONDARY_ENABLED:-auto}"
+SECONDARY_LABEL="${CLOUDCHECK_SECONDARY_LABEL:-Google / Gemini}"
+GOOGLE_GROUP="${CLOUDCHECK_SECONDARY_GROUP:-${CLOUDCHECK_GOOGLE_GROUP:-Google-Chain}}"
+DEFAULT_GROUP="${CLOUDCHECK_DEFAULT_GROUP:-PROXY}"
+GOOGLE_MIXED="${CLOUDCHECK_SECONDARY_MIXED:-${CLOUDCHECK_GOOGLE_MIXED:-127.0.0.1:7891}}"
+EXPECT_GOOGLE_IP="${CLOUDCHECK_EXPECT_SECONDARY_IP:-${CLOUDCHECK_EXPECT_GOOGLE_IP:-}}"
+SECONDARY_DOMAINS="${CLOUDCHECK_SECONDARY_DOMAINS:-gemini.google.com,generativelanguage.googleapis.com,www.google.com}"
+ACTIVE_AI_PROBES="${CLOUDCHECK_ACTIVE_AI_PROBES:-0}"
 MIXED_HOST="${MIXED%:*}"
 MIXED_PORT="${MIXED##*:}"
 GOOGLE_MIXED_HOST="${GOOGLE_MIXED%:*}"
 GOOGLE_MIXED_PORT="${GOOGLE_MIXED##*:}"
 SCRIPT_DIR=$(/usr/bin/dirname "$0")
-RISK_PARSER="${CLOUDLINK_GUARD_RISK_PARSER:-${PUFFROUTE_RISK_PARSER:-$SCRIPT_DIR/cloudlink-guard-ip-risk.jxa}}"
-CHAIN_PARSER="${CLOUDLINK_GUARD_CHAIN_PARSER:-${PUFFROUTE_CHAIN_PARSER:-$SCRIPT_DIR/cloudlink-guard-chain-check.jxa}}"
+RISK_PARSER="${CLOUDCHECK_RISK_PARSER:-$SCRIPT_DIR/cloudcheck-ip-risk.jxa}"
+CHAIN_PARSER="${CLOUDCHECK_CHAIN_PARSER:-$SCRIPT_DIR/cloudcheck-chain-check.jxa}"
 
 SECONDARY_ACTIVE=""
 case "$SECONDARY_ENABLED" in
   1|true|yes) SECONDARY_ACTIVE=1 ;;
   0|false|no) ;;
   *)
-    if [ -n "${CLOUDLINK_GUARD_GOOGLE_GROUP:-}${PUFFROUTE_GOOGLE_GROUP:-}${CLOUDLINK_GUARD_GOOGLE_MIXED:-}${PUFFROUTE_GOOGLE_MIXED:-}" ]; then
+    if [ -n "${CLOUDCHECK_GOOGLE_GROUP:-}${CLOUDCHECK_GOOGLE_MIXED:-}" ]; then
       SECONDARY_ACTIVE=1
     fi
     ;;
@@ -127,9 +132,9 @@ render_risk_profile() {
     return
   fi
 
-  IPAPI_JSON=$(/usr/bin/mktemp -t cloudlink-guard-ipapi)
-  PROXYCHECK_JSON=$(/usr/bin/mktemp -t cloudlink-guard-proxycheck)
-  PEERINGDB_JSON=$(/usr/bin/mktemp -t cloudlink-guard-peeringdb)
+  IPAPI_JSON=$(/usr/bin/mktemp -t cloudcheck-ipapi)
+  PROXYCHECK_JSON=$(/usr/bin/mktemp -t cloudcheck-proxycheck)
+  PEERINGDB_JSON=$(/usr/bin/mktemp -t cloudcheck-peeringdb)
   : > "$IPAPI_JSON"
   : > "$PROXYCHECK_JSON"
   : > "$PEERINGDB_JSON"
@@ -145,7 +150,7 @@ render_risk_profile() {
     extract-asn "$IPAPI_JSON" "$PROXYCHECK_JSON" "$risk_ip" 2>/dev/null || true)
   if printf '%s' "$ASN_NUMBER" | /usr/bin/grep -qE '^[0-9]+$'; then
     /usr/bin/curl -sS --retry 1 --retry-all-errors --retry-delay 1 \
-      -A "CloudCheck/1.4.4 (+https://github.com/ValenLan/CloudCheck)" \
+      -A "CloudCheck/1.5.0 (+https://github.com/ValenLan/CloudCheck)" \
       --proxy "http://$risk_proxy" --max-time "$METADATA_TIMEOUT" \
       "https://www.peeringdb.com/api/net?asn=$ASN_NUMBER" \
       -o "$PEERINGDB_JSON" 2>/dev/null || true
@@ -168,8 +173,8 @@ check_site() {
   url="$2"
   kind="$3"
   probe_proxy="$4"
-  headers=$(/usr/bin/mktemp -t cloudlink-guard-site-headers)
-  body=$(/usr/bin/mktemp -t cloudlink-guard-site-body)
+  headers=$(/usr/bin/mktemp -t cloudcheck-site-headers)
+  body=$(/usr/bin/mktemp -t cloudcheck-site-body)
   out=$(/usr/bin/curl -sS -D "$headers" -o "$body" -w '%{http_code} %{time_total}' \
     --retry 1 --retry-all-errors --retry-delay 1 \
     --proxy "http://$probe_proxy" --max-time "$TIMEOUT" "$url" 2>/dev/null)
@@ -320,9 +325,9 @@ echo "===== 6. 额外分流链路 ($SECONDARY_LABEL) ====="
 GOOGLE_EXT=""
 CHAIN_CONFIGURED=""
 if [ -S "$MIHOMO_SOCKET" ] && [ -r "$CHAIN_PARSER" ]; then
-  PROXIES_JSON=$(/usr/bin/mktemp -t cloudlink-guard-proxies)
-  RULES_JSON=$(/usr/bin/mktemp -t cloudlink-guard-rules)
-  DELAY_JSON=$(/usr/bin/mktemp -t cloudlink-guard-chain-delay)
+  PROXIES_JSON=$(/usr/bin/mktemp -t cloudcheck-proxies)
+  RULES_JSON=$(/usr/bin/mktemp -t cloudcheck-rules)
+  DELAY_JSON=$(/usr/bin/mktemp -t cloudcheck-chain-delay)
   : > "$PROXIES_JSON"
   : > "$RULES_JSON"
   : > "$DELAY_JSON"

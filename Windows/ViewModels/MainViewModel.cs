@@ -1,8 +1,8 @@
 using System.Windows.Media;
-using CloudLinkGuard.Models;
-using CloudLinkGuard.Services;
+using CloudCheck.Models;
+using CloudCheck.Services;
 
-namespace CloudLinkGuard.ViewModels;
+namespace CloudCheck.ViewModels;
 
 public sealed class MainViewModel : ObservableObject
 {

@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>CloudCheck</AssemblyName>
+    <RootNamespace>CloudCheck</RootNamespace>
+    <ApplicationIcon>Assets\CloudCheck.ico</ApplicationIcon>
+    <Version>1.5.0</Version>
+    <AssemblyVersion>1.5.0.0</AssemblyVersion>
+    <FileVersion>1.5.0.0</FileVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\CloudCheck.ico" />
+    <EmbeddedResource Include="..\Rules\CloudCheck-Merge.yaml"
+                      Link="Rules\CloudCheck-Merge.yaml"
+                      LogicalName="CloudCheck.Rules.CloudCheck-Merge.yaml" />
+  </ItemGroup>
+</Project>

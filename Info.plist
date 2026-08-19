@@ -7,11 +7,11 @@
     <key>CFBundleDisplayName</key>
     <string>CloudCheck</string>
     <key>CFBundleExecutable</key>
-    <string>CloudLinkGuard</string>
+    <string>CloudCheck</string>
     <key>CFBundleIconFile</key>
-    <string>CloudLinkGuard.icns</string>
+    <string>CloudCheck.icns</string>
     <key>CFBundleIdentifier</key>
-    <string>com.valenlan.cloudlinkguard</string>
+    <string>com.valenlan.cloudcheck</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
@@ -19,9 +19,9 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.4.4</string>
+    <string>1.5.0</string>
     <key>CFBundleVersion</key>
-    <string>35</string>
+    <string>36</string>
     <key>LSMinimumSystemVersion</key>
     <string>26.0</string>
     <key>LSMultipleInstancesProhibited</key>

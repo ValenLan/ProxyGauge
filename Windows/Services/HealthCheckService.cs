@@ -2,9 +2,9 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.Text.Json;
-using CloudLinkGuard.Models;
+using CloudCheck.Models;
 
-namespace CloudLinkGuard.Services;
+namespace CloudCheck.Services;
 
 public sealed class HealthCheckService
 {
@@ -53,7 +53,7 @@ public sealed class HealthCheckService
             // probes. Match the macOS metadata budget without changing connect timeout.
             Timeout = TimeSpan.FromSeconds(Math.Max(config.TimeoutSeconds, 12))
         };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("CloudCheck/1.4.4 (+https://github.com/ValenLan/CloudCheck)");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("CloudCheck/1.5.0 (+https://github.com/ValenLan/CloudCheck)");
 
         var exitResult = await CheckExitIpAsync(client, config, cancellationToken);
         var riskTask = CheckIpRiskAsync(client, exitResult.Address, cancellationToken);

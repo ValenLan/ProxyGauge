@@ -2,9 +2,9 @@ using System.Diagnostics;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using Microsoft.Win32;
-using CloudLinkGuard.Models;
+using CloudCheck.Models;
 
-namespace CloudLinkGuard.Services;
+namespace CloudCheck.Services;
 
 public sealed class ProxyProbeService
 {

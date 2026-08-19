@@ -1,28 +1,28 @@
-# Copy to ~/.config/cloudlink-guard/config and fill in your own values.
-# Legacy CloudRoute/PuffRoute config files and environment variables remain readable.
-CLOUDLINK_GUARD_MIXED="127.0.0.1:7890"
-CLOUDLINK_GUARD_TIMEOUT="6"
+# Copy to ~/.config/cloudcheck/config and fill in your own values.
+# Legacy CloudLinkGuard/CloudRoute/PuffRoute config files and environment variables remain readable.
+CLOUDCHECK_MIXED="127.0.0.1:7890"
+CLOUDCHECK_TIMEOUT="6"
 
 # Optional: when set, the health check verifies the exact proxy exit IP.
-CLOUDLINK_GUARD_EXPECT_IP=""
+CLOUDCHECK_EXPECT_IP=""
 
 # Optional extra route/rule template. Disabled for a generic single-exit setup.
 # The prefilled values preserve CloudCheck's original Google/Gemini template.
-CLOUDLINK_GUARD_MIHOMO_SOCKET="/private/tmp/verge/verge-mihomo.sock"
-CLOUDLINK_GUARD_SECONDARY_ENABLED="0"
-CLOUDLINK_GUARD_SECONDARY_LABEL="Google / Gemini"
-CLOUDLINK_GUARD_SECONDARY_GROUP="Google-Chain"
-CLOUDLINK_GUARD_DEFAULT_GROUP="PROXY"
-CLOUDLINK_GUARD_SECONDARY_MIXED="127.0.0.1:7891"
-CLOUDLINK_GUARD_SECONDARY_DOMAINS="gemini.google.com,generativelanguage.googleapis.com,www.google.com"
-CLOUDLINK_GUARD_EXPECT_SECONDARY_IP=""
+CLOUDCHECK_MIHOMO_SOCKET="/private/tmp/verge/verge-mihomo.sock"
+CLOUDCHECK_SECONDARY_ENABLED="0"
+CLOUDCHECK_SECONDARY_LABEL="Google / Gemini"
+CLOUDCHECK_SECONDARY_GROUP="Google-Chain"
+CLOUDCHECK_DEFAULT_GROUP="PROXY"
+CLOUDCHECK_SECONDARY_MIXED="127.0.0.1:7891"
+CLOUDCHECK_SECONDARY_DOMAINS="gemini.google.com,generativelanguage.googleapis.com,www.google.com"
+CLOUDCHECK_EXPECT_SECONDARY_IP=""
 
 # Off by default: active requests to AI APIs can create automated access logs.
-CLOUDLINK_GUARD_ACTIVE_AI_PROBES="0"
+CLOUDCHECK_ACTIVE_AI_PROBES="0"
 
 # Optional: Chrome executable used by the isolated browser check.
-CLOUDLINK_GUARD_CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+CLOUDCHECK_CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
 # Required only when installing the PF Kill Switch.
-CLOUDLINK_GUARD_VPS_IP=""
-CLOUDLINK_GUARD_INTERFACES="en0 en1 en2 en3 en4 en5 en6 en7 bridge0 bridge1 ppp0 ppp1"
+CLOUDCHECK_VPS_IP=""
+CLOUDCHECK_INTERFACES="en0 en1 en2 en3 en4 en5 en6 en7 bridge0 bridge1 ppp0 ppp1"

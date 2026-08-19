@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace CloudLinkGuard.Models;
+namespace CloudCheck.Models;
 
 public sealed record HealthCheckItem(string Label, string Detail, HealthLevel Level)
 {

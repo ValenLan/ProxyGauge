@@ -1,9 +1,9 @@
 using Microsoft.Win32;
 using System.Windows;
 using System.Windows.Input;
-using CloudLinkGuard.Services;
+using CloudCheck.Services;
 
-namespace CloudLinkGuard;
+namespace CloudCheck;
 
 public partial class RulePackWindow : Window
 {
@@ -35,7 +35,7 @@ public partial class RulePackWindow : Window
         var dialog = new SaveFileDialog
         {
             Title = "导出 CloudCheck 规则包",
-            FileName = "CloudLinkGuard-Merge.yaml",
+            FileName = "CloudCheck-Merge.yaml",
             DefaultExt = ".yaml",
             Filter = "YAML 配置 (*.yaml)|*.yaml|所有文件 (*.*)|*.*"
         };

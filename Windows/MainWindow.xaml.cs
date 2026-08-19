@@ -1,9 +1,9 @@
 using System.Windows;
 using System.Windows.Input;
-using CloudLinkGuard.Services;
-using CloudLinkGuard.ViewModels;
+using CloudCheck.Services;
+using CloudCheck.ViewModels;
 
-namespace CloudLinkGuard;
+namespace CloudCheck;
 
 public partial class MainWindow : Window
 {

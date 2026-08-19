@@ -22,13 +22,14 @@ ipapi.is / proxycheck.io 地址风险标签；三个出口查询源会交叉验�
 ## 配置位置
 
 ```text
-%APPDATA%\CloudLinkGuard\config.json
+%APPDATA%\CloudCheck\config.json
 ```
 
 删除该文件即可恢复默认设置。
 
-从 CloudRoute 或 PuffRoute 升级时，CloudCheck 会依次读取旧的
-`%APPDATA%\CloudRoute\config.json`、`%APPDATA%\PuffRoute\config.json` 并复制到新目录，
+从 CloudLinkGuard、CloudRoute 或 PuffRoute 升级时，CloudCheck 会依次读取旧的
+`%APPDATA%\CloudLinkGuard\config.json`、`%APPDATA%\CloudRoute\config.json`、
+`%APPDATA%\PuffRoute\config.json` 并复制到新目录，
 旧配置文件不会被删除。
 
 ## Windows 安全提醒

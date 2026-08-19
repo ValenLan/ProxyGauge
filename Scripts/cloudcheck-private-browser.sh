@@ -4,56 +4,61 @@ set -euo pipefail
 # Launch a separate Chrome instance for browser-based proxy checks. A temporary
 # profile and a per-process proxy keep normal browser activity unchanged.
 
-DEFAULT_CONFIG="$HOME/.config/cloudlink-guard/config"
+DEFAULT_CONFIG="$HOME/.config/cloudcheck/config"
+CLOUDLINK_GUARD_CONFIG_PATH="$HOME/.config/cloudlink-guard/config"
 CLOUDROUTE_CONFIG_PATH="$HOME/.config/cloudroute/config"
 PUFFROUTE_CONFIG_PATH="$HOME/.config/puffroute/config"
 
-import_cloudroute_compat() {
-  local suffix current legacy
+import_legacy_compat() {
+  local suffix current legacy_prefix legacy
   for suffix in "$@"; do
-    current="CLOUDLINK_GUARD_$suffix"
-    legacy="CLOUDROUTE_$suffix"
-    if ! declare -p "$current" >/dev/null 2>&1 \
-      && declare -p "$legacy" >/dev/null 2>&1; then
-      printf -v "$current" '%s' "${!legacy}"
-      export "$current"
-    fi
+    current="CLOUDCHECK_$suffix"
+    declare -p "$current" >/dev/null 2>&1 && continue
+    for legacy_prefix in CLOUDLINK_GUARD CLOUDROUTE PUFFROUTE; do
+      legacy="${legacy_prefix}_$suffix"
+      if declare -p "$legacy" >/dev/null 2>&1; then
+        printf -v "$current" '%s' "${!legacy}"
+        export "$current"
+        break
+      fi
+    done
   done
 }
 
-import_cloudroute_compat \
+import_legacy_compat \
   CONFIG MIXED SECONDARY_MIXED SECONDARY_LABEL GOOGLE_MIXED CHROME \
   PRIVATE_BROWSER_DRY_RUN
 
-CONFIG_FILE="${CLOUDLINK_GUARD_CONFIG:-${PUFFROUTE_CONFIG:-$DEFAULT_CONFIG}}"
-ENV_CLOUDLINK_GUARD_MIXED="${CLOUDLINK_GUARD_MIXED:-${PUFFROUTE_MIXED:-}}"
-ENV_SECONDARY_MIXED="${CLOUDLINK_GUARD_SECONDARY_MIXED:-}"
-ENV_SECONDARY_LABEL="${CLOUDLINK_GUARD_SECONDARY_LABEL:-}"
-if [ -z "${CLOUDLINK_GUARD_CONFIG:-}" ] && [ -z "${PUFFROUTE_CONFIG:-}" ] \
-  && [ ! -r "$CONFIG_FILE" ]; then
-  if [ -r "$CLOUDROUTE_CONFIG_PATH" ]; then
+CONFIG_FILE="${CLOUDCHECK_CONFIG:-$DEFAULT_CONFIG}"
+ENV_CLOUDCHECK_MIXED="${CLOUDCHECK_MIXED:-}"
+ENV_SECONDARY_MIXED="${CLOUDCHECK_SECONDARY_MIXED:-}"
+ENV_SECONDARY_LABEL="${CLOUDCHECK_SECONDARY_LABEL:-}"
+if [ -z "${CLOUDCHECK_CONFIG:-}" ] && [ ! -r "$CONFIG_FILE" ]; then
+  if [ -r "$CLOUDLINK_GUARD_CONFIG_PATH" ]; then
+    CONFIG_FILE="$CLOUDLINK_GUARD_CONFIG_PATH"
+  elif [ -r "$CLOUDROUTE_CONFIG_PATH" ]; then
     CONFIG_FILE="$CLOUDROUTE_CONFIG_PATH"
   elif [ -r "$PUFFROUTE_CONFIG_PATH" ]; then
     CONFIG_FILE="$PUFFROUTE_CONFIG_PATH"
   fi
 fi
 [ -r "$CONFIG_FILE" ] && . "$CONFIG_FILE"
-import_cloudroute_compat \
+import_legacy_compat \
   MIXED SECONDARY_MIXED SECONDARY_LABEL GOOGLE_MIXED CHROME \
   PRIVATE_BROWSER_DRY_RUN
-if [ -n "$ENV_CLOUDLINK_GUARD_MIXED" ]; then
-  CLOUDLINK_GUARD_MIXED="$ENV_CLOUDLINK_GUARD_MIXED"
+if [ -n "$ENV_CLOUDCHECK_MIXED" ]; then
+  CLOUDCHECK_MIXED="$ENV_CLOUDCHECK_MIXED"
 fi
-if [ -n "$ENV_SECONDARY_MIXED" ]; then CLOUDLINK_GUARD_SECONDARY_MIXED="$ENV_SECONDARY_MIXED"; fi
-if [ -n "$ENV_SECONDARY_LABEL" ]; then CLOUDLINK_GUARD_SECONDARY_LABEL="$ENV_SECONDARY_LABEL"; fi
+if [ -n "$ENV_SECONDARY_MIXED" ]; then CLOUDCHECK_SECONDARY_MIXED="$ENV_SECONDARY_MIXED"; fi
+if [ -n "$ENV_SECONDARY_LABEL" ]; then CLOUDCHECK_SECONDARY_LABEL="$ENV_SECONDARY_LABEL"; fi
 
 ROUTE="${1:-}"
 EXIT_IP="${2:-}"
-DEFAULT_MIXED="${CLOUDLINK_GUARD_MIXED:-${PUFFROUTE_MIXED:-127.0.0.1:7890}}"
-GOOGLE_MIXED="${CLOUDLINK_GUARD_SECONDARY_MIXED:-${CLOUDLINK_GUARD_GOOGLE_MIXED:-${PUFFROUTE_GOOGLE_MIXED:-127.0.0.1:7891}}}"
-SECONDARY_LABEL="${CLOUDLINK_GUARD_SECONDARY_LABEL:-Google / Gemini}"
-CHROME="${CLOUDLINK_GUARD_CHROME:-${PUFFROUTE_CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}}"
-DRY_RUN="${CLOUDLINK_GUARD_PRIVATE_BROWSER_DRY_RUN:-${PUFFROUTE_PRIVATE_BROWSER_DRY_RUN:-}}"
+DEFAULT_MIXED="${CLOUDCHECK_MIXED:-127.0.0.1:7890}"
+GOOGLE_MIXED="${CLOUDCHECK_SECONDARY_MIXED:-${CLOUDCHECK_GOOGLE_MIXED:-127.0.0.1:7891}}"
+SECONDARY_LABEL="${CLOUDCHECK_SECONDARY_LABEL:-Google / Gemini}"
+CHROME="${CLOUDCHECK_CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
+DRY_RUN="${CLOUDCHECK_PRIVATE_BROWSER_DRY_RUN:-}"
 
 case "$ROUTE" in
   default)
@@ -76,7 +81,7 @@ if ! printf '%s' "$PROXY" | /usr/bin/grep -qE '^127\.0\.0\.1:[0-9]{2,5}$'; then
 fi
 
 if [ ! -x "$CHROME" ]; then
-  echo "未找到 Google Chrome；请先安装 Chrome，或设置 CLOUDLINK_GUARD_CHROME。" >&2
+  echo "未找到 Google Chrome；请先安装 Chrome，或设置 CLOUDCHECK_CHROME。" >&2
   exit 1
 fi
 
@@ -109,10 +114,10 @@ if [ "$DRY_RUN" = "1" ]; then
   exit 0
 fi
 
-PROFILE_DIR=$(/usr/bin/mktemp -d -t cloudlink-guard-browser)
+PROFILE_DIR=$(/usr/bin/mktemp -d -t cloudcheck-browser)
 cleanup() {
   case "$PROFILE_DIR" in
-    /private/var/folders/*/T/cloudlink-guard-browser.*|/var/folders/*/T/cloudlink-guard-browser.*|/private/tmp/cloudlink-guard-browser.*)
+    /private/var/folders/*/T/cloudcheck-browser.*|/var/folders/*/T/cloudcheck-browser.*|/private/tmp/cloudcheck-browser.*)
       /bin/rm -rf -- "$PROFILE_DIR"
       ;;
   esac

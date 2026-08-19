@@ -24,7 +24,7 @@ fi
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP"
 /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$APP" "$ARCHIVE"
 
-VERIFY_DIR=$(/usr/bin/mktemp -d /tmp/cloudlink-guard-package.XXXXXX)
+VERIFY_DIR=$(/usr/bin/mktemp -d /tmp/cloudcheck-package.XXXXXX)
 cleanup() {
   /bin/rm -rf "$VERIFY_DIR"
 }
@@ -33,7 +33,7 @@ trap cleanup EXIT
 /usr/bin/ditto -x -k "$ARCHIVE" "$VERIFY_DIR"
 EXTRACTED_APP="$VERIFY_DIR/CloudCheck.app"
 
-if [ ! -x "$EXTRACTED_APP/Contents/MacOS/CloudLinkGuard" ]; then
+if [ ! -x "$EXTRACTED_APP/Contents/MacOS/CloudCheck" ]; then
   echo "Packaged app is missing its executable bit." >&2
   exit 1
 fi

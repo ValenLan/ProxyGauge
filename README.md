@@ -1,7 +1,7 @@
 # CloudCheck
 
 <p align="center">
-  <img src="Resources/CloudLinkGuard.png" width="144" alt="CloudCheck icon">
+  <img src="Resources/CloudCheck.png" width="144" alt="CloudCheck icon">
 </p>
 
 CloudCheck 是一个轻量的原生代理状态面板，支持
@@ -42,7 +42,7 @@ CloudCheck 把两者有意分开：
 
 - **订阅**由使用者自己的代理客户端管理，CloudCheck 不读取、不保存也不分发订阅地址、
   节点或凭据。
-- **规则包**位于 [`Rules/CloudLinkGuard-Merge.yaml`](Rules/CloudLinkGuard-Merge.yaml)，随 macOS
+- **规则包**位于 [`Rules/CloudCheck-Merge.yaml`](Rules/CloudCheck-Merge.yaml)，随 macOS
   App 与 Windows 单文件程序一起打包，可从主界面底部“规则管理”入口预览、复制或导出。
 
 规则包使用 Clash Verge Rev 的 `prepend-rules`，确保 AI 与开发站点规则排在订阅自带的
@@ -109,12 +109,12 @@ Scripts/install.sh
 
 默认安装到 `~/Applications/CloudCheck.app`，辅助脚本安装到：
 
-- `~/.local/bin/cloudlink-guard-check`
-- `~/.local/bin/cloudlink-guard-ip-risk.jxa`
-- `~/.local/bin/cloudlink-guard-chain-check.jxa`
-- `~/.local/bin/cloudlink-guard-private-browser`
-- `~/.local/bin/cloudlink-guard-killswitch`
-- `~/.local/share/cloudlink-guard/`
+- `~/.local/bin/cloudcheck-check`
+- `~/.local/bin/cloudcheck-ip-risk.jxa`
+- `~/.local/bin/cloudcheck-chain-check.jxa`
+- `~/.local/bin/cloudcheck-private-browser`
+- `~/.local/bin/cloudcheck-killswitch`
+- `~/.local/share/cloudcheck/`
 
 这些外部脚本用于命令行调用和旧版兼容；图形应用正常运行会优先使用 App Bundle
 内置副本，因此单独移动 `CloudCheck.app` 不会丢失链路检测或管理员助手。
@@ -125,38 +125,40 @@ Scripts/install.sh
 下面的文件仅用于开发者命令行、高级链式出口和 PF Kill Switch 配置；运行安装脚本时会创建：
 
 ```text
-~/.config/cloudlink-guard/config
+~/.config/cloudcheck/config
 ```
 
 主要配置项：
 
 ```bash
-CLOUDLINK_GUARD_MIXED="127.0.0.1:7890"
-CLOUDLINK_GUARD_EXPECT_IP=""  # 可选：校验准确的代理出口 IP
-CLOUDLINK_GUARD_SECONDARY_ENABLED="0"  # 普通单出口保持关闭
-CLOUDLINK_GUARD_SECONDARY_LABEL="Google / Gemini"  # 预填模板，可改名
-CLOUDLINK_GUARD_SECONDARY_GROUP="Google-Chain"
-CLOUDLINK_GUARD_DEFAULT_GROUP="PROXY"
-CLOUDLINK_GUARD_SECONDARY_MIXED="127.0.0.1:7891"
-CLOUDLINK_GUARD_SECONDARY_DOMAINS="gemini.google.com,generativelanguage.googleapis.com,www.google.com"
-CLOUDLINK_GUARD_EXPECT_SECONDARY_IP=""  # 可选：校验额外出口基线
-CLOUDLINK_GUARD_CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-CLOUDLINK_GUARD_ACTIVE_AI_PROBES="0"  # 默认关闭：不主动请求任何 AI 平台
-CLOUDLINK_GUARD_VPS_IP=""     # 仅 PF Kill Switch 需要
+CLOUDCHECK_MIXED="127.0.0.1:7890"
+CLOUDCHECK_EXPECT_IP=""  # 可选：校验准确的代理出口 IP
+CLOUDCHECK_SECONDARY_ENABLED="0"  # 普通单出口保持关闭
+CLOUDCHECK_SECONDARY_LABEL="Google / Gemini"  # 预填模板，可改名
+CLOUDCHECK_SECONDARY_GROUP="Google-Chain"
+CLOUDCHECK_DEFAULT_GROUP="PROXY"
+CLOUDCHECK_SECONDARY_MIXED="127.0.0.1:7891"
+CLOUDCHECK_SECONDARY_DOMAINS="gemini.google.com,generativelanguage.googleapis.com,www.google.com"
+CLOUDCHECK_EXPECT_SECONDARY_IP=""  # 可选：校验额外出口基线
+CLOUDCHECK_CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+CLOUDCHECK_ACTIVE_AI_PROBES="0"  # 默认关闭：不主动请求任何 AI 平台
+CLOUDCHECK_VPS_IP=""     # 仅 PF Kill Switch 需要
 ```
 
-从 CloudRoute 或 PuffRoute 升级时，安装脚本会在新配置不存在的情况下复制旧配置；运行时
-也会依次回退读取 `~/.config/cloudroute/config`、`~/.config/puffroute/config`，以及旧的
-`CLOUDROUTE_*` / `PUFFROUTE_*` 变量。新旧配置同时存在时，以 CloudCheck 配置和
-`CLOUDLINK_GUARD_*` 变量为准。旧 `cloudroute-*` 命令名会安装为指向新命令的兼容符号链接。
+从 CloudLinkGuard、CloudRoute 或 PuffRoute 升级时，安装脚本会在新配置不存在的情况下
+依次复制 `~/.config/cloudlink-guard/config`、`~/.config/cloudroute/config` 或
+`~/.config/puffroute/config`。运行时也会读取旧的 `CLOUDLINK_GUARD_*`、
+`CLOUDROUTE_*` 和 `PUFFROUTE_*` 变量。新旧配置同时存在时，以 CloudCheck 配置和
+`CLOUDCHECK_*` 变量为准。三代旧命令名只作为指向 `cloudcheck-*` 的兼容符号链接。
 
-CloudCheck 保留 `com.valenlan.cloudlinkguard`、`CloudLinkGuard` 和 `cloudlink-guard` 等内部
-标识，以继续读取现有偏好、配置和 PF 规则；这些名称不会显示为应用品牌，也不是待清理的旧副本。
+新安装只使用 `com.valenlan.cloudcheck`、`CloudCheck` 和 `cloudcheck` 主标识。旧的
+`com.valenlan.cloudlinkguard`、`CloudLinkGuard`、`cloudlink-guard`、CloudRoute 与 PuffRoute
+仅保留在迁移逻辑中，读取成功后会写入 CloudCheck 的新位置。
 
 仓库不包含任何真实服务器地址或个人配置。
 
 如果启用了独立链式出口，仅检查策略组和规则命中还不够。当前预填模板使用
-[`Rules/CloudLinkGuard-Google-Chain-Probe.yaml`](Rules/CloudLinkGuard-Google-Chain-Probe.yaml)
+[`Rules/CloudCheck-Google-Chain-Probe.yaml`](Rules/CloudCheck-Google-Chain-Probe.yaml)
 中的 `listeners` 合并到 Mihomo 活动配置后，CloudCheck 会通过只监听
 `127.0.0.1:7891` 的专用 mixed 入口查询实际出口，并在报告中并排显示默认出口与
 额外出口。该示例入口固定绑定 `Google-Chain`，不会临时切换策略组，也不会暴露到局域网；
@@ -167,7 +169,7 @@ CloudCheck 保留 `com.valenlan.cloudlinkguard`、`CloudLinkGuard` 和 `cloudlin
 > PF 配置会影响整台 Mac 的联网行为。请先阅读脚本和规则，并确保你有可恢复的
 > 本地终端访问。配置错误可能导致暂时断网。
 
-填写 `CLOUDLINK_GUARD_VPS_IP` 后运行：
+填写 `CLOUDCHECK_VPS_IP` 后运行：
 
 ```bash
 Scripts/install-pf.sh
@@ -175,18 +177,19 @@ Scripts/install-pf.sh
 
 该脚本会：
 
-1. 生成 `/etc/pf.anchors/cloudlink-guard`
-2. 在当前 `/etc/pf.conf` 中注册 `anchor "cloudlink-guard"`
+1. 生成 `/etc/pf.anchors/cloudcheck`
+2. 在当前 `/etc/pf.conf` 中注册 `anchor "cloudcheck"`
 3. 先运行 PF 语法检查，再安装配置
-4. 首次执行时备份 `/etc/pf.conf.cloudlink-guard.bak`
+4. 首次执行时备份 `/etc/pf.conf.cloudcheck.bak`
 
 安装规则后，可在 CloudCheck 界面中开启或关闭 Kill Switch。
 
-从 CloudRoute、PuffRoute 或更早的 Proxy Tools 升级时，如果系统仍注册 `cloudroute`、
-`puffroute` 或 `killswitch` anchor，CloudCheck 会继续调用原有规则，避免仅因应用改名
-而失去保护。`install-pf.sh` 会复用已有 `cloudroute` / `puffroute` anchor，避免同时启用两套
+从 CloudLinkGuard、CloudRoute、PuffRoute 或更早的 Proxy Tools 升级时，如果系统仍注册
+`cloudlink-guard`、`cloudroute`、`puffroute` 或 `killswitch` anchor，CloudCheck 会继续调用
+原有规则，避免仅因应用改名而失去保护。`install-pf.sh` 会复用已有的三代旧 anchor，
+避免同时启用两套
 PF 规则；遇到更早的 `killswitch` anchor 时会拒绝自动叠加。全新安装使用
-`cloudlink-guard` anchor。
+`cloudcheck` anchor。
 
 ## Windows
 
@@ -207,7 +210,7 @@ Windows 版位于 [`Windows/`](Windows/)，使用 .NET 8 WPF，不依赖第三�
 需要 .NET 8 SDK 与 Windows 10/11：
 
 ```powershell
-dotnet publish Windows/CloudLinkGuard.Windows.csproj `
+dotnet publish Windows/CloudCheck.Windows.csproj `
   --configuration Release `
   --runtime win-x64 `
   --self-contained true `
@@ -217,11 +220,11 @@ dotnet publish Windows/CloudLinkGuard.Windows.csproj `
 Windows 配置保存在：
 
 ```text
-%APPDATA%\CloudLinkGuard\config.json
+%APPDATA%\CloudCheck\config.json
 ```
 
-首次运行会依次读取并复制旧的 `%APPDATA%\CloudRoute\config.json` 或
-`%APPDATA%\PuffRoute\config.json`，不会删除旧文件。
+首次运行会依次读取并复制旧的 `%APPDATA%\CloudLinkGuard\config.json`、
+`%APPDATA%\CloudRoute\config.json` 或 `%APPDATA%\PuffRoute\config.json`，不会删除旧文件。
 
 Windows 版没有照搬 macOS Kill Switch。可靠的 Windows 等价方案需要修改全局
 Firewall/WFP 策略，误配置可能让整台电脑断网；当前分享版刻意保持只读。
@@ -231,7 +234,7 @@ Firewall/WFP 策略，误配置可能让整台电脑断网；当前分享版刻�
 每次 push 与 pull request 都会构建并测试 macOS、Windows x64 和 Windows ARM64，并把
 三个 ZIP 原样保存为 Actions artifacts。只有推送与应用版本完全一致的 `v<版本>` 标签时，
 工作流才会创建 GitHub Release，同时上传三个 ZIP 与 `SHA256SUMS.txt`。例如当前版本对应的
-发布标签应为 `v1.4.4`。
+发布标签应为 `v1.5.0`。
 
 创建标签会产生供仓库授权用户下载的正式发布结果，必须在全部本地测试和普通 push CI
 通过后由维护者明确执行；构建脚本本身不会自动创建标签。
@@ -241,7 +244,7 @@ Firewall/WFP 策略，误配置可能让整台电脑断网；当前分享版刻�
 - 链路检测会通过已配置的本地代理访问公开 IP 查询服务和测试站点。
 - 默认链路检测不会请求 Claude、ChatGPT、Gemini 的网页或 API。启用额外分流模板后，规则
   命中从本机 Mihomo 运行时读取，链路延迟使用中性 204 地址，实际出口通过专用本地入口
-  访问公开 IP 查询服务确认。只有用户显式把 `CLOUDLINK_GUARD_ACTIVE_AI_PROBES` 设为 `1` 时，
+  访问公开 IP 查询服务确认。只有用户显式把 `CLOUDCHECK_ACTIVE_AI_PROBES` 设为 `1` 时，
   macOS 才会主动请求三个 AI API；即使启用，也不会自动访问账号网页。
 - 出口一致性检查会把默认代理出口分别提交给 `api.ipify.org`、`ifconfig.me` 与 `ip.sb`；
   启用额外出口探针时，也会经该用户设置的本地入口访问同一组服务。只有至少两个
@@ -267,7 +270,7 @@ Firewall/WFP 策略，误配置可能让整台电脑断网；当前分享版刻�
 - CloudCheck 不上传配置，不收集遥测，也不保存浏览记录。
 - macOS 管理员权限仅用于读取或修改 CloudCheck 自己的 PF anchor。
 - Windows 版不请求管理员权限，也不修改 Windows Firewall。
-- 发布前请不要提交 `~/.config/cloudlink-guard/config`。
+- 发布前请不要提交 `~/.config/cloudcheck/config`。
 
 ## 项目状态
 

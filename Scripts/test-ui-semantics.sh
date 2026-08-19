@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR=$(/usr/bin/dirname "$0")
 PROJECT_ROOT=$(cd "$SCRIPT_DIR/.." && /bin/pwd)
-APP_SOURCE="$PROJECT_ROOT/Sources/CloudLinkGuardApp.swift"
+APP_SOURCE="$PROJECT_ROOT/Sources/CloudCheckApp.swift"
 WINDOWS_RESOURCES="$PROJECT_ROOT/Windows/App.xaml"
 WINDOWS_MAIN="$PROJECT_ROOT/Windows/MainWindow.xaml"
 
@@ -20,6 +20,7 @@ WINDOWS_MAIN="$PROJECT_ROOT/Windows/MainWindow.xaml"
 /usr/bin/grep -Fq 'static let defaultWidth: CGFloat = 680' "$APP_SOURCE"
 /usr/bin/grep -Fq 'static let defaultHeight: CGFloat = 500' "$APP_SOURCE"
 /usr/bin/grep -Fq 'Window("CloudCheck", id: "main")' "$APP_SOURCE"
+/usr/bin/grep -Fq 'UserDefaults(suiteName: "com.valenlan.cloudlinkguard")' "$APP_SOURCE"
 /usr/bin/grep -Fq 'UserDefaults(suiteName: "com.valenlan.cloudroute")' "$APP_SOURCE"
 /usr/bin/grep -Fq 'UserDefaults(suiteName: "com.valenlan.puffroute")' "$APP_SOURCE"
 /usr/bin/grep -Fq '.windowResizability(.contentMinSize)' "$APP_SOURCE"

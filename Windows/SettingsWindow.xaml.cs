@@ -1,9 +1,9 @@
 using System.Net;
 using System.Windows;
 using System.Windows.Input;
-using CloudLinkGuard.Models;
+using CloudCheck.Models;
 
-namespace CloudLinkGuard;
+namespace CloudCheck;
 
 public partial class SettingsWindow : Window
 {

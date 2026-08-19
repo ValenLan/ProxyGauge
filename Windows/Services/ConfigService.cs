@@ -1,8 +1,8 @@
 using System.IO;
 using System.Text.Json;
-using CloudLinkGuard.Models;
+using CloudCheck.Models;
 
-namespace CloudLinkGuard.Services;
+namespace CloudCheck.Services;
 
 public sealed class ConfigService
 {
@@ -14,7 +14,7 @@ public sealed class ConfigService
 
     public string ConfigPath { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "CloudLinkGuard",
+        "CloudCheck",
         "config.json");
 
     private IEnumerable<string> LegacyConfigPaths
@@ -22,6 +22,7 @@ public sealed class ConfigService
         get
         {
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            yield return Path.Combine(appData, "CloudLinkGuard", "config.json");
             yield return Path.Combine(appData, "CloudRoute", "config.json");
             yield return Path.Combine(appData, "PuffRoute", "config.json");
         }

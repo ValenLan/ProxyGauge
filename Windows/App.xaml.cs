@@ -1,6 +1,6 @@
 using System.Windows;
 
-namespace CloudLinkGuard;
+namespace CloudCheck;
 
 public partial class App : Application
 {

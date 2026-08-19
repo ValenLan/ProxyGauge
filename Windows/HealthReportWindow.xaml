@@ -1,4 +1,4 @@
-<Window x:Class="CloudLinkGuard.HealthReportWindow"
+<Window x:Class="CloudCheck.HealthReportWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="CloudCheck 链路检测"
@@ -11,7 +11,7 @@
         AllowsTransparency="True"
         Background="Transparent"
         ShowInTaskbar="False"
-        Icon="Assets/CloudLinkGuard.ico">
+        Icon="Assets/CloudCheck.ico">
     <Border Background="{StaticResource CanvasBrush}"
             BorderBrush="{StaticResource BorderBrush}"
             BorderThickness="1"

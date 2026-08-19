@@ -23,6 +23,7 @@ jobs:
           Scripts/test-low-risk-health.sh
           Scripts/test-private-browser.sh
           Scripts/test-ui-semantics.sh
+          Scripts/test-branding.sh
           Scripts/build.sh
       - name: Verify bundle
         run: codesign --verify --deep --strict --verbose=2 "build/CloudCheck.app"
@@ -54,7 +55,7 @@ jobs:
       - name: Publish CloudCheck for Windows
         shell: pwsh
         run: |
-          dotnet publish Windows/CloudLinkGuard.Windows.csproj `
+          dotnet publish Windows/CloudCheck.Windows.csproj `
             --configuration Release `
             --runtime ${{ matrix.runtime }} `
             --self-contained true `
@@ -65,7 +66,7 @@ jobs:
             -p:DebugType=None `
             -p:DebugSymbols=false
           Copy-Item Windows/README.md "publish/${{ matrix.runtime }}/README-Windows.md"
-          $Project = [xml](Get-Content Windows/CloudLinkGuard.Windows.csproj -Raw)
+          $Project = [xml](Get-Content Windows/CloudCheck.Windows.csproj -Raw)
           $Version = $Project.Project.PropertyGroup.Version
           $Archive = "CloudCheck-$Version-${{ matrix.runtime }}.zip"
           Compress-Archive `

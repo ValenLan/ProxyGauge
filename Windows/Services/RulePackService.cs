@@ -1,11 +1,11 @@
 using System.IO;
 using System.Reflection;
 
-namespace CloudLinkGuard.Services;
+namespace CloudCheck.Services;
 
 public sealed class RulePackService
 {
-    private const string ResourceName = "CloudLinkGuard.Rules.CloudLinkGuard-Merge.yaml";
+    private const string ResourceName = "CloudCheck.Rules.CloudCheck-Merge.yaml";
 
     public string Version => "2026.08";
 
