@@ -380,7 +380,7 @@ probe() {
     entry_title="系统代理"
     entry_value="已启用"
     entry_level="ok"
-    entry_symbol="network"
+    entry_symbol="arrow.left.arrow.right"
     entry_ok=1
   else
     entry_title="流量入口"

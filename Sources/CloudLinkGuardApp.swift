@@ -221,10 +221,10 @@ final class ProxyModel: ObservableObject {
     @Published var discovery = ProxyDiscovery()
     @Published var healthPlan = CloudLinkGuardPreferences.loadHealthPlan()
 
-    @Published var core = MetricState(title: "代理核心", symbol: "cpu", value: "检查中", level: .idle)
-    @Published var port = MetricState(title: "本地端口", symbol: "network", value: "检查中", level: .idle)
-    @Published var entry = MetricState(title: "流量入口", symbol: "arrow.triangle.branch", value: "检查中", level: .idle)
-    @Published var killSwitch = MetricState(title: "Kill Switch", symbol: "shield.fill", value: "未确认", level: .idle)
+    @Published var core = MetricState(title: "代理核心", symbol: CloudSymbols.core, value: "检查中", level: .idle)
+    @Published var port = MetricState(title: "本地端口", symbol: CloudSymbols.localPort, value: "检查中", level: .idle)
+    @Published var entry = MetricState(title: "流量入口", symbol: CloudSymbols.entryInactive, value: "检查中", level: .idle)
+    @Published var killSwitch = MetricState(title: "Kill Switch", symbol: CloudSymbols.killSwitch, value: "未确认", level: .idle)
 
     private let backendPath = Bundle.main.path(forResource: "cloudlink-guard-backend", ofType: "sh")
         ?? FileManager.default.homeDirectoryForCurrentUser
@@ -453,6 +453,22 @@ private enum CloudPalette {
     static let rulesViolet = Color(red: 0.54, green: 0.42, blue: 0.96)
 }
 
+private enum CloudSymbols {
+    static let core = "cpu"
+    static let localPort = "cable.connector.horizontal"
+    static let entryInactive = "arrow.triangle.branch"
+    static let killSwitch = "shield"
+    static let health = "waveform.path.ecg"
+    static let advanced = "scope"
+    static let rules = "list.bullet.rectangle"
+    static let connectionSettings = "slider.horizontal.3"
+    static let refresh = "arrow.clockwise"
+    static let plan = "slider.horizontal.3"
+    static let run = "play.fill"
+    static let open = "arrow.up.right"
+    static let manage = "chevron.right"
+}
+
 private enum MainWindowLayout {
     // Keep the dashboard legible at its smallest size, but let macOS users
     // resize the window to match their workspace instead of enforcing a ratio.
@@ -473,6 +489,49 @@ private enum CloudTypography {
     static let actionDetail = Font.system(size: 10.5)
 }
 
+private struct CloudSymbolGlyph: View {
+    let symbol: String
+    let tint: Color
+    let size: CGFloat
+    var weight: Font.Weight = .medium
+    var frameSize: CGFloat? = nil
+
+    var body: some View {
+        Image(systemName: symbol)
+            .symbolRenderingMode(.monochrome)
+            .font(.system(size: size, weight: weight))
+            .foregroundStyle(tint)
+            .frame(width: frameSize ?? size + 4, height: frameSize ?? size + 4)
+            .accessibilityHidden(true)
+    }
+}
+
+private struct CloudIconBadge: View {
+    let symbol: String
+    let tint: Color
+    let containerSize: CGFloat
+    let cornerRadius: CGFloat
+    let glyphSize: CGFloat
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(tint.opacity(0.14))
+            CloudSymbolGlyph(
+                symbol: symbol,
+                tint: tint,
+                size: glyphSize,
+                frameSize: glyphSize + 4
+            )
+        }
+        .frame(width: containerSize, height: containerSize)
+        .overlay {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .stroke(tint.opacity(0.13), lineWidth: 1)
+        }
+    }
+}
+
 struct MetricCard: View {
     let metric: MetricState
 
@@ -482,18 +541,13 @@ struct MetricCard: View {
 
     var body: some View {
         HStack(spacing: 13) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(iconColor.opacity(0.15))
-                Image(systemName: metric.symbol)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(iconColor)
-            }
-            .frame(width: 38, height: 38)
-            .overlay {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .stroke(iconColor.opacity(0.13), lineWidth: 1)
-            }
+            CloudIconBadge(
+                symbol: metric.symbol,
+                tint: iconColor,
+                containerSize: 38,
+                cornerRadius: 11,
+                glyphSize: 16
+            )
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(metric.title)
@@ -537,18 +591,13 @@ struct KillSwitchCard: View {
 
     var body: some View {
         HStack(spacing: 13) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(iconColor.opacity(0.15))
-                Image(systemName: "shield.lefthalf.filled")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(iconColor)
-            }
-            .frame(width: 38, height: 38)
-            .overlay {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .stroke(iconColor.opacity(0.13), lineWidth: 1)
-            }
+            CloudIconBadge(
+                symbol: CloudSymbols.killSwitch,
+                tint: iconColor,
+                containerSize: 38,
+                cornerRadius: 11,
+                glyphSize: 16
+            )
 
             VStack(alignment: .leading, spacing: 3) {
                 Text("Kill Switch")
@@ -1186,14 +1235,13 @@ private struct DashboardActionCard: View {
         Button(action: action) {
             VStack(spacing: 7) {
                 HStack(spacing: 9) {
-                    ZStack {
-                        Circle()
-                            .fill(tint.opacity(0.14))
-                        Image(systemName: symbol)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(tint)
-                    }
-                    .frame(width: 30, height: 30)
+                    CloudIconBadge(
+                        symbol: symbol,
+                        tint: tint,
+                        containerSize: 30,
+                        cornerRadius: 15,
+                        glyphSize: 13
+                    )
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text(title)
@@ -1220,8 +1268,13 @@ private struct DashboardActionCard: View {
                                 .controlSize(.mini)
                                 .tint(tint)
                         } else {
-                            Image(systemName: actionSymbol)
-                                .font(.system(size: 10, weight: .bold))
+                            CloudSymbolGlyph(
+                                symbol: actionSymbol,
+                                tint: tint,
+                                size: 10,
+                                weight: .semibold,
+                                frameSize: 12
+                            )
                         }
 
                         Text(isRunning ? "检查中" : actionLabel)
@@ -1297,14 +1350,13 @@ private struct HealthActionCard: View {
     var body: some View {
         VStack(spacing: 7) {
             HStack(spacing: 9) {
-                ZStack {
-                    Circle()
-                        .fill(CloudPalette.networkBlue.opacity(0.14))
-                    Image(systemName: "stethoscope")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(CloudPalette.networkBlue)
-                }
-                .frame(width: 30, height: 30)
+                CloudIconBadge(
+                    symbol: CloudSymbols.health,
+                    tint: CloudPalette.networkBlue,
+                    containerSize: 30,
+                    cornerRadius: 15,
+                    glyphSize: 13
+                )
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text("链路检测")
@@ -1327,18 +1379,27 @@ private struct HealthActionCard: View {
 
                 HStack(spacing: 6) {
                     Button(action: openPlan) {
-                        Label("方案", systemImage: "slider.horizontal.3")
-                            .font(.system(size: 10.5, weight: .semibold))
-                            .foregroundStyle(CloudPalette.networkBlue)
-                            .frame(width: 64, height: 28)
-                            .background(
-                                CloudPalette.networkBlue.opacity(0.09),
-                                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        HStack(spacing: 5) {
+                            CloudSymbolGlyph(
+                                symbol: CloudSymbols.plan,
+                                tint: CloudPalette.networkBlue,
+                                size: 10,
+                                weight: .medium,
+                                frameSize: 13
                             )
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                    .stroke(CloudPalette.networkBlue.opacity(0.34), lineWidth: 1)
-                            }
+                            Text("方案")
+                        }
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundStyle(CloudPalette.networkBlue)
+                        .frame(width: 64, height: 28)
+                        .background(
+                            CloudPalette.networkBlue.opacity(0.09),
+                            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        )
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .stroke(CloudPalette.networkBlue.opacity(0.34), lineWidth: 1)
+                        }
                     }
                     .buttonStyle(.borderless)
                     .allowsHitTesting(!isDisabled)
@@ -1352,8 +1413,13 @@ private struct HealthActionCard: View {
                                     .controlSize(.mini)
                                     .tint(CloudPalette.networkBlue)
                             } else {
-                                Image(systemName: "play.fill")
-                                    .font(.system(size: 10, weight: .bold))
+                                CloudSymbolGlyph(
+                                    symbol: CloudSymbols.run,
+                                    tint: CloudPalette.networkBlue,
+                                    size: 10,
+                                    weight: .semibold,
+                                    frameSize: 13
+                                )
                             }
                             Text(isRunning ? "检测中" : "检测")
                         }
@@ -1422,9 +1488,9 @@ struct AdvancedCheckCard: View {
         DashboardActionCard(
             title: "高级检测",
             detail: "浏览器泄漏与 IP 风险",
-            symbol: "scope",
+            symbol: CloudSymbols.advanced,
             actionLabel: "打开",
-            actionSymbol: "arrow.up.right",
+            actionSymbol: CloudSymbols.open,
             tint: CloudPalette.reviewCyan,
             action: action
         )
@@ -1442,14 +1508,13 @@ struct AdvancedCheckView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(CloudPalette.reviewCyan.opacity(0.14))
-                    Image(systemName: "scope")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(CloudPalette.reviewCyan)
-                }
-                .frame(width: 44, height: 44)
+                CloudIconBadge(
+                    symbol: CloudSymbols.advanced,
+                    tint: CloudPalette.reviewCyan,
+                    containerSize: 44,
+                    cornerRadius: 14,
+                    glyphSize: 20
+                )
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("高级检测")
@@ -1474,7 +1539,7 @@ struct AdvancedCheckView: View {
                     title: "默认出口",
                     detail: "BrowserLeaks · IPhey · IPQS",
                     note: "使用本地 mixed 入口",
-                    symbol: "network",
+                    symbol: CloudSymbols.localPort,
                     tint: CloudPalette.networkBlue,
                     route: .defaultExit
                 )
@@ -1531,13 +1596,15 @@ struct AdvancedCheckView: View {
         } label: {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    Image(systemName: symbol)
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(tint)
+                    CloudSymbolGlyph(symbol: symbol, tint: tint, size: 16)
                     Spacer()
-                    Image(systemName: "arrow.up.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(tint.opacity(0.75))
+                    CloudSymbolGlyph(
+                        symbol: CloudSymbols.open,
+                        tint: tint.opacity(0.75),
+                        size: 10,
+                        weight: .semibold,
+                        frameSize: 12
+                    )
                 }
                 Text(title)
                     .font(.headline)
@@ -1604,9 +1671,9 @@ struct RulePackCard: View {
         DashboardActionCard(
             title: "规则管理",
             detail: "12 条 · 2026.08",
-            symbol: "list.bullet.rectangle",
+            symbol: CloudSymbols.rules,
             actionLabel: "管理",
-            actionSymbol: "chevron.right",
+            actionSymbol: CloudSymbols.manage,
             tint: CloudPalette.rulesViolet,
             action: action
         )
@@ -1626,14 +1693,13 @@ struct RulePackView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 14) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(CloudPalette.rulesViolet.opacity(0.15))
-                    Image(systemName: "point.3.connected.trianglepath.dotted")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(CloudPalette.rulesViolet)
-                }
-                .frame(width: 50, height: 50)
+                CloudIconBadge(
+                    symbol: CloudSymbols.rules,
+                    tint: CloudPalette.rulesViolet,
+                    containerSize: 50,
+                    cornerRadius: 14,
+                    glyphSize: 20
+                )
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("CloudCheck 规则包")
@@ -2243,13 +2309,20 @@ struct ContentView: View {
 
             HStack(spacing: 7) {
                 Button(action: model.openConnectionSetup) {
-                    Image(systemName: "slider.horizontal.3")
-                        .foregroundStyle(.secondary)
-                        .frame(width: 18, height: 18)
+                    CloudSymbolGlyph(
+                        symbol: CloudSymbols.connectionSettings,
+                        tint: CloudPalette.networkBlue,
+                        size: 14,
+                        frameSize: 18
+                    )
                 }
                 .buttonStyle(.borderless)
                 .padding(8)
-                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .background(CloudPalette.networkBlue.opacity(0.09), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .stroke(CloudPalette.networkBlue.opacity(0.12), lineWidth: 1)
+                }
                 .disabled(model.isBusy || model.isRefreshing)
                 .help("连接设置")
 
@@ -2261,14 +2334,21 @@ struct ContentView: View {
                             .controlSize(.small)
                             .frame(width: 18, height: 18)
                     } else {
-                        Image(systemName: "arrow.clockwise")
-                            .foregroundStyle(CloudPalette.networkBlue)
-                            .frame(width: 18, height: 18)
+                        CloudSymbolGlyph(
+                            symbol: CloudSymbols.refresh,
+                            tint: CloudPalette.networkBlue,
+                            size: 14,
+                            frameSize: 18
+                        )
                     }
                 }
                 .buttonStyle(.borderless)
                 .padding(8)
-                .background(CloudPalette.networkBlue.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .background(CloudPalette.networkBlue.opacity(0.09), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .stroke(CloudPalette.networkBlue.opacity(0.12), lineWidth: 1)
+                }
                 .disabled(model.isBusy || model.isRefreshing)
                 .help("刷新状态")
             }

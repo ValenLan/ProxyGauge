@@ -45,7 +45,7 @@ assert_entry_state() {
   fi
 }
 
-assert_entry_state 1 0 $'已启用\tok\t系统代理\tnetwork'
+assert_entry_state 1 0 $'已启用\tok\t系统代理\tarrow.left.arrow.right'
 assert_entry_state 0 1 $'已接管\tok\tTUN 路由\tarrow.triangle.2.circlepath'
 assert_entry_state 1 1 $'同时开启\twarning\t双重入口\texclamationmark.triangle.fill'
 assert_entry_state 0 0 $'未启用\tidle\t流量入口\tarrow.triangle.branch'

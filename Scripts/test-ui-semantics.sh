@@ -26,13 +26,20 @@ WINDOWS_MAIN="$PROJECT_ROOT/Windows/MainWindow.xaml"
 /usr/bin/grep -Fq '.frame(maxWidth: .infinity, minHeight: 72)' "$APP_SOURCE"
 /usr/bin/grep -Fq 'static let actionTitle = Font.system(size: 14, weight: .semibold)' "$APP_SOURCE"
 /usr/bin/grep -Fq 'static let actionDetail = Font.system(size: 10.5)' "$APP_SOURCE"
+/usr/bin/grep -Fq 'private enum CloudSymbols' "$APP_SOURCE"
+/usr/bin/grep -Fq 'static let localPort = "cable.connector.horizontal"' "$APP_SOURCE"
+/usr/bin/grep -Fq 'static let killSwitch = "shield"' "$APP_SOURCE"
+/usr/bin/grep -Fq 'static let health = "waveform.path.ecg"' "$APP_SOURCE"
+/usr/bin/grep -Fq 'private struct CloudSymbolGlyph: View' "$APP_SOURCE"
+/usr/bin/grep -Fq 'private struct CloudIconBadge: View' "$APP_SOURCE"
+/usr/bin/grep -Fq '.symbolRenderingMode(.monochrome)' "$APP_SOURCE"
 /usr/bin/grep -Fq '.tint(CloudPalette.statusGreen)' "$APP_SOURCE"
 /usr/bin/grep -Fq 'private struct DashboardActionCard: View' "$APP_SOURCE"
 /usr/bin/grep -Fq 'Text(isRunning ? "检测中" : "检测")' "$APP_SOURCE"
 /usr/bin/grep -Fq 'actionLabel: "打开"' "$APP_SOURCE"
 /usr/bin/grep -Fq 'actionLabel: "管理"' "$APP_SOURCE"
-/usr/bin/grep -Fq 'actionSymbol: "arrow.up.right"' "$APP_SOURCE"
-/usr/bin/grep -Fq 'Image(systemName: "play.fill")' "$APP_SOURCE"
+/usr/bin/grep -Fq 'actionSymbol: CloudSymbols.open' "$APP_SOURCE"
+/usr/bin/grep -Fq 'symbol: CloudSymbols.run' "$APP_SOURCE"
 /usr/bin/grep -Fq 'return ["基础链路", "出口一致", "IP 风险"]' "$APP_SOURCE"
 /usr/bin/grep -Fq 'return ["基础链路", "IP 风险", "\(plan.secondaryLabel) 分流"]' "$APP_SOURCE"
 /usr/bin/grep -Fq 'scopeLabels.joined(separator: "  ·  ")' "$APP_SOURCE"
@@ -57,6 +64,7 @@ WINDOWS_MAIN="$PROJECT_ROOT/Windows/MainWindow.xaml"
 /usr/bin/grep -Fq '.frame(width: 64, height: 28)' "$APP_SOURCE"
 /usr/bin/grep -Fq '.frame(width: 76, height: 28)' "$APP_SOURCE"
 /usr/bin/grep -Fq '.fixedSize(horizontal: true, vertical: false)' "$APP_SOURCE"
+/usr/bin/grep -Fq 'tint: CloudPalette.networkBlue' "$APP_SOURCE"
 
 if /usr/bin/grep -q 'MetricCard(metric: .*accent:' "$APP_SOURCE"; then
   echo "Read-only status cards must not use per-card accent colors." >&2
@@ -65,6 +73,11 @@ fi
 
 if /usr/bin/grep -Fq 'guardTeal' "$APP_SOURCE"; then
   echo "Kill Switch must use the shared protection green." >&2
+  exit 1
+fi
+
+if /usr/bin/grep -Fq 'shield.lefthalf.filled' "$APP_SOURCE"; then
+  echo "Kill Switch icon must use the same complete shield silhouette in every state." >&2
   exit 1
 fi
 
