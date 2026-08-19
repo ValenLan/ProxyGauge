@@ -37,12 +37,17 @@ function run(argv) {
     const delayDocument = readJSON(argv[2]);
     const groupName = argv[3] || "Google-Chain";
     const defaultGroupName = argv[4] || "PROXY";
+    const targetDomains = String(argv[5] || "gemini.google.com,generativelanguage.googleapis.com,www.google.com")
+        .split(",")
+        .map(value => value.trim().toLowerCase())
+        .filter(value => value.length > 0);
+    const routeLabel = argv[6] || "Google / Gemini";
     const proxies = proxyDocument.proxies || {};
     const group = proxies[groupName];
     const lines = [];
 
     if (!group) {
-        return `  ℹ️ 未检测到 ${groupName}；Google / Gemini 将按当前通用规则出站`;
+        return `  ℹ️ 未检测到 ${groupName}；${routeLabel} 将按当前通用规则出站`;
     }
 
     const selected = String(group.now || "");
@@ -51,7 +56,7 @@ function run(argv) {
     if (!selected) {
         lines.push(`  ❌ ${groupName} 没有当前选中出口`);
     } else if (selected.toUpperCase() === "DIRECT") {
-        lines.push(`  ❌ ${groupName} 当前选择 DIRECT，Google / Gemini 会暴露本机出口`);
+        lines.push(`  ❌ ${groupName} 当前选择 DIRECT，${routeLabel} 会使用本机出口`);
     } else if (defaultSelected && selected === defaultSelected) {
         lines.push(`  ❌ ${groupName} 当前绕过链式节点，正在复用默认出口 ${selected}`);
     } else {
@@ -68,29 +73,26 @@ function run(argv) {
         }
     }
 
-    const targets = [
-        ["Gemini 网页", "gemini.google.com"],
-        ["Gemini API", "generativelanguage.googleapis.com"],
-        ["Google", "www.google.com"]
-    ];
     const mismatches = [];
     const rules = Array.isArray(ruleDocument.rules) ? ruleDocument.rules : [];
-    for (const [label, domain] of targets) {
+    for (const domain of targetDomains) {
         const policy = firstPolicyFor(rules, domain);
-        if (policy !== groupName) mismatches.push(`${label}→${policy || "未匹配"}`);
+        if (policy !== groupName) mismatches.push(`${domain}→${policy || "未匹配"}`);
     }
     if (mismatches.length > 0) {
-        lines.push(`  ❌ 链式规则未完整命中: ${mismatches.join(" / ")}`);
+        lines.push(`  ❌ 分流规则未完整命中: ${mismatches.join(" / ")}`);
+    } else if (targetDomains.length === 0) {
+        lines.push("  ⚠️ 检测方案没有可核对的域名");
     } else {
-        lines.push(`  ✅ Gemini 网页、Gemini API 与 Google 均命中 ${groupName}`);
+        lines.push(`  ✅ ${targetDomains.length} 个目标域名均命中 ${groupName}`);
     }
 
     const delay = Number(delayDocument.delay);
     if (Number.isFinite(delay) && delay > 0) {
-        lines.push(`  ✅ 链式中性 204 探测: ${delay} ms`);
+        lines.push(`  ✅ ${routeLabel} 中性 204 探测: ${delay} ms`);
     } else {
         const message = String(delayDocument.message || delayDocument.error || "没有返回延迟");
-        lines.push(`  ❌ 链式中性 204 探测失败: ${message}`);
+        lines.push(`  ❌ ${routeLabel} 中性 204 探测失败: ${message}`);
     }
 
     const alternatives = Array.isArray(group.all) ? group.all : [];

@@ -19,6 +19,12 @@ DEFAULT_CONFIG="$HOME/.config/cloudroute/config"
 LEGACY_CONFIG="$HOME/.config/puffroute/config"
 CONFIG_FILE="${CLOUDROUTE_CONFIG:-${PUFFROUTE_CONFIG:-$DEFAULT_CONFIG}}"
 ENV_CLOUDROUTE_MIXED="${CLOUDROUTE_MIXED:-${PUFFROUTE_MIXED:-}}"
+ENV_SECONDARY_ENABLED="${CLOUDROUTE_SECONDARY_ENABLED:-}"
+ENV_SECONDARY_LABEL="${CLOUDROUTE_SECONDARY_LABEL:-}"
+ENV_SECONDARY_GROUP="${CLOUDROUTE_SECONDARY_GROUP:-}"
+ENV_DEFAULT_GROUP="${CLOUDROUTE_DEFAULT_GROUP:-}"
+ENV_SECONDARY_MIXED="${CLOUDROUTE_SECONDARY_MIXED:-}"
+ENV_SECONDARY_DOMAINS="${CLOUDROUTE_SECONDARY_DOMAINS:-}"
 if [ -z "${CLOUDROUTE_CONFIG:-}" ] && [ -z "${PUFFROUTE_CONFIG:-}" ] \
   && [ ! -r "$CONFIG_FILE" ] && [ -r "$LEGACY_CONFIG" ]; then
   CONFIG_FILE="$LEGACY_CONFIG"
@@ -27,11 +33,19 @@ fi
 if [ -n "$ENV_CLOUDROUTE_MIXED" ]; then
   CLOUDROUTE_MIXED="$ENV_CLOUDROUTE_MIXED"
 fi
+if [ -n "$ENV_SECONDARY_ENABLED" ]; then CLOUDROUTE_SECONDARY_ENABLED="$ENV_SECONDARY_ENABLED"; fi
+if [ -n "$ENV_SECONDARY_LABEL" ]; then CLOUDROUTE_SECONDARY_LABEL="$ENV_SECONDARY_LABEL"; fi
+if [ -n "$ENV_SECONDARY_GROUP" ]; then CLOUDROUTE_SECONDARY_GROUP="$ENV_SECONDARY_GROUP"; fi
+if [ -n "$ENV_DEFAULT_GROUP" ]; then CLOUDROUTE_DEFAULT_GROUP="$ENV_DEFAULT_GROUP"; fi
+if [ -n "$ENV_SECONDARY_MIXED" ]; then CLOUDROUTE_SECONDARY_MIXED="$ENV_SECONDARY_MIXED"; fi
+if [ -n "$ENV_SECONDARY_DOMAINS" ]; then CLOUDROUTE_SECONDARY_DOMAINS="$ENV_SECONDARY_DOMAINS"; fi
 CONFIGURED_MIXED="${CLOUDROUTE_MIXED:-${PUFFROUTE_MIXED:-}}"
 MIXED="${CLOUDROUTE_MIXED:-${PUFFROUTE_MIXED:-127.0.0.1:7890}}"
 MIXED_HOST="${MIXED%:*}"
 MIXED_PORT="${MIXED##*:}"
 export CLOUDROUTE_MIXED="$MIXED"
+export CLOUDROUTE_SECONDARY_ENABLED CLOUDROUTE_SECONDARY_LABEL CLOUDROUTE_SECONDARY_GROUP
+export CLOUDROUTE_DEFAULT_GROUP CLOUDROUTE_SECONDARY_MIXED CLOUDROUTE_SECONDARY_DOMAINS
 
 has_tun_route() {
   case "${CLOUDROUTE_TUN_ACTIVE:-}" in
@@ -356,11 +370,11 @@ probe() {
   elif [ "$core_count" -gt 1 ] 2>/dev/null; then
     overall="warning"
     headline="状态异常"
-    detail="检测到多个代理核心，请运行健康检查"
+    detail="检测到多个代理核心，请运行链路检测"
   else
     overall="error"
     headline="代理未完整生效"
-    detail="请运行健康检查定位问题"
+    detail="请运行链路检测定位问题"
   fi
 
   /usr/bin/printf 'overall\t%s\n' "$overall"
@@ -439,7 +453,7 @@ case "${1:-}" in
     ;;
   health)
     if [ ! -x "$CHECK" ]; then
-      echo "缺少健康检查脚本: $CHECK"
+      echo "缺少链路检测脚本: $CHECK"
       exit 1
     fi
     exec /bin/bash "$CHECK"

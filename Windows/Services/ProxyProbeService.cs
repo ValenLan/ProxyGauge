@@ -106,7 +106,7 @@ public sealed class ProxyProbeService
 
         return new ProxySnapshot(
             "代理未完整生效",
-            "运行健康检查可查看具体原因",
+            "运行链路检测可查看具体原因",
             HealthLevel.Error,
             core,
             port,

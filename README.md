@@ -6,7 +6,7 @@
 
 CloudRoute Monitor（应用短名称 `CloudRoute`）是一个轻量的原生代理状态面板，支持
 macOS 与 Windows。它用来查看
-Mihomo/Clash Verge 的核心、混合端口和流量入口状态，并提供结构化健康检查。
+Mihomo/Clash Verge 的核心、混合端口和流量入口状态，并提供结构化链路检测。
 
 ## 功能
 
@@ -18,19 +18,19 @@ Mihomo/Clash Verge 的核心、混合端口和流量入口状态，并提供结�
 - TUN 生效时验证 DNS 是否返回 `198.18.x.x` Fake-IP，直接发现域名分流配置缺失
 - 分开检查 ASN 归属、IP 段用途、风险标签、AI 站点真实响应和外网连通性
 - macOS 提供独立“高级检测”入口，按需打开 BrowserLeaks、IPhey、IPQS、Scamalytics、AbuseIPDB
-- 常规健康报告只统计自动检查；高级检测与账户判断不计入通过、提示或失败
-- 健康检查运行时显示线性进度，完成后给出可解释的 0–100 健康分
-- macOS 检测入口采用整卡操作项：蓝、青、紫功能色用于前导图标与紧凑动作控件，健康检查以低对比度单行文字展示双出口、IP 风险和域名分流范围
-- macOS 可选读取 Mihomo 运行时状态，独立验证 Google/Gemini 链式策略、规则命中、中性 204 延迟与真实链式出口 IP
-- macOS 深度复核可分别用默认出口或 Google 链路启动临时 Chrome；不复用现有 Cookie、扩展或浏览器资料，也不修改系统代理
+- 常规链路报告只统计自动检测；高级检测与账户判断不计入通过、提示或失败
+- 链路检测运行时显示线性进度，完成后给出可解释的 0–100 链路分
+- macOS 默认使用不假定代理拓扑的通用方案；额外出口、策略组和域名规则由用户按需启用
+- 原有 Google/Gemini 双出口结构保留为预填模板，可修改名称、策略组、本地入口和目标域名
+- macOS 深度复核可分别用默认出口或已启用的额外出口启动临时 Chrome；不复用现有 Cookie、扩展或浏览器资料，也不修改系统代理
 - 内置可独立分享的 Clash Verge Rev / Mihomo 规则包，不包含订阅或节点
 - macOS 可选用独立 PF anchor 实现防泄漏 Kill Switch
 - Windows 版只做只读网络检测，不修改全局防火墙策略
-- macOS 健康检查、Kill Switch 脚本和管理员助手均内置于 App Bundle
+- macOS 链路检测、Kill Switch 脚本和管理员助手均内置于 App Bundle
 
 ## 平台支持
 
-| 平台 | 状态面板 | 健康检查 | Kill Switch | 构建产物 |
+| 平台 | 状态面板 | 链路检测 | Kill Switch | 构建产物 |
 |---|---:|---:|---:|---|
 | macOS 26（Apple Silicon） | ✓ | ✓ | PF anchor（可选） | `CloudRoute.app` |
 | Windows 10/11 x64 | ✓ | ✓ | 暂不提供 | 单文件 `CloudRoute.exe` |
@@ -117,7 +117,7 @@ Scripts/install.sh
 - `~/.local/share/cloudroute/`
 
 这些外部脚本用于命令行调用和旧版兼容；图形应用正常运行会优先使用 App Bundle
-内置副本，因此单独移动 `CloudRoute.app` 不会丢失健康检查或管理员助手。
+内置副本，因此单独移动 `CloudRoute.app` 不会丢失链路检测或管理员助手。
 
 ### 配置
 
@@ -133,9 +133,13 @@ Scripts/install.sh
 ```bash
 CLOUDROUTE_MIXED="127.0.0.1:7890"
 CLOUDROUTE_EXPECT_IP=""  # 可选：校验准确的代理出口 IP
-CLOUDROUTE_GOOGLE_GROUP="Google-Chain"  # 可选：Google/Gemini 链式策略组
-CLOUDROUTE_GOOGLE_MIXED="127.0.0.1:7891"  # 可选：固定走 Google-Chain 的本地检测入口
-CLOUDROUTE_EXPECT_GOOGLE_IP=""  # 可选：校验准确的 Google/Gemini 出口 IP
+CLOUDROUTE_SECONDARY_ENABLED="0"  # 普通单出口保持关闭
+CLOUDROUTE_SECONDARY_LABEL="Google / Gemini"  # 预填模板，可改名
+CLOUDROUTE_SECONDARY_GROUP="Google-Chain"
+CLOUDROUTE_DEFAULT_GROUP="PROXY"
+CLOUDROUTE_SECONDARY_MIXED="127.0.0.1:7891"
+CLOUDROUTE_SECONDARY_DOMAINS="gemini.google.com,generativelanguage.googleapis.com,www.google.com"
+CLOUDROUTE_EXPECT_SECONDARY_IP=""  # 可选：校验额外出口基线
 CLOUDROUTE_CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 CLOUDROUTE_ACTIVE_AI_PROBES="0"  # 默认关闭：不主动请求任何 AI 平台
 CLOUDROUTE_VPS_IP=""     # 仅 PF Kill Switch 需要
@@ -147,12 +151,12 @@ CloudRoute 配置和 `CLOUDROUTE_*` 变量为准。
 
 仓库不包含任何真实服务器地址或个人配置。
 
-如果 Google/Gemini 使用独立链式出口，仅检查策略组和规则命中还不够。把
+如果启用了独立链式出口，仅检查策略组和规则命中还不够。当前预填模板使用
 [`Rules/CloudRoute-Google-Chain-Probe.yaml`](Rules/CloudRoute-Google-Chain-Probe.yaml)
 中的 `listeners` 合并到 Mihomo 活动配置后，CloudRoute 会通过只监听
 `127.0.0.1:7891` 的专用 mixed 入口查询实际出口，并在报告中并排显示默认出口与
-Google/Gemini 出口。该入口固定绑定 `Google-Chain`，不会临时切换策略组，也不会暴露到
-局域网。
+额外出口。该示例入口固定绑定 `Google-Chain`，不会临时切换策略组，也不会暴露到局域网；
+其他用户可以在“链路检测 → 方案”中替换成自己的策略组、端口和域名。
 
 ### 可选：PF Kill Switch
 
@@ -220,34 +224,35 @@ Firewall/WFP 策略，误配置可能让整台电脑断网；当前分享版刻�
 每次 push 与 pull request 都会构建并测试 macOS、Windows x64 和 Windows ARM64，并把
 三个 ZIP 原样保存为 Actions artifacts。只有推送与应用版本完全一致的 `v<版本>` 标签时，
 工作流才会创建 GitHub Release，同时上传三个 ZIP 与 `SHA256SUMS.txt`。例如当前版本对应的
-发布标签应为 `v1.3.15`。
+发布标签应为 `v1.3.16`。
 
 创建标签会产生供仓库授权用户下载的正式发布结果，必须在全部本地测试和普通 push CI
 通过后由维护者明确执行；构建脚本本身不会自动创建标签。
 
 ## 隐私与安全
 
-- 健康检查会通过已配置的本地代理访问公开 IP 查询服务和测试站点。
-- 默认健康检查不会请求 Claude、ChatGPT、Gemini 的网页或 API。Google/Gemini 的路由
+- 链路检测会通过已配置的本地代理访问公开 IP 查询服务和测试站点。
+- 默认链路检测不会请求 Claude、ChatGPT、Gemini 的网页或 API。启用额外分流模板后，规则
   命中从本机 Mihomo 运行时读取，链路延迟使用中性 204 地址，实际出口通过专用本地入口
   访问公开 IP 查询服务确认。只有用户显式把 `CLOUDROUTE_ACTIVE_AI_PROBES` 设为 `1` 时，
   macOS 才会主动请求三个 AI API；即使启用，也不会自动访问账号网页。
 - 出口一致性检查会把默认代理出口分别提交给 `api.ipify.org`、`ifconfig.me` 与 `ip.sb`；
-  启用链式出口探针时，也会经固定的 Google/Gemini 链路访问同一组服务。只有至少两个
+  启用额外出口探针时，也会经该用户设置的本地入口访问同一组服务。只有至少两个
   来源给出一致结果才算完成交叉验证。
 - IP 风险画像会把实测出口 IP 提交给 `ipapi.is` 与 `proxycheck.io`，并把查询得到的 ASN
-  提交给 `PeeringDB`。启用 Google/Gemini 链式探针后，默认出口与链式出口会分别查询、
-  分开展示，避免拿默认 IP 的结论评价 Google 链路。报告会分别展示网络归属、ASN 属性、
+  提交给 `PeeringDB`。启用额外出口探针后，默认出口与额外出口会分别查询、分开展示，
+  避免拿默认 IP 的结论评价另一条链路。报告会分别展示网络归属、ASN 属性、
   IP 段用途、风险分与地址风险标签，避免把运营商类型和具体地址用途混为一谈。第三方情报
   仅供参考，接口限流不会被视为代理故障。
 - IPQS、Scamalytics、AbuseIPDB、BrowserLeaks 与 IPhey 只作为用户主动点击的复核入口，
   CloudRoute 不会在后台自动访问。BrowserLeaks/IPhey 必须在真实浏览器上下文中运行，才能
   观察 WebRTC、DNS、IPv6、时区和指纹一致性。
 - CloudRoute 不读取 Claude、ChatGPT 等网站的登录 Cookie 或账户资料，也不会把账户判断
-  塞进常规健康报告。账户状态只能由用户在自己的正常登录会话中确认。
-- 健康分只汇总本次自动检查：提示扣对应部分一半权重，失败扣全部权重；核心、端口、
-  流量入口或默认出口失败时最高为 49 分。它不是网速、匿名性或账户安全评分。
-- macOS 的“高级检测”只在用户点击后启动独立 Chrome 进程，且结果不计入健康检查。它使用临时资料目录、
+  塞进常规链路报告。账户状态只能由用户在自己的正常登录会话中确认。
+- 链路分只汇总当前检测方案：通用方案按基础五段重新归一化；启用额外分流后才加入策略、
+  规则与第二出口权重。提示扣对应部分一半权重，失败扣全部权重；关键入口失败时最高为 49 分。
+  它不是网速、匿名性或账户安全评分。
+- macOS 的“高级检测”只在用户点击后启动独立 Chrome 进程，且结果不计入链路分。它使用临时资料目录、
   禁用现有扩展与同步，并通过进程专属的本机代理打开 BrowserLeaks、IPhey、IPQS、
   Scamalytics 与 AbuseIPDB；关闭该 Chrome 窗口后删除临时资料。检测网站仍能看到所选
   出口 IP 和浏览器指纹，因此“隔离”不等于对网站匿名。该功能不会改变系统代理，也不会

@@ -1,7 +1,7 @@
 <Window x:Class="CloudRoute.HealthReportWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="CloudRoute 健康检查"
+        Title="CloudRoute 链路检测"
         Width="720"
         Height="640"
         MaxHeight="720"
@@ -24,7 +24,7 @@
 
             <Border Grid.Row="0" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
                 <Grid MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
-                    <TextBlock Text="代理健康检查" FontSize="13" FontWeight="SemiBold" Margin="17,0" VerticalAlignment="Center" />
+                    <TextBlock Text="代理链路检测" FontSize="13" FontWeight="SemiBold" Margin="17,0" VerticalAlignment="Center" />
                     <Button Style="{StaticResource TitleButtonStyle}" Content="&#xE8BB;" HorizontalAlignment="Right" Margin="0,4,5,4" Click="CloseButton_Click" />
                 </Grid>
             </Border>

@@ -33,7 +33,7 @@ public partial class HealthReportWindow : Window
     public string WarningText => $"{Report.WarningCount} 提示";
     public string FailedText => $"{Report.FailedCount} 失败";
     public string ScoreText => Report.Score.ToString();
-    public string ScoreLabel => $"健康分 · {Report.ScoreLabel}";
+    public string ScoreLabel => $"链路分 · {Report.ScoreLabel}";
     public string StatusMark => Report.FailedCount == 0 && Report.WarningCount == 0 ? "✓" : "!";
     public Brush StatusBrush => Report.FailedCount > 0
         ? Palette.Error

@@ -6,12 +6,16 @@ CLOUDROUTE_TIMEOUT="6"
 # Optional: when set, the health check verifies the exact proxy exit IP.
 CLOUDROUTE_EXPECT_IP=""
 
-# Optional: separate Google/Gemini chain diagnostics through Clash Verge Rev.
+# Optional extra route/rule template. Disabled for a generic single-exit setup.
+# The prefilled values preserve CloudRoute's original Google/Gemini template.
 CLOUDROUTE_MIHOMO_SOCKET="/private/tmp/verge/verge-mihomo.sock"
-CLOUDROUTE_GOOGLE_GROUP="Google-Chain"
+CLOUDROUTE_SECONDARY_ENABLED="0"
+CLOUDROUTE_SECONDARY_LABEL="Google / Gemini"
+CLOUDROUTE_SECONDARY_GROUP="Google-Chain"
 CLOUDROUTE_DEFAULT_GROUP="PROXY"
-CLOUDROUTE_GOOGLE_MIXED="127.0.0.1:7891"
-CLOUDROUTE_EXPECT_GOOGLE_IP=""
+CLOUDROUTE_SECONDARY_MIXED="127.0.0.1:7891"
+CLOUDROUTE_SECONDARY_DOMAINS="gemini.google.com,generativelanguage.googleapis.com,www.google.com"
+CLOUDROUTE_EXPECT_SECONDARY_IP=""
 
 # Off by default: active requests to AI APIs can create automated access logs.
 CLOUDROUTE_ACTIVE_AI_PROBES="0"

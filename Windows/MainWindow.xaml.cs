@@ -49,7 +49,7 @@ public partial class MainWindow : Window
         {
             MessageBox.Show(
                 this,
-                $"健康检查没有完成。\n\n{exception.Message}",
+                $"链路检测没有完成。\n\n{exception.Message}",
                 "CloudRoute",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);

@@ -56,7 +56,7 @@ fallback_output=$(/usr/bin/osascript -l JavaScript \
 /usr/bin/grep -Fq '触发 Cloudflare challenge' "$PROJECT_ROOT/Scripts/cloudroute-check.sh"
 /usr/bin/grep -Fq 'TUN DNS 返回 Fake-IP' "$PROJECT_ROOT/Scripts/cloudroute-check.sh"
 /usr/bin/grep -Fq '第三方 IP 情报仅供参考' "$PROJECT_ROOT/Scripts/cloudroute-ip-risk.jxa"
-/usr/bin/grep -Fq 'Google / Gemini 链式代理' "$PROJECT_ROOT/Scripts/cloudroute-check.sh"
+/usr/bin/grep -Fq '额外分流链路 ($SECONDARY_LABEL)' "$PROJECT_ROOT/Scripts/cloudroute-check.sh"
 /usr/bin/grep -Fq 'https://browserleaks.com/ip' "$PROJECT_ROOT/Scripts/cloudroute-private-browser.sh"
 /usr/bin/grep -Fq 'https://iphey.com/' "$PROJECT_ROOT/Scripts/cloudroute-private-browser.sh"
 /usr/bin/grep -Fq 'https://scamalytics.com/ip/$EXIT_IP' "$PROJECT_ROOT/Scripts/cloudroute-private-browser.sh"

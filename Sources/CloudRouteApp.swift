@@ -58,9 +58,53 @@ struct ProxyDiscovery: Sendable, Equatable {
     var privacy = "仅读取本地端口与运行模式，不读取订阅和节点"
 }
 
+struct HealthCheckPlan: Sendable, Equatable {
+    var secondaryEnabled = false
+    var secondaryLabel = "Google / Gemini"
+    var secondaryGroup = "Google-Chain"
+    var defaultGroup = "PROXY"
+    var secondaryEndpoint = "127.0.0.1:7891"
+    var secondaryDomains = "gemini.google.com, generativelanguage.googleapis.com, www.google.com"
+
+    static let currentTemplate = HealthCheckPlan()
+
+    var normalizedDomains: [String] {
+        secondaryDomains
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { !$0.isEmpty }
+    }
+
+    var isValid: Bool {
+        let safeText = CharacterSet(charactersIn: "\n\r\t").inverted
+        let labelsAreValid = !secondaryLabel.isEmpty && secondaryLabel.count <= 32
+            && secondaryLabel.rangeOfCharacter(from: safeText.inverted) == nil
+        let groupsAreValid = [secondaryGroup, defaultGroup].allSatisfy {
+            !$0.isEmpty && $0.count <= 64 && $0.rangeOfCharacter(from: safeText.inverted) == nil
+        }
+        let domainsAreValid = !normalizedDomains.isEmpty && normalizedDomains.count <= 8
+            && normalizedDomains.allSatisfy { domain in
+                domain.range(of: #"^[a-z0-9.-]+$"#, options: .regularExpression) != nil
+                    && !domain.hasPrefix(".") && !domain.hasSuffix(".")
+            }
+        return !secondaryEnabled || (
+            labelsAreValid
+                && groupsAreValid
+                && CloudRoutePreferences.validLocalEndpoint(secondaryEndpoint)
+                && domainsAreValid
+        )
+    }
+}
+
 private enum CloudRoutePreferences {
     static let setupCompletedKey = "cloudroute.connectionSetupCompleted.v1"
     static let selectedEndpointKey = "cloudroute.selectedMixedEndpoint"
+    static let secondaryEnabledKey = "cloudroute.health.secondaryEnabled.v1"
+    static let secondaryLabelKey = "cloudroute.health.secondaryLabel.v1"
+    static let secondaryGroupKey = "cloudroute.health.secondaryGroup.v1"
+    static let defaultGroupKey = "cloudroute.health.defaultGroup.v1"
+    static let secondaryEndpointKey = "cloudroute.health.secondaryEndpoint.v1"
+    static let secondaryDomainsKey = "cloudroute.health.secondaryDomains.v1"
 
     static func validLocalEndpoint(_ endpoint: String) -> Bool {
         let parts = endpoint.split(separator: ":", omittingEmptySubsequences: false)
@@ -69,6 +113,30 @@ private enum CloudRoutePreferences {
               let port = Int(parts[1]),
               (1...65535).contains(port) else { return false }
         return true
+    }
+
+    static func loadHealthPlan() -> HealthCheckPlan {
+        let defaults = UserDefaults.standard
+        let template = HealthCheckPlan.currentTemplate
+        return HealthCheckPlan(
+            secondaryEnabled: defaults.bool(forKey: secondaryEnabledKey),
+            secondaryLabel: defaults.string(forKey: secondaryLabelKey) ?? template.secondaryLabel,
+            secondaryGroup: defaults.string(forKey: secondaryGroupKey) ?? template.secondaryGroup,
+            defaultGroup: defaults.string(forKey: defaultGroupKey) ?? template.defaultGroup,
+            secondaryEndpoint: defaults.string(forKey: secondaryEndpointKey) ?? template.secondaryEndpoint,
+            secondaryDomains: defaults.string(forKey: secondaryDomainsKey) ?? template.secondaryDomains
+        )
+    }
+
+    static func saveHealthPlan(_ plan: HealthCheckPlan) {
+        guard plan.isValid else { return }
+        let defaults = UserDefaults.standard
+        defaults.set(plan.secondaryEnabled, forKey: secondaryEnabledKey)
+        defaults.set(plan.secondaryLabel, forKey: secondaryLabelKey)
+        defaults.set(plan.secondaryGroup, forKey: secondaryGroupKey)
+        defaults.set(plan.defaultGroup, forKey: defaultGroupKey)
+        defaults.set(plan.secondaryEndpoint, forKey: secondaryEndpointKey)
+        defaults.set(plan.normalizedDomains.joined(separator: ","), forKey: secondaryDomainsKey)
     }
 }
 
@@ -83,8 +151,10 @@ final class ProxyModel: ObservableObject {
     @Published var resultSheet: ResultSheet?
     @Published var showDisableConfirmation = false
     @Published var showConnectionSetup = false
+    @Published var showHealthPlanSetup = false
     @Published var isDiscoveringConnection = false
     @Published var discovery = ProxyDiscovery()
+    @Published var healthPlan = CloudRoutePreferences.loadHealthPlan()
 
     @Published var core = MetricState(title: "代理核心", symbol: "cpu", value: "检查中", level: .idle)
     @Published var port = MetricState(title: "本地端口", symbol: "network", value: "检查中", level: .idle)
@@ -163,7 +233,14 @@ final class ProxyModel: ObservableObject {
     }
 
     func runHealthCheck() {
-        runAction("health", title: "代理健康检查", busy: "正在全面检查代理…")
+        runAction("health", title: "代理链路检测", busy: "正在检测代理链路…")
+    }
+
+    func saveHealthPlan(_ plan: HealthCheckPlan) {
+        guard plan.isValid else { return }
+        CloudRoutePreferences.saveHealthPlan(plan)
+        healthPlan = CloudRoutePreferences.loadHealthPlan()
+        showHealthPlanSetup = false
     }
 
     func enableKillSwitch() {
@@ -188,9 +265,9 @@ final class ProxyModel: ObservableObject {
             let displayedOutput: String
             if isHealth && cleanOutput.isEmpty {
                 displayedOutput = """
-                ===== 1. 健康检查脚本 =====
+                ===== 1. 链路检测脚本 =====
                   ❌ 脚本没有返回文本（退出状态 \(result.status)）
-                  ℹ️ 请确认 App 内置脚本可执行，然后重新运行健康检查
+                  ℹ️ 请确认 App 内置脚本可执行，然后重新运行链路检测
                 """
             } else if cleanOutput.isEmpty {
                 displayedOutput = succeeded ? "操作已完成。" : "没有收到操作结果。"
@@ -258,6 +335,7 @@ final class ProxyModel: ObservableObject {
 
     private func execute(_ action: String) async -> (status: Int32, output: String) {
         let path = backendPath
+        let healthPlan = healthPlan
         let selectedEndpoint = UserDefaults.standard.string(forKey: CloudRoutePreferences.selectedEndpointKey)
         let validSelectedEndpoint = selectedEndpoint.flatMap {
             CloudRoutePreferences.validLocalEndpoint($0) ? $0 : nil
@@ -274,6 +352,14 @@ final class ProxyModel: ObservableObject {
                 environment["CLOUDROUTE_MIXED"] = validSelectedEndpoint
                 process.environment = environment
             }
+            var environment = process.environment ?? ProcessInfo.processInfo.environment
+            environment["CLOUDROUTE_SECONDARY_ENABLED"] = healthPlan.secondaryEnabled ? "1" : "0"
+            environment["CLOUDROUTE_SECONDARY_LABEL"] = healthPlan.secondaryLabel
+            environment["CLOUDROUTE_SECONDARY_GROUP"] = healthPlan.secondaryGroup
+            environment["CLOUDROUTE_DEFAULT_GROUP"] = healthPlan.defaultGroup
+            environment["CLOUDROUTE_SECONDARY_MIXED"] = healthPlan.secondaryEndpoint
+            environment["CLOUDROUTE_SECONDARY_DOMAINS"] = healthPlan.normalizedDomains.joined(separator: ",")
+            process.environment = environment
 
             do {
                 try process.run()
@@ -491,12 +577,22 @@ enum IsolatedBrowserRoute: String {
 
 struct HealthReport {
     let checkedAt: String?
+    let planName: String
+    let secondaryEnabled: Bool
     let sections: [HealthCheckSection]
     let passCount: Int
     let warningCount: Int
     let failCount: Int
 
-    private static let sectionWeights: [String: Double] = [
+    private static let standardWeights: [String: Double] = [
+        "1": 20,
+        "2": 20,
+        "3": 20,
+        "4": 25,
+        "5": 15
+    ]
+
+    private static let extendedWeights: [String: Double] = [
         "1": 15,
         "2": 15,
         "3": 15,
@@ -509,8 +605,9 @@ struct HealthReport {
 
     var score: Int {
         var earned = 0.0
+        let sectionWeights = secondaryEnabled ? Self.extendedWeights : Self.standardWeights
         for section in sections {
-            guard let weight = Self.sectionWeights[section.number] else { continue }
+            guard let weight = sectionWeights[section.number] else { continue }
             if section.hasFailure {
                 continue
             }
@@ -520,7 +617,7 @@ struct HealthReport {
         var value = Int(earned.rounded())
         if sections.contains(where: { ["1", "2", "3", "4"].contains($0.number) && $0.hasFailure }) {
             value = min(value, 49)
-        } else if failCount > 0 {
+        } else if sections.contains(where: { sectionWeights[$0.number] != nil && $0.hasFailure }) {
             value = min(value, 69)
         }
         return max(0, min(100, value))
@@ -534,6 +631,8 @@ struct HealthReport {
 
     init(output: String) {
         var timestamp: String?
+        var detectedPlan = "通用检测"
+        var hasSecondary = false
         var parsedSections: [HealthCheckSection] = []
         var currentNumber = ""
         var currentTitle: String?
@@ -560,6 +659,17 @@ struct HealthReport {
             if line.hasPrefix("检查时间:") {
                 timestamp = line.replacingOccurrences(of: "检查时间:", with: "")
                     .trimmingCharacters(in: .whitespaces)
+                continue
+            }
+
+            if line.hasPrefix("检测方案:") {
+                detectedPlan = line.replacingOccurrences(of: "检测方案:", with: "")
+                    .trimmingCharacters(in: .whitespaces)
+                continue
+            }
+
+            if line == "额外分流: 1" {
+                hasSecondary = true
                 continue
             }
 
@@ -624,6 +734,8 @@ struct HealthReport {
 
         flushSection()
         checkedAt = timestamp
+        planName = detectedPlan
+        secondaryEnabled = hasSecondary
         sections = parsedSections
         passCount = passed
         warningCount = warnings
@@ -754,7 +866,7 @@ struct ResultView: View {
         if report.sections.isEmpty { return "未收到检查详情" }
         if report.failCount > 0 { return "发现 \(report.failCount) 项问题" }
         if report.warningCount > 0 { return "网络可用，仍有 \(report.warningCount) 项提示" }
-        return "网络检查通过"
+        return "网络检测通过"
     }
 
     private var scoreColor: Color {
@@ -809,14 +921,14 @@ struct ResultView: View {
                             .foregroundStyle(scoreColor)
                     }
                     .frame(width: 50, height: 50)
-                    Text("健康分 · \(report.scoreLabel)")
+                    Text("链路分 · \(report.scoreLabel)")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(scoreColor)
                 }
             }
 
             HStack(spacing: 8) {
-                Label("关键链路加权；高级检测不计分", systemImage: "info.circle")
+                Label("\(report.planName) · 高级检测不计分", systemImage: "info.circle")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -866,7 +978,7 @@ struct ResultView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("未收到检查详情")
                         .font(.system(size: 20, weight: .semibold, design: .rounded))
-                    Text("健康检查没有返回可解析的项目。请关闭弹窗后重新运行；如果反复出现，请检查本地脚本。")
+                    Text("链路检测没有返回可解析的项目。请关闭弹窗后重新运行；如果反复出现，请检查本地脚本。")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -890,7 +1002,7 @@ struct ResultView: View {
 
     private var shouldOfferHealthCopy: Bool {
         let output = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !output.isEmpty && output != "操作已完成。" && !output.hasPrefix("健康检查没有返回详情")
+        return !output.isEmpty && output != "操作已完成。" && !output.hasPrefix("链路检测没有返回详情")
     }
 
     private func summaryBadge(_ text: String, color: Color) -> some View {
@@ -974,7 +1086,7 @@ struct ResultView: View {
     private func copyResult() {
         var copiedOutput = result.output
         if case .health = result.kind, !report.sections.isEmpty {
-            copiedOutput = "健康分：\(report.score)/100 · \(report.scoreLabel)\n\(copiedOutput)"
+            copiedOutput = "链路分：\(report.score)/100 · \(report.scoreLabel)\n\(copiedOutput)"
         }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(copiedOutput, forType: .string)
@@ -1101,6 +1213,57 @@ private struct DashboardActionCard: View {
     }
 }
 
+private struct HealthActionCard: View {
+    let plan: HealthCheckPlan
+    let isRunning: Bool
+    let isDisabled: Bool
+    let openPlan: () -> Void
+    let run: () -> Void
+
+    private var scopeLabels: [String] {
+        if plan.secondaryEnabled {
+            return ["基础链路", "IP 风险", "\(plan.secondaryLabel) 分流"]
+        }
+        return ["基础链路", "出口一致", "IP 风险"]
+    }
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            DashboardActionCard(
+                title: "链路检测",
+                detail: isRunning ? "正在按方案检测…" : "按当前方案检查连接",
+                symbol: "stethoscope",
+                actionLabel: "检测",
+                actionSymbol: "play.fill",
+                tint: CloudPalette.networkBlue,
+                scopeLabels: scopeLabels,
+                isRunning: isRunning,
+                isDisabled: isDisabled,
+                showsProgress: true,
+                action: run
+            )
+
+            Button(action: openPlan) {
+                Label("方案", systemImage: "slider.horizontal.3")
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(CloudPalette.networkBlue)
+                    .padding(.horizontal, 8)
+                    .frame(height: 28)
+                    .background(CloudPalette.networkBlue.opacity(0.09), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .stroke(CloudPalette.networkBlue.opacity(0.34), lineWidth: 1)
+                    }
+            }
+            .buttonStyle(.borderless)
+            .padding(.trailing, 76)
+            .disabled(isDisabled)
+            .help("调整链路检测方案")
+        }
+        .accessibilityElement(children: .contain)
+    }
+}
+
 struct AdvancedCheckCard: View {
     let action: () -> Void
 
@@ -1115,11 +1278,12 @@ struct AdvancedCheckCard: View {
             action: action
         )
         .accessibilityLabel("打开高级检测")
-        .help("按需打开隔离浏览器检测；结果不计入健康检查")
+        .help("按需打开隔离浏览器检测；结果不计入链路检测")
     }
 }
 
 struct AdvancedCheckView: View {
+    let plan: HealthCheckPlan
     let close: () -> Void
     @State private var message = ""
     @State private var browserProcesses: [Process] = []
@@ -1146,7 +1310,7 @@ struct AdvancedCheckView: View {
 
                 Spacer()
 
-                Text("不计入健康结果")
+                Text("不计入链路分")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(CloudPalette.reviewCyan)
                     .padding(.horizontal, 10)
@@ -1163,14 +1327,16 @@ struct AdvancedCheckView: View {
                     tint: CloudPalette.networkBlue,
                     route: .defaultExit
                 )
-                routeButton(
-                    title: "Google 链路",
-                    detail: "复核专用链式出口",
-                    note: "需已配置专用入口",
-                    symbol: "point.3.connected.trianglepath.dotted",
-                    tint: CloudPalette.googleViolet,
-                    route: .googleChain
-                )
+                if plan.secondaryEnabled {
+                    routeButton(
+                        title: plan.secondaryLabel,
+                        detail: "复核额外分流出口",
+                        note: plan.secondaryEndpoint,
+                        symbol: "point.3.connected.trianglepath.dotted",
+                        tint: CloudPalette.googleViolet,
+                        route: .googleChain
+                    )
+                }
             }
 
             VStack(alignment: .leading, spacing: 5) {
@@ -1260,17 +1426,20 @@ struct AdvancedCheckView: View {
         process.arguments = [scriptPath, route.rawValue, ""]
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
+        var environment = ProcessInfo.processInfo.environment
         if let endpoint = UserDefaults.standard.string(forKey: CloudRoutePreferences.selectedEndpointKey),
            CloudRoutePreferences.validLocalEndpoint(endpoint) {
-            var environment = ProcessInfo.processInfo.environment
             environment["CLOUDROUTE_MIXED"] = endpoint
-            process.environment = environment
         }
+        environment["CLOUDROUTE_SECONDARY_MIXED"] = plan.secondaryEndpoint
+        environment["CLOUDROUTE_SECONDARY_LABEL"] = plan.secondaryLabel
+        process.environment = environment
 
         do {
             try process.run()
             browserProcesses.append(process)
-            message = "已用\(route.label)打开临时窗口；关闭窗口后会自动清理资料。"
+            let routeName = route == .googleChain ? plan.secondaryLabel : route.label
+            message = "已用\(routeName)打开临时窗口；关闭窗口后会自动清理资料。"
         } catch {
             message = "无法打开临时窗口：\(error.localizedDescription)"
         }
@@ -1433,6 +1602,163 @@ struct RulePackView: View {
         } catch {
             message = "导出失败：\(error.localizedDescription)"
         }
+    }
+}
+
+private struct HealthPlanSetupView: View {
+    let save: (HealthCheckPlan) -> Void
+    let close: () -> Void
+
+    @State private var draft: HealthCheckPlan
+
+    init(plan: HealthCheckPlan, save: @escaping (HealthCheckPlan) -> Void, close: @escaping () -> Void) {
+        self.save = save
+        self.close = close
+        _draft = State(initialValue: plan)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 13) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .fill(CloudPalette.networkBlue.opacity(0.14))
+                    Image(systemName: "waveform.path.ecg.rectangle")
+                        .font(.system(size: 19, weight: .semibold))
+                        .foregroundStyle(CloudPalette.networkBlue)
+                }
+                .frame(width: 46, height: 46)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("链路检测方案")
+                        .font(.system(size: 21, weight: .semibold, design: .rounded))
+                    Text("基础连接始终检测；额外出口和规则按你的代理结构启用。")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            HStack(spacing: 0) {
+                planStage(
+                    symbol: "network",
+                    title: "基础连接",
+                    detail: "核心 · 入口 · 出口 · IP 风险",
+                    tint: CloudPalette.networkBlue,
+                    active: true
+                )
+                Rectangle()
+                    .fill((draft.secondaryEnabled ? CloudPalette.googleViolet : CloudPalette.statusGray).opacity(0.38))
+                    .frame(height: 2)
+                planStage(
+                    symbol: "point.3.connected.trianglepath.dotted",
+                    title: "额外分流",
+                    detail: draft.secondaryEnabled ? draft.secondaryLabel : "未启用",
+                    tint: CloudPalette.googleViolet,
+                    active: draft.secondaryEnabled
+                )
+            }
+            .padding(14)
+            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+            }
+
+            VStack(alignment: .leading, spacing: 13) {
+                Toggle(isOn: $draft.secondaryEnabled) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("检测额外出口与域名规则")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("适合双出口、链式代理或指定域名分流；普通单出口可以关闭。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .toggleStyle(.switch)
+                .tint(CloudPalette.googleViolet)
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 13) {
+                    HStack(spacing: 12) {
+                        field("方案名称", text: $draft.secondaryLabel, placeholder: "Google / Gemini")
+                        field("目标策略组", text: $draft.secondaryGroup, placeholder: "Google-Chain")
+                    }
+
+                    HStack(spacing: 12) {
+                        field("默认策略组", text: $draft.defaultGroup, placeholder: "PROXY")
+                        field("额外本地入口", text: $draft.secondaryEndpoint, placeholder: "127.0.0.1:7891")
+                    }
+
+                    field(
+                        "应命中目标策略组的域名（逗号分隔，最多 8 个）",
+                        text: $draft.secondaryDomains,
+                        placeholder: "gemini.google.com, www.google.com"
+                    )
+                }
+                .disabled(!draft.secondaryEnabled)
+                .opacity(draft.secondaryEnabled ? 1 : 0.46)
+            }
+
+            HStack(spacing: 8) {
+                Label("不读取节点、订阅或凭据，只核对运行中的策略组、规则和本地入口。", systemImage: "lock.shield")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("恢复当前模板") {
+                    draft = .currentTemplate
+                    draft.secondaryEnabled = true
+                }
+                .controlSize(.small)
+            }
+
+            HStack {
+                if draft.secondaryEnabled && !draft.isValid {
+                    Text("请检查策略组、本地回环入口和域名格式。")
+                        .font(.caption)
+                        .foregroundStyle(CloudPalette.statusRed)
+                }
+                Spacer()
+                Button("取消", action: close)
+                    .controlSize(.small)
+                Button("保存方案") { save(draft) }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!draft.isValid)
+            }
+        }
+        .padding(22)
+        .frame(width: 570, height: 520)
+        .interactiveDismissDisabled()
+    }
+
+    private func planStage(symbol: String, title: String, detail: String, tint: Color, active: Bool) -> some View {
+        let color = active ? tint : CloudPalette.statusGray
+        return HStack(spacing: 9) {
+            ZStack {
+                Circle().fill(color.opacity(0.14))
+                Image(systemName: symbol)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(color)
+            }
+            .frame(width: 29, height: 29)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 12, weight: .semibold))
+                Text(detail).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func field(_ label: String, text: Binding<String>, placeholder: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            TextField(placeholder, text: text)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 12))
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 
@@ -1710,7 +2036,7 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showingAdvanced) {
-            AdvancedCheckView {
+            AdvancedCheckView(plan: model.healthPlan) {
                 showingAdvanced = false
             }
         }
@@ -1723,6 +2049,13 @@ struct ContentView: View {
                     Task { await model.discoverConnection() }
                 },
                 deferSetup: model.deferConnectionSetup
+            )
+        }
+        .sheet(isPresented: $model.showHealthPlanSetup) {
+            HealthPlanSetupView(
+                plan: model.healthPlan,
+                save: model.saveHealthPlan,
+                close: { model.showHealthPlanSetup = false }
             )
         }
         .alert("关闭 Kill Switch？", isPresented: $model.showDisableConfirmation) {
@@ -1793,21 +2126,15 @@ struct ContentView: View {
 
     private var actionArea: some View {
         VStack(spacing: 10) {
-            DashboardActionCard(
-                title: "健康检查",
-                detail: isHealthCheckRunning ? "正在检查代理链路…" : "自动检查代理链路",
-                symbol: "stethoscope",
-                actionLabel: "检查",
-                actionSymbol: "play.fill",
-                tint: CloudPalette.networkBlue,
-                scopeLabels: ["双出口", "IP 风险", "域名分流"],
+            HealthActionCard(
+                plan: model.healthPlan,
                 isRunning: isHealthCheckRunning,
                 isDisabled: model.isBusy,
-                showsProgress: true,
-                action: model.runHealthCheck
+                openPlan: { model.showHealthPlanSetup = true },
+                run: model.runHealthCheck
             )
-            .accessibilityLabel(isHealthCheckRunning ? "健康检查正在运行" : "开始健康检查")
-            .help(isHealthCheckRunning ? "正在检查代理链路" : "开始健康检查")
+            .accessibilityLabel(isHealthCheckRunning ? "链路检测正在运行" : "开始链路检测")
+            .help(isHealthCheckRunning ? "正在检测代理链路" : "按当前方案检测代理链路")
 
             HStack(spacing: 10) {
                 AdvancedCheckCard { showingAdvanced = true }
@@ -1817,7 +2144,7 @@ struct ContentView: View {
     }
 
     private var isHealthCheckRunning: Bool {
-        model.isBusy && model.busyLabel.contains("全面检查")
+        model.isBusy && model.busyLabel.contains("检测代理链路")
     }
 }
 

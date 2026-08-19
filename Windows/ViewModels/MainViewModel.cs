@@ -15,7 +15,7 @@ public sealed class MainViewModel : ObservableObject
     private HealthLevel _overallLevel = HealthLevel.Idle;
     private bool _isBusy;
     private bool _isHealthCheckRunning;
-    private string _healthButtonLabel = "开始检查";
+    private string _healthButtonLabel = "开始检测";
     private string _lastUpdated = "尚未刷新";
 
     public MainViewModel(
@@ -129,7 +129,7 @@ public sealed class MainViewModel : ObservableObject
         }
         finally
         {
-            HealthButtonLabel = "开始检查";
+            HealthButtonLabel = "开始检测";
             IsHealthCheckRunning = false;
             IsBusy = false;
         }

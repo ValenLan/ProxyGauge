@@ -66,8 +66,8 @@ public sealed class HealthReport
     public string ToPlainText()
     {
         var text = new StringBuilder();
-        text.AppendLine($"CloudRoute Windows 健康检查 · {CheckedAt:yyyy-MM-dd HH:mm:ss}");
-        text.AppendLine($"健康分：{Score}/100 · {ScoreLabel}");
+        text.AppendLine($"CloudRoute Windows 链路检测 · {CheckedAt:yyyy-MM-dd HH:mm:ss}");
+        text.AppendLine($"链路分：{Score}/100 · {ScoreLabel}");
         text.AppendLine($"结果：{PassedCount} 通过 / {WarningCount} 提示 / {FailedCount} 失败");
         text.AppendLine();
 

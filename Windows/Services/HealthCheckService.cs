@@ -53,7 +53,7 @@ public sealed class HealthCheckService
             // probes. Match the macOS metadata budget without changing connect timeout.
             Timeout = TimeSpan.FromSeconds(Math.Max(config.TimeoutSeconds, 12))
         };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("CloudRoute/1.3.15 (+https://github.com/ValenLan/CloudRoute)");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("CloudRoute/1.3.16 (+https://github.com/ValenLan/CloudRoute)");
 
         var exitResult = await CheckExitIpAsync(client, config, cancellationToken);
         var riskTask = CheckIpRiskAsync(client, exitResult.Address, cancellationToken);
@@ -68,7 +68,7 @@ public sealed class HealthCheckService
                 new HealthCheckSection("本地代理", localItems, 45, IsCritical: true),
                 new HealthCheckSection("代理出口", [exitResult.Item], 30, IsCritical: true),
                 new HealthCheckSection("IP 风险画像", riskItems, 15),
-                new HealthCheckSection("AI 路由确认（默认低风险模式）",
+                new HealthCheckSection("检测边界（默认低风险模式）",
                 [
                     new HealthCheckItem(
                         "主动平台探测",

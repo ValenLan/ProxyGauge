@@ -1,5 +1,5 @@
 #!/bin/bash
-# CloudRoute 代理健康检查脚本
+# CloudRoute 代理链路检测脚本
 # 用法: bash ~/.local/bin/cloudroute-check
 # 退出码: 0 = 链路检查通过; 1 = 有失败项
 
@@ -7,6 +7,12 @@ DEFAULT_CONFIG="$HOME/.config/cloudroute/config"
 LEGACY_CONFIG="$HOME/.config/puffroute/config"
 CONFIG_FILE="${CLOUDROUTE_CONFIG:-${PUFFROUTE_CONFIG:-$DEFAULT_CONFIG}}"
 ENV_CLOUDROUTE_MIXED="${CLOUDROUTE_MIXED:-${PUFFROUTE_MIXED:-}}"
+ENV_SECONDARY_ENABLED="${CLOUDROUTE_SECONDARY_ENABLED:-}"
+ENV_SECONDARY_LABEL="${CLOUDROUTE_SECONDARY_LABEL:-}"
+ENV_SECONDARY_GROUP="${CLOUDROUTE_SECONDARY_GROUP:-}"
+ENV_DEFAULT_GROUP="${CLOUDROUTE_DEFAULT_GROUP:-}"
+ENV_SECONDARY_MIXED="${CLOUDROUTE_SECONDARY_MIXED:-}"
+ENV_SECONDARY_DOMAINS="${CLOUDROUTE_SECONDARY_DOMAINS:-}"
 if [ -z "${CLOUDROUTE_CONFIG:-}" ] && [ -z "${PUFFROUTE_CONFIG:-}" ] \
   && [ ! -r "$CONFIG_FILE" ] && [ -r "$LEGACY_CONFIG" ]; then
   CONFIG_FILE="$LEGACY_CONFIG"
@@ -15,16 +21,25 @@ fi
 if [ -n "$ENV_CLOUDROUTE_MIXED" ]; then
   CLOUDROUTE_MIXED="$ENV_CLOUDROUTE_MIXED"
 fi
+if [ -n "$ENV_SECONDARY_ENABLED" ]; then CLOUDROUTE_SECONDARY_ENABLED="$ENV_SECONDARY_ENABLED"; fi
+if [ -n "$ENV_SECONDARY_LABEL" ]; then CLOUDROUTE_SECONDARY_LABEL="$ENV_SECONDARY_LABEL"; fi
+if [ -n "$ENV_SECONDARY_GROUP" ]; then CLOUDROUTE_SECONDARY_GROUP="$ENV_SECONDARY_GROUP"; fi
+if [ -n "$ENV_DEFAULT_GROUP" ]; then CLOUDROUTE_DEFAULT_GROUP="$ENV_DEFAULT_GROUP"; fi
+if [ -n "$ENV_SECONDARY_MIXED" ]; then CLOUDROUTE_SECONDARY_MIXED="$ENV_SECONDARY_MIXED"; fi
+if [ -n "$ENV_SECONDARY_DOMAINS" ]; then CLOUDROUTE_SECONDARY_DOMAINS="$ENV_SECONDARY_DOMAINS"; fi
 
 EXPECT_IP="${CLOUDROUTE_EXPECT_IP:-${PUFFROUTE_EXPECT_IP:-}}"
 MIXED="${CLOUDROUTE_MIXED:-${PUFFROUTE_MIXED:-127.0.0.1:7890}}"
 TIMEOUT="${CLOUDROUTE_TIMEOUT:-${PUFFROUTE_TIMEOUT:-6}}"
 METADATA_TIMEOUT="${CLOUDROUTE_METADATA_TIMEOUT:-${PUFFROUTE_METADATA_TIMEOUT:-12}}"
 MIHOMO_SOCKET="${CLOUDROUTE_MIHOMO_SOCKET:-${PUFFROUTE_MIHOMO_SOCKET:-/private/tmp/verge/verge-mihomo.sock}}"
-GOOGLE_GROUP="${CLOUDROUTE_GOOGLE_GROUP:-${PUFFROUTE_GOOGLE_GROUP:-Google-Chain}}"
+SECONDARY_ENABLED="${CLOUDROUTE_SECONDARY_ENABLED:-auto}"
+SECONDARY_LABEL="${CLOUDROUTE_SECONDARY_LABEL:-Google / Gemini}"
+GOOGLE_GROUP="${CLOUDROUTE_SECONDARY_GROUP:-${CLOUDROUTE_GOOGLE_GROUP:-${PUFFROUTE_GOOGLE_GROUP:-Google-Chain}}}"
 DEFAULT_GROUP="${CLOUDROUTE_DEFAULT_GROUP:-${PUFFROUTE_DEFAULT_GROUP:-PROXY}}"
-GOOGLE_MIXED="${CLOUDROUTE_GOOGLE_MIXED:-${PUFFROUTE_GOOGLE_MIXED:-127.0.0.1:7891}}"
-EXPECT_GOOGLE_IP="${CLOUDROUTE_EXPECT_GOOGLE_IP:-${PUFFROUTE_EXPECT_GOOGLE_IP:-}}"
+GOOGLE_MIXED="${CLOUDROUTE_SECONDARY_MIXED:-${CLOUDROUTE_GOOGLE_MIXED:-${PUFFROUTE_GOOGLE_MIXED:-127.0.0.1:7891}}}"
+EXPECT_GOOGLE_IP="${CLOUDROUTE_EXPECT_SECONDARY_IP:-${CLOUDROUTE_EXPECT_GOOGLE_IP:-${PUFFROUTE_EXPECT_GOOGLE_IP:-}}}"
+SECONDARY_DOMAINS="${CLOUDROUTE_SECONDARY_DOMAINS:-gemini.google.com,generativelanguage.googleapis.com,www.google.com}"
 ACTIVE_AI_PROBES="${CLOUDROUTE_ACTIVE_AI_PROBES:-${PUFFROUTE_ACTIVE_AI_PROBES:-0}}"
 MIXED_HOST="${MIXED%:*}"
 MIXED_PORT="${MIXED##*:}"
@@ -33,6 +48,17 @@ GOOGLE_MIXED_PORT="${GOOGLE_MIXED##*:}"
 SCRIPT_DIR=$(/usr/bin/dirname "$0")
 RISK_PARSER="${CLOUDROUTE_RISK_PARSER:-${PUFFROUTE_RISK_PARSER:-$SCRIPT_DIR/cloudroute-ip-risk.jxa}}"
 CHAIN_PARSER="${CLOUDROUTE_CHAIN_PARSER:-${PUFFROUTE_CHAIN_PARSER:-$SCRIPT_DIR/cloudroute-chain-check.jxa}}"
+
+SECONDARY_ACTIVE=""
+case "$SECONDARY_ENABLED" in
+  1|true|yes) SECONDARY_ACTIVE=1 ;;
+  0|false|no) ;;
+  *)
+    if [ -n "${CLOUDROUTE_GOOGLE_GROUP:-}${PUFFROUTE_GOOGLE_GROUP:-}${CLOUDROUTE_GOOGLE_MIXED:-}${PUFFROUTE_GOOGLE_MIXED:-}" ]; then
+      SECONDARY_ACTIVE=1
+    fi
+    ;;
+esac
 
 pass=0
 warn=0
@@ -89,7 +115,7 @@ render_risk_profile() {
     extract-asn "$IPAPI_JSON" "$PROXYCHECK_JSON" "$risk_ip" 2>/dev/null || true)
   if printf '%s' "$ASN_NUMBER" | /usr/bin/grep -qE '^[0-9]+$'; then
     /usr/bin/curl -sS --retry 1 --retry-all-errors --retry-delay 1 \
-      -A "CloudRoute/1.3.15 (+https://github.com/ValenLan/CloudRoute)" \
+      -A "CloudRoute/1.3.16 (+https://github.com/ValenLan/CloudRoute)" \
       --proxy "http://$risk_proxy" --max-time "$METADATA_TIMEOUT" \
       "https://www.peeringdb.com/api/net?asn=$ASN_NUMBER" \
       -o "$PEERINGDB_JSON" 2>/dev/null || true
@@ -107,7 +133,51 @@ render_risk_profile() {
   fi
 }
 
+check_site() {
+  name="$1"
+  url="$2"
+  kind="$3"
+  probe_proxy="$4"
+  headers=$(/usr/bin/mktemp -t cloudroute-site-headers)
+  body=$(/usr/bin/mktemp -t cloudroute-site-body)
+  out=$(/usr/bin/curl -sS -D "$headers" -o "$body" -w '%{http_code} %{time_total}' \
+    --retry 1 --retry-all-errors --retry-delay 1 \
+    --proxy "http://$probe_proxy" --max-time "$TIMEOUT" "$url" 2>/dev/null)
+  curl_status=$?
+  code=${out%% *}
+  t=${out##* }
+
+  if [ "$curl_status" -ne 0 ] || [ -z "$code" ] || [ "$code" = "000" ]; then
+    check no "$name 不可达 (TCP、DNS 或 TLS 连接失败)"
+  elif /usr/bin/grep -qiE '^cf-mitigated:[[:space:]]*challenge' "$headers"; then
+    check warn "$name 触发 Cloudflare challenge (HTTP $code, ${t}s)"
+  elif [ "$kind" = "gemini" ] && [ "$code" = "403" ] \
+    && /usr/bin/grep -qiE 'API_KEY_INVALID|API key not valid|API key.*missing' "$body"; then
+    check ok "$name 公网入口可达 (HTTP 403；缺少 API Key 属于预期)"
+  elif [ "$kind" = "api" ] && echo "$code" | /usr/bin/grep -qE '^(200|201|204|301|302|307|308|400|401|404)$'; then
+    check ok "$name 公网入口可达 (HTTP $code, ${t}s；认证错误属于预期)"
+  elif echo "$code" | /usr/bin/grep -qE '^(200|201|204|301|302|307|308)$'; then
+    check ok "$name 可正常访问 (HTTP $code, ${t}s)"
+  elif [ "$code" = "403" ]; then
+    check warn "$name 网络可达但被拒绝 (HTTP 403, ${t}s；可能是地区或风控策略)"
+  elif [ "$code" = "429" ]; then
+    check warn "$name 触发频率限制 (HTTP 429, ${t}s)"
+  elif echo "$code" | /usr/bin/grep -qE '^5[0-9][0-9]$'; then
+    check warn "$name 返回服务端错误 (HTTP $code, ${t}s)"
+  else
+    check warn "$name 响应异常 (HTTP $code, ${t}s)"
+  fi
+  /bin/rm -f "$headers" "$body"
+}
+
 echo "检查时间: $(date '+%F %T')"
+if [ -n "$SECONDARY_ACTIVE" ]; then
+  echo "检测方案: 通用检测 + $SECONDARY_LABEL"
+  echo "额外分流: 1"
+else
+  echo "检测方案: 通用检测"
+  echo "额外分流: 0"
+fi
 
 echo "===== 1. 代理核心进程 ====="
 CORE_PIDS=$(/usr/bin/pgrep -x verge-mihomo 2>/dev/null)
@@ -215,7 +285,8 @@ fi
 echo "===== 5. 出口 IP 风险画像 ====="
 render_risk_profile "$MIXED" "$EXT" "默认出口 IP${EXT:+：$EXT}"
 
-echo "===== 6. Google / Gemini 链式代理 ====="
+run_secondary_checks() {
+echo "===== 6. 额外分流链路 ($SECONDARY_LABEL) ====="
 GOOGLE_EXT=""
 CHAIN_CONFIGURED=""
 if [ -S "$MIHOMO_SOCKET" ] && [ -r "$CHAIN_PARSER" ]; then
@@ -238,7 +309,7 @@ if [ -S "$MIHOMO_SOCKET" ] && [ -r "$CHAIN_PARSER" ]; then
 
   CHAIN_OUTPUT=$(/usr/bin/osascript -l JavaScript "$CHAIN_PARSER" \
     "$PROXIES_JSON" "$RULES_JSON" "$DELAY_JSON" \
-    "$GOOGLE_GROUP" "$DEFAULT_GROUP" 2>/dev/null || true)
+    "$GOOGLE_GROUP" "$DEFAULT_GROUP" "$SECONDARY_DOMAINS" "$SECONDARY_LABEL" 2>/dev/null || true)
   /bin/rm -f "$PROXIES_JSON" "$RULES_JSON" "$DELAY_JSON"
 
   if [ -n "$CHAIN_OUTPUT" ]; then
@@ -253,14 +324,14 @@ if [ -S "$MIHOMO_SOCKET" ] && [ -r "$CHAIN_PARSER" ]; then
     warn=$((warn + CHAIN_WARNINGS))
     fail=$((fail + CHAIN_FAILURES))
   else
-    echo "  ℹ️ 无法读取 Mihomo 链式代理状态"
+    echo "  ℹ️ 无法读取 Mihomo 额外分流状态"
   fi
 else
-  echo "  ℹ️ 未检测到 Mihomo 控制 socket；跳过可选链式代理检查"
+  echo "  ℹ️ 未检测到 Mihomo 控制 socket；跳过可选策略组与规则检查"
 fi
 
 if [ "$GOOGLE_MIXED" = "$MIXED" ]; then
-  check no "链式出口探针与默认 mixed 端口相同，无法区分两个出口"
+  check no "$SECONDARY_LABEL 入口与默认 mixed 端口相同，无法区分两个出口"
 elif (exec 3<>/dev/tcp/"$GOOGLE_MIXED_HOST"/"$GOOGLE_MIXED_PORT") 2>/dev/null; then
   CHAIN_CONFIGURED=1
   GOOGLE_EXT=""
@@ -274,9 +345,9 @@ elif (exec 3<>/dev/tcp/"$GOOGLE_MIXED_HOST"/"$GOOGLE_MIXED_PORT") 2>/dev/null; t
       [ -z "$GOOGLE_EXT" ] && GOOGLE_EXT="$value"
       GOOGLE_EXIT_VALUES="${GOOGLE_EXIT_VALUES}${value}"$'\n'
       GOOGLE_EXIT_RESPONSES=$((GOOGLE_EXIT_RESPONSES+1))
-      echo "  ℹ️ $service（链式）: $value"
+      echo "  ℹ️ $service（$SECONDARY_LABEL）: $value"
     else
-      echo "  ℹ️ $service（链式）: 未响应"
+      echo "  ℹ️ $service（$SECONDARY_LABEL）: 未响应"
     fi
   done <<'EOF'
 ipify|https://api.ipify.org
@@ -287,103 +358,81 @@ EOF
   if [ -n "$GOOGLE_EXT" ]; then
     GOOGLE_UNIQUE_EXITS=$(printf '%s' "$GOOGLE_EXIT_VALUES" | /usr/bin/awk 'NF' | /usr/bin/sort -u | /usr/bin/wc -l | /usr/bin/tr -d ' ')
     if [ "$GOOGLE_UNIQUE_EXITS" -gt 1 ]; then
-      check warn "Google / Gemini 链式出口查询结果不一致"
+      check warn "$SECONDARY_LABEL 出口查询结果不一致"
     elif [ "$GOOGLE_EXIT_RESPONSES" -lt 2 ]; then
-      check warn "Google / Gemini 链式出口只收到 1 个查询源响应"
+      check warn "$SECONDARY_LABEL 出口只收到 1 个查询源响应"
     else
-      check ok "$GOOGLE_EXIT_RESPONSES 个查询源确认 Google / Gemini 出口一致 ($GOOGLE_EXT)"
+      check ok "$GOOGLE_EXIT_RESPONSES 个查询源确认 $SECONDARY_LABEL 出口一致 ($GOOGLE_EXT)"
     fi
 
     if [ -n "$EXPECT_GOOGLE_IP" ] && [ "$GOOGLE_EXT" != "$EXPECT_GOOGLE_IP" ]; then
-      check no "Google / Gemini 出口非预期 ($GOOGLE_EXT != $EXPECT_GOOGLE_IP)"
+      check no "$SECONDARY_LABEL 出口非预期 ($GOOGLE_EXT != $EXPECT_GOOGLE_IP)"
     elif [ -n "$EXPECT_GOOGLE_IP" ]; then
-      check ok "Google / Gemini 出口符合配置 ($EXPECT_GOOGLE_IP)"
+      check ok "$SECONDARY_LABEL 出口符合配置 ($EXPECT_GOOGLE_IP)"
     fi
 
     if [ -n "$EXT" ] && [ "$GOOGLE_EXT" = "$EXT" ]; then
-      check warn "Google / Gemini 出口与默认出口相同 ($GOOGLE_EXT) — 请确认链式节点选择"
+      check warn "$SECONDARY_LABEL 出口与默认出口相同 ($GOOGLE_EXT) — 请确认策略选择"
     elif [ -n "$EXT" ]; then
-      check ok "出口已分离：默认 $EXT / Google·Gemini $GOOGLE_EXT"
+      check ok "出口已分离：默认 $EXT / $SECONDARY_LABEL $GOOGLE_EXT"
     fi
 
-    echo "  ── Google / Gemini 出口风险画像 ──"
-    render_risk_profile "$GOOGLE_MIXED" "$GOOGLE_EXT" "Google / Gemini 出口 IP：$GOOGLE_EXT"
+    echo "  ── $SECONDARY_LABEL 出口风险画像 ──"
+    render_risk_profile "$GOOGLE_MIXED" "$GOOGLE_EXT" "$SECONDARY_LABEL 出口 IP：$GOOGLE_EXT"
   else
-    check no "无法通过 $GOOGLE_MIXED 获取 Google / Gemini 链式出口 IP"
+    check no "无法通过 $GOOGLE_MIXED 获取 $SECONDARY_LABEL 出口 IP"
   fi
 else
   if [ -n "$CHAIN_CONFIGURED" ]; then
-    check warn "链式出口探针 $GOOGLE_MIXED 未监听；只能验证规则，不能确认 Google / Gemini 的实际出口 IP"
+    check warn "$SECONDARY_LABEL 入口 $GOOGLE_MIXED 未监听；只能验证规则，不能确认实际出口 IP"
   else
-    echo "  ℹ️ 未启用 Google / Gemini 链式策略组；跳过可选链式出口探针"
+    echo "  ℹ️ 未检测到 $SECONDARY_LABEL 策略组或本地入口"
   fi
 fi
 
-check_site() {
-  name="$1"
-  url="$2"
-  kind="$3"
-  probe_proxy="$4"
-  headers=$(/usr/bin/mktemp -t cloudroute-site-headers)
-  body=$(/usr/bin/mktemp -t cloudroute-site-body)
-  out=$(/usr/bin/curl -sS -D "$headers" -o "$body" -w '%{http_code} %{time_total}' \
-    --retry 1 --retry-all-errors --retry-delay 1 \
-    --proxy "http://$probe_proxy" --max-time "$TIMEOUT" "$url" 2>/dev/null)
-  curl_status=$?
-  code=${out%% *}
-  t=${out##* }
-
-  if [ "$curl_status" -ne 0 ] || [ -z "$code" ] || [ "$code" = "000" ]; then
-    check no "$name 不可达 (TCP、DNS 或 TLS 连接失败)"
-  elif /usr/bin/grep -qiE '^cf-mitigated:[[:space:]]*challenge' "$headers"; then
-    check warn "$name 触发 Cloudflare challenge (HTTP $code, ${t}s)"
-  elif [ "$kind" = "gemini" ] && [ "$code" = "403" ] \
-    && /usr/bin/grep -qiE 'API_KEY_INVALID|API key not valid|API key.*missing' "$body"; then
-    check ok "$name 已经由独立 Google / Gemini 出口到达 (HTTP 403；缺少 API Key 属于预期)"
-  elif [ "$kind" = "api" ] && echo "$code" | /usr/bin/grep -qE '^(200|201|204|301|302|307|308|400|401|404)$'; then
-    check ok "$name 公网入口可达 (HTTP $code, ${t}s；认证错误属于预期)"
-  elif echo "$code" | /usr/bin/grep -qE '^(200|201|204|301|302|307|308)$'; then
-    check ok "$name 可正常访问 (HTTP $code, ${t}s)"
-  elif [ "$code" = "403" ]; then
-    check warn "$name 网络可达但被拒绝 (HTTP 403, ${t}s；可能是地区或风控策略)"
-  elif [ "$code" = "429" ]; then
-    check warn "$name 触发频率限制 (HTTP 429, ${t}s)"
-  elif echo "$code" | /usr/bin/grep -qE '^5[0-9][0-9]$'; then
-    check warn "$name 返回服务端错误 (HTTP $code, ${t}s)"
-  else
-    check warn "$name 响应异常 (HTTP $code, ${t}s)"
-  fi
-  /bin/rm -f "$headers" "$body"
-}
-
-echo "===== 7. AI 路由确认 (默认低风险模式) ====="
+echo "===== 7. 分流确认 (默认低风险模式) ====="
 if [ -n "$GOOGLE_EXT" ]; then
-  check ok "Gemini 已绑定独立 Google / Gemini 出口 ($GOOGLE_EXT)"
+  check ok "$SECONDARY_LABEL 已绑定独立出口 ($GOOGLE_EXT)"
 elif [ -n "$CHAIN_CONFIGURED" ]; then
-  check warn "已检测到 Google / Gemini 链式配置，但尚未确认独立出口 IP"
+  check warn "已检测到 $SECONDARY_LABEL 分流配置，但尚未确认独立出口 IP"
 else
-  echo "  ℹ️ 未启用独立 Google / Gemini 链式出口；跳过可选出口确认"
+  echo "  ℹ️ 尚未确认 $SECONDARY_LABEL 的独立出口"
 fi
-echo "  ℹ️ 默认不请求 Claude、ChatGPT、Gemini 网页或 API，避免健康检查制造机器人式访问记录"
+echo "  ℹ️ 默认不请求 Claude、ChatGPT、Gemini 网页或 API，避免链路检测制造机器人式访问记录"
 
 if [ "$ACTIVE_AI_PROBES" = "1" ]; then
   echo "  ⚠️ 已手动启用主动 AI API 探测；请求会到达对应平台"
   check_site "OpenAI API" "https://api.openai.com/v1/models" "api" "$MIXED"
   check_site "Anthropic API" "https://api.anthropic.com/v1/models" "api" "$MIXED"
-  check_site "Gemini API" "https://generativelanguage.googleapis.com/v1beta/models" "gemini" "$GOOGLE_MIXED"
+  GEMINI_PROBE_PROXY="$MIXED"
+  if [ -n "$SECONDARY_ACTIVE" ]; then
+    GEMINI_PROBE_PROXY="$GOOGLE_MIXED"
+  fi
+  check_site "Gemini API" "https://generativelanguage.googleapis.com/v1beta/models" "gemini" "$GEMINI_PROBE_PROXY"
 fi
 
-echo "===== 8. 双出口结论 (不新增外部请求) ====="
+echo "===== 8. 出口结论 (不新增外部请求) ====="
 if [ -n "$EXT" ]; then
   check ok "默认出口已由多个 IP 查询源确认 ($EXT)"
 fi
 if [ -n "$GOOGLE_EXT" ]; then
-  check ok "Google / Gemini 出口已由专用链路确认 ($GOOGLE_EXT)"
+  check ok "$SECONDARY_LABEL 出口已由专用链路确认 ($GOOGLE_EXT)"
 fi
 if [ -n "$EXT" ] && [ -n "$GOOGLE_EXT" ] && [ "$EXT" != "$GOOGLE_EXT" ]; then
-  check ok "默认出口与 Google / Gemini 出口相互独立"
+  check ok "默认出口与 $SECONDARY_LABEL 出口相互独立"
 elif [ -n "$EXT" ] && [ -n "$GOOGLE_EXT" ]; then
   check warn "两个检测入口当前返回同一出口 IP"
+fi
+}
+
+if [ -n "$SECONDARY_ACTIVE" ]; then
+  run_secondary_checks
+elif [ "$ACTIVE_AI_PROBES" = "1" ]; then
+  echo "===== 6. 主动平台探测 (手动启用) ====="
+  echo "  ⚠️ 已手动启用主动 AI API 探测；请求会经默认入口到达对应平台"
+  check_site "OpenAI API" "https://api.openai.com/v1/models" "api" "$MIXED"
+  check_site "Anthropic API" "https://api.anthropic.com/v1/models" "api" "$MIXED"
+  check_site "Gemini API" "https://generativelanguage.googleapis.com/v1beta/models" "gemini" "$MIXED"
 fi
 
 echo
@@ -392,6 +441,6 @@ if [ "$fail" -eq 0 ]; then
   echo "🎉 代理链路检查通过"
   exit 0
 else
-  echo "⚠️ 有 $fail 项未通过，请检查 Clash 配置与 VPS 状态"
+  echo "⚠️ 有 $fail 项未通过，请检查本地代理与当前检测方案"
   exit 1
 fi

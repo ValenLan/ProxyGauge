@@ -26,6 +26,11 @@ saved_endpoint_output=$(CLOUDROUTE_CONFIG="$TEMP_DIR/config" \
   CLOUDROUTE_MIXED=127.0.0.1:7898 \
   CLOUDROUTE_PRIVATE_BROWSER_DRY_RUN=1 \
   /bin/bash "$PROJECT_ROOT/Scripts/cloudroute-private-browser.sh" default)
+custom_secondary_output=$(CLOUDROUTE_CONFIG=/dev/null \
+  CLOUDROUTE_SECONDARY_MIXED=127.0.0.1:7991 \
+  CLOUDROUTE_SECONDARY_LABEL='工作出口' \
+  CLOUDROUTE_PRIVATE_BROWSER_DRY_RUN=1 \
+  /bin/bash "$PROJECT_ROOT/Scripts/cloudroute-private-browser.sh" google)
 
 /usr/bin/grep -q '^route=默认出口$' <<< "$default_output"
 /usr/bin/grep -q '^proxy=127.0.0.1:7890$' <<< "$default_output"
@@ -36,9 +41,12 @@ saved_endpoint_output=$(CLOUDROUTE_CONFIG="$TEMP_DIR/config" \
 /usr/bin/grep -q '^proxy=127.0.0.1:7892$' <<< "$legacy_output"
 /usr/bin/grep -q '^url_count=3$' <<< "$no_ip_output"
 /usr/bin/grep -q '^proxy=127.0.0.1:7898$' <<< "$saved_endpoint_output"
+/usr/bin/grep -q '^route=工作出口 链路$' <<< "$custom_secondary_output"
+/usr/bin/grep -q '^proxy=127.0.0.1:7991$' <<< "$custom_secondary_output"
 /usr/bin/grep -Fq 'Text("高级检测")' "$APP_SOURCE"
-/usr/bin/grep -Fq 'Text("不计入健康结果")' "$APP_SOURCE"
+/usr/bin/grep -Fq 'Text("不计入链路分")' "$APP_SOURCE"
 /usr/bin/grep -Fq 'process.arguments = [scriptPath, route.rawValue, ""]' "$APP_SOURCE"
 /usr/bin/grep -Fq 'environment["CLOUDROUTE_MIXED"] = endpoint' "$APP_SOURCE"
+/usr/bin/grep -Fq 'environment["CLOUDROUTE_SECONDARY_MIXED"] = plan.secondaryEndpoint' "$APP_SOURCE"
 
 echo "CloudRoute isolated browser tests passed."

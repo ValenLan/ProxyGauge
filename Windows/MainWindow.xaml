@@ -232,8 +232,8 @@
                                 <TextBlock Text="&#xE9D9;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Foreground="{StaticResource AccentBrush}" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center" />
                             </Border>
                             <StackPanel Grid.Column="1" Margin="12,-1,14,0" VerticalAlignment="Center">
-                                <TextBlock Text="健康检查" FontSize="15" FontWeight="SemiBold" />
-                                <TextBlock Text="验证出口一致性、IP 风险和域名分流" Foreground="{StaticResource MutedTextBrush}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
+                                <TextBlock Text="链路检测" FontSize="15" FontWeight="SemiBold" />
+                                <TextBlock Text="验证本地入口、出口一致性和 IP 风险" Foreground="{StaticResource MutedTextBrush}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
                             </StackPanel>
                             <Button Grid.Column="2"
                                     Style="{StaticResource PrimaryButtonStyle}"
