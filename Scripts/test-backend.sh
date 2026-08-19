@@ -5,6 +5,9 @@ SCRIPT_DIR=$(/usr/bin/dirname "$0")
 BACKEND="$SCRIPT_DIR/cloudlink-guard-backend.sh"
 TEMP_DIR=$(/usr/bin/mktemp -d /tmp/cloudlink-guard-backend-test.XXXXXX)
 trap '/bin/rm -rf "$TEMP_DIR"' EXIT
+TEST_PF_CONF="$TEMP_DIR/pf.conf"
+/usr/bin/printf '%s\n' 'anchor "cloudlink-guard"' > "$TEST_PF_CONF"
+export CLOUDLINK_GUARD_PF_CONF="$TEST_PF_CONF"
 
 assert_kill_state() {
   local message expected actual
@@ -26,6 +29,17 @@ assert_kill_state 'Kill Switch 已开启' $'已开启\tok'
 assert_kill_state 'Kill Switch: Enabled' $'已开启\tok'
 assert_kill_state 'Kill Switch 已关闭' $'已关闭\twarning'
 assert_kill_state 'Kill Switch: Disabled' $'已关闭\twarning'
+
+unconfigured_kill=$(CLOUDLINK_GUARD_PF_CONF="$TEMP_DIR/missing-pf.conf" \
+  CLOUDLINK_GUARD_ADMIN_RESULT="$TEMP_DIR/missing-admin-result" \
+  CLOUDLINK_GUARD_KILL_TOKEN="$TEMP_DIR/missing-token" \
+  /bin/bash "$BACKEND" probe | /usr/bin/awk -F '\t' '$1 == "kill" { print $2 "\t" $3 }')
+[ "$unconfigured_kill" = $'未配置\tidle' ]
+
+configured_off_kill=$(CLOUDLINK_GUARD_ADMIN_RESULT="$TEMP_DIR/missing-admin-result" \
+  CLOUDLINK_GUARD_KILL_TOKEN="$TEMP_DIR/missing-token" \
+  /bin/bash "$BACKEND" probe | /usr/bin/awk -F '\t' '$1 == "kill" { print $2 "\t" $3 }')
+[ "$configured_off_kill" = $'已关闭\twarning' ]
 
 assert_entry_state() {
   local system_active tun_active expected actual

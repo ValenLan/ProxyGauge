@@ -32,6 +32,7 @@ KILL_HELPER="${CLOUDLINK_GUARD_KILLSWITCH:-${PUFFROUTE_KILLSWITCH:-$RESOURCE_DIR
 CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
 ADMIN_RESULT="${CLOUDLINK_GUARD_ADMIN_RESULT:-${PUFFROUTE_ADMIN_RESULT:-$CACHE_HOME/cloudlink-guard/admin-result}}"
 KILL_TOKEN="${CLOUDLINK_GUARD_KILL_TOKEN:-${PUFFROUTE_KILL_TOKEN:-/var/run/cloudlink-guard-killswitch.pf-token}}"
+PF_CONF="${CLOUDLINK_GUARD_PF_CONF:-/etc/pf.conf}"
 if [ -z "${CLOUDLINK_GUARD_KILL_TOKEN:-}" ] && [ -z "${PUFFROUTE_KILL_TOKEN:-}" ] \
   && [ ! -e "$KILL_TOKEN" ]; then
   if [ -e /var/run/cloudroute-killswitch.pf-token ]; then
@@ -281,6 +282,13 @@ discover() {
 kill_switch_snapshot() {
   local action_status result_file legacy_result
 
+  if [ ! -r "$PF_CONF" ] || ! /usr/bin/grep -qE \
+    '^[[:space:]]*anchor[[:space:]]+"(cloudlink-guard|cloudroute|puffroute|killswitch)"' \
+    "$PF_CONF" 2>/dev/null; then
+    /usr/bin/printf '未配置\tidle\n'
+    return
+  fi
+
   result_file="$ADMIN_RESULT"
   if [ ! -r "$result_file" ] && [ -z "${CLOUDLINK_GUARD_ADMIN_RESULT:-}" ] \
     && [ -z "${PUFFROUTE_ADMIN_RESULT:-}" ]; then
@@ -309,7 +317,7 @@ kill_switch_snapshot() {
   if [ -e "$KILL_TOKEN" ]; then
     /usr/bin/printf '待确认\tidle\n'
   else
-    /usr/bin/printf '未确认\tidle\n'
+    /usr/bin/printf '已关闭\twarning\n'
   fi
 }
 

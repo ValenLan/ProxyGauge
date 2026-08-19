@@ -63,8 +63,10 @@ WINDOWS_MAIN="$PROJECT_ROOT/Windows/MainWindow.xaml"
 /usr/bin/grep -Fq '.foregroundStyle(CloudPalette.networkBlue)' "$APP_SOURCE"
 /usr/bin/grep -Fq '.frame(width: 64, height: 28)' "$APP_SOURCE"
 /usr/bin/grep -Fq '.frame(width: 76, height: 28)' "$APP_SOURCE"
+/usr/bin/grep -Fq '.font(.system(size: 11, weight: .semibold))' "$APP_SOURCE"
 /usr/bin/grep -Fq '.fixedSize(horizontal: true, vertical: false)' "$APP_SOURCE"
 /usr/bin/grep -Fq 'tint: CloudPalette.networkBlue' "$APP_SOURCE"
+/usr/bin/grep -Fq 'metric.value == "未配置" || metric.value == "检查中"' "$APP_SOURCE"
 
 if /usr/bin/grep -q 'MetricCard(metric: .*accent:' "$APP_SOURCE"; then
   echo "Read-only status cards must not use per-card accent colors." >&2

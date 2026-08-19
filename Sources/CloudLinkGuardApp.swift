@@ -224,7 +224,7 @@ final class ProxyModel: ObservableObject {
     @Published var core = MetricState(title: "代理核心", symbol: CloudSymbols.core, value: "检查中", level: .idle)
     @Published var port = MetricState(title: "本地端口", symbol: CloudSymbols.localPort, value: "检查中", level: .idle)
     @Published var entry = MetricState(title: "流量入口", symbol: CloudSymbols.entryInactive, value: "检查中", level: .idle)
-    @Published var killSwitch = MetricState(title: "Kill Switch", symbol: CloudSymbols.killSwitch, value: "未确认", level: .idle)
+    @Published var killSwitch = MetricState(title: "Kill Switch", symbol: CloudSymbols.killSwitch, value: "检查中", level: .idle)
 
     private let backendPath = Bundle.main.path(forResource: "cloudlink-guard-backend", ofType: "sh")
         ?? FileManager.default.homeDirectoryForCurrentUser
@@ -585,8 +585,13 @@ struct KillSwitchCard: View {
         switch metric.level {
         case .error: return metric.level.color
         case .warning: return .orange
-        case .ok, .idle: return CloudPalette.statusGreen
+        case .ok: return CloudPalette.statusGreen
+        case .idle: return CloudPalette.statusGray
         }
+    }
+
+    private var isUnavailable: Bool {
+        metric.value == "未配置" || metric.value == "检查中"
     }
 
     var body: some View {
@@ -618,8 +623,12 @@ struct KillSwitchCard: View {
             .toggleStyle(.switch)
             .tint(CloudPalette.statusGreen)
             .controlSize(.small)
-            .disabled(isBusy)
-            .help(metric.level == .ok ? "关闭防泄漏保护" : "开启防泄漏保护")
+            .disabled(isBusy || isUnavailable)
+            .help(
+                isUnavailable
+                    ? "需要先安装 CloudCheck PF Kill Switch 规则"
+                    : (metric.level == .ok ? "关闭防泄漏保护" : "开启防泄漏保护")
+            )
         }
         .padding(.horizontal, 16)
         .frame(maxWidth: .infinity, minHeight: 72)
@@ -1389,7 +1398,7 @@ private struct HealthActionCard: View {
                             )
                             Text("方案")
                         }
-                        .font(.system(size: 10.5, weight: .semibold))
+                        .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(CloudPalette.networkBlue)
                         .frame(width: 64, height: 28)
                         .background(
