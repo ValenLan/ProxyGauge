@@ -15,6 +15,10 @@ assert_kill_state() {
   expected="$2"
 
   /usr/bin/printf '%s\n__STATUS__=0\n' "$message" > "$TEMP_DIR/admin-result"
+  /bin/rm -f "$TEMP_DIR/token"
+  case "$expected" in
+    $'已开启\tok') /usr/bin/printf '%s\n' test-token > "$TEMP_DIR/token" ;;
+  esac
   actual=$(CLOUDCHECK_ADMIN_RESULT="$TEMP_DIR/admin-result" \
     CLOUDCHECK_KILL_TOKEN="$TEMP_DIR/token" \
     /bin/bash "$BACKEND" probe | /usr/bin/awk -F '\t' '$1 == "kill" { print $2 "\t" $3 }')
@@ -132,6 +136,9 @@ missing_discovery=$(CLOUDCHECK_CONFIG=/dev/null \
 /usr/bin/printf '%s\n' "$missing_discovery" | /usr/bin/grep -Fq $'source\t手动设置'
 
 /usr/bin/printf '%s\n__STATUS__=0\n' 'Kill Switch: Enabled' > "$TEMP_DIR/legacy-admin-result"
+/usr/bin/printf '%s\n' test-token > "$TEMP_DIR/cloudlink-token"
+/usr/bin/printf '%s\n' test-token > "$TEMP_DIR/cloudroute-token"
+/usr/bin/printf '%s\n' test-token > "$TEMP_DIR/legacy-token"
 cloudlink_actual=$(CLOUDLINK_GUARD_ADMIN_RESULT="$TEMP_DIR/legacy-admin-result" \
   CLOUDLINK_GUARD_KILL_TOKEN="$TEMP_DIR/cloudlink-token" \
   /bin/bash "$BACKEND" probe | /usr/bin/awk -F '\t' '$1 == "kill" { print $2 "\t" $3 }')
@@ -194,10 +201,19 @@ admin_output=$(CLOUDCHECK_ADMIN_SCRIPT="$ADMIN_SCRIPT" \
 /usr/bin/printf '%s\n' "$admin_output" | /usr/bin/grep -Fq 'Kill Switch: Enabled'
 [ "$(/usr/bin/stat -f '%Lp' "$NEW_RESULT")" = "600" ]
 
+/usr/bin/printf '%s\n' test-token > "$TEMP_DIR/new-token"
 cached_actual=$(CLOUDCHECK_ADMIN_RESULT="$NEW_RESULT" \
   CLOUDCHECK_KILL_TOKEN="$TEMP_DIR/new-token" \
   /bin/bash "$BACKEND" probe | /usr/bin/awk -F '\t' '$1 == "kill" { print $2 "\t" $3 }')
 [ "$cached_actual" = $'已开启\tok' ]
+
+# A successful result cached before reboot must not survive the loss of the
+# boot-scoped PF reference in /var/run.
+/bin/rm -f "$TEMP_DIR/new-token"
+stale_cached_actual=$(CLOUDCHECK_ADMIN_RESULT="$NEW_RESULT" \
+  CLOUDCHECK_KILL_TOKEN="$TEMP_DIR/new-token" \
+  /bin/bash "$BACKEND" probe | /usr/bin/awk -F '\t' '$1 == "kill" { print $2 "\t" $3 }')
+[ "$stale_cached_actual" = $'已关闭\twarning' ]
 
 if cancel_output=$(CLOUDCHECK_FAKE_ADMIN_MODE=canceled \
   CLOUDCHECK_ADMIN_SCRIPT="$ADMIN_SCRIPT" \

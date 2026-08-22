@@ -5,6 +5,9 @@ SCRIPT_DIR=$(/usr/bin/dirname "$0")
 HELPER="$SCRIPT_DIR/cloudcheck-killswitch"
 TEST_ROOT=$(/usr/bin/mktemp -d /tmp/cloudcheck-killswitch-test.XXXXXX)
 trap '/bin/rm -rf "$TEST_ROOT"' EXIT
+PERSIST_HELPER="$TEST_ROOT/Library/PrivilegedHelperTools/com.valenlan.cloudcheck.killswitch"
+PERSIST_PLIST="$TEST_ROOT/Library/LaunchDaemons/com.valenlan.cloudcheck.killswitch.plist"
+PERSIST_MARKER="$TEST_ROOT/var/db/cloudcheck/enabled"
 
 if /usr/bin/grep -Fq 'LEGACY_HELPER' "$HELPER"; then
   echo 'Root helper must not execute a user-owned legacy helper.' >&2
@@ -31,6 +34,13 @@ run_helper() {
   /bin/bash "$HELPER" "$@"
 }
 
+run_persisted_helper() {
+  CLOUDCHECK_KILLSWITCH_TEST_ROOT="$TEST_ROOT" \
+  CLOUDCHECK_KILLSWITCH_TEST_PFCTL="$TEST_ROOT/bin/pfctl" \
+  CLOUDCHECK_KILLSWITCH_TEST_INTERFACES="${CLOUDCHECK_KILLSWITCH_TEST_INTERFACES:-en0 en1}" \
+  /bin/bash "$PERSIST_HELPER" "$@"
+}
+
 bootstrap_output=$(run_helper on)
 /usr/bin/printf '%s\n' "$bootstrap_output" | /usr/bin/grep -Fq '规则已安装，当前保持关闭'
 /usr/bin/printf '%s\n' "$bootstrap_output" | /usr/bin/grep -Fq 'Kill Switch 已开启'
@@ -42,6 +52,11 @@ if /usr/bin/grep -Eq '__VPS_IP__|cloudlink_guard_vps' "$TEST_ROOT/etc/pf.anchors
 fi
 [ -r "$TEST_ROOT/etc/pf.conf.cloudcheck.bak" ]
 [ -s "$TEST_ROOT/var/run/cloudcheck-killswitch.pf-token" ]
+[ -x "$PERSIST_HELPER" ]
+[ -r "$PERSIST_PLIST" ]
+[ -r "$PERSIST_MARKER" ]
+/usr/bin/plutil -lint "$PERSIST_PLIST" >/dev/null
+/usr/bin/grep -Fq '<string>restore</string>' "$PERSIST_PLIST"
 
 /usr/bin/printf '%s\n' 'set skip on lo0' > "$TEST_ROOT/etc/pf.conf"
 /bin/rm -f "$TEST_ROOT/etc/pf.anchors/cloudcheck" \
@@ -82,6 +97,21 @@ fi
 fresh_output=$(run_helper on)
 /usr/bin/printf '%s\n' "$fresh_output" | /usr/bin/grep -Fq '规则已安装，当前保持关闭'
 /usr/bin/printf '%s\n' "$fresh_output" | /usr/bin/grep -Fq 'Kill Switch 已开启'
+
+# /var/run is cleared at reboot. The root-owned LaunchDaemon helper must
+# restore both the PF rules and this boot-scoped enable reference.
+/bin/rm -f "$TEST_ROOT/var/run/cloudcheck-killswitch.pf-token"
+restore_output=$(run_persisted_helper restore)
+/usr/bin/printf '%s\n' "$restore_output" | /usr/bin/grep -Fq 'Kill Switch 已开启'
+[ -s "$TEST_ROOT/var/run/cloudcheck-killswitch.pf-token" ]
+
+off_output=$(run_helper off)
+/usr/bin/printf '%s\n' "$off_output" | /usr/bin/grep -Fq 'Kill Switch 已关闭'
+[ ! -e "$PERSIST_MARKER" ]
+[ ! -e "$TEST_ROOT/var/run/cloudcheck-killswitch.pf-token" ]
+disabled_restore_output=$(run_persisted_helper restore)
+/usr/bin/printf '%s\n' "$disabled_restore_output" | /usr/bin/grep -Fq '保持关闭'
+[ ! -e "$TEST_ROOT/var/run/cloudcheck-killswitch.pf-token" ]
 
 if run_helper install unexpected >/dev/null 2>&1; then
   echo '内置安装不得接收用户配置参数' >&2

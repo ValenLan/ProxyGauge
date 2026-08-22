@@ -22,6 +22,9 @@ if [ -n "$TEST_ROOT" ]; then
   ANCHOR_DIR="$TEST_ROOT/etc/pf.anchors"
   TOKEN_FILE="$TEST_ROOT/var/run/cloudcheck-killswitch.pf-token"
   PF_TEMPLATE="${CLOUDCHECK_KILLSWITCH_TEST_TEMPLATE:-$SCRIPT_DIR/../PF/cloudcheck.conf.template}"
+  PERSIST_HELPER="$TEST_ROOT/Library/PrivilegedHelperTools/com.valenlan.cloudcheck.killswitch"
+  PERSIST_PLIST="$TEST_ROOT/Library/LaunchDaemons/com.valenlan.cloudcheck.killswitch.plist"
+  PERSIST_STATE_DIR="$TEST_ROOT/var/db/cloudcheck"
   TEST_MODE=1
 else
   PFCTL=/sbin/pfctl
@@ -29,8 +32,14 @@ else
   ANCHOR_DIR=/etc/pf.anchors
   TOKEN_FILE=/var/run/cloudcheck-killswitch.pf-token
   PF_TEMPLATE="$SCRIPT_DIR/cloudcheck.conf.template"
+  PERSIST_HELPER=/Library/PrivilegedHelperTools/com.valenlan.cloudcheck.killswitch
+  PERSIST_PLIST=/Library/LaunchDaemons/com.valenlan.cloudcheck.killswitch.plist
+  PERSIST_STATE_DIR=/var/db/cloudcheck
   TEST_MODE=0
 fi
+
+PERSIST_LABEL=com.valenlan.cloudcheck.killswitch
+PERSIST_MARKER="$PERSIST_STATE_DIR/enabled"
 
 ANCHOR=cloudcheck
 ANCHOR_CONF="$ANCHOR_DIR/cloudcheck"
@@ -209,6 +218,84 @@ install_config_file() {
   else
     /usr/bin/install -o root -g wheel -m 644 "$source" "$destination"
   fi
+}
+
+install_private_file() {
+  local source destination mode
+  source="$1"
+  destination="$2"
+  mode="$3"
+  if [ "$TEST_MODE" -eq 1 ]; then
+    /usr/bin/install -m "$mode" "$source" "$destination"
+  else
+    /usr/bin/install -o root -g wheel -m "$mode" "$source" "$destination"
+  fi
+}
+
+install_persistence_infrastructure() {
+  local temp_dir helper_dir plist_dir plist_source
+
+  helper_dir=$(/usr/bin/dirname "$PERSIST_HELPER")
+  plist_dir=$(/usr/bin/dirname "$PERSIST_PLIST")
+  temp_dir=$(/usr/bin/mktemp -d /tmp/cloudcheck-killswitch-persist.XXXXXX) || return 1
+  plist_source="$temp_dir/$PERSIST_LABEL.plist"
+
+  if ! /bin/mkdir -p "$helper_dir" "$plist_dir" "$PERSIST_STATE_DIR"; then
+    /bin/rm -rf "$temp_dir"
+    echo "❌ 无法创建 Kill Switch 持久化目录"
+    return 1
+  fi
+  if [ "$TEST_MODE" -eq 0 ]; then
+    /bin/chmod 700 "$PERSIST_STATE_DIR" || {
+      /bin/rm -rf "$temp_dir"
+      echo "❌ 无法保护 Kill Switch 持久化状态目录"
+      return 1
+    }
+  fi
+
+  /usr/bin/printf '%s\n' \
+    '<?xml version="1.0" encoding="UTF-8"?>' \
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+    '<plist version="1.0">' \
+    '<dict>' \
+    '  <key>Label</key>' \
+    "  <string>$PERSIST_LABEL</string>" \
+    '  <key>ProgramArguments</key>' \
+    '  <array>' \
+    "    <string>$PERSIST_HELPER</string>" \
+    '    <string>restore</string>' \
+    '  </array>' \
+    '  <key>RunAtLoad</key>' \
+    '  <true/>' \
+    '  <key>ProcessType</key>' \
+    '  <string>Background</string>' \
+    '</dict>' \
+    '</plist>' > "$plist_source"
+
+  if ! /usr/bin/plutil -lint "$plist_source" >/dev/null 2>&1 \
+    || ! install_private_file "$0" "$PERSIST_HELPER" 755 \
+    || ! install_private_file "$plist_source" "$PERSIST_PLIST" 644; then
+    /bin/rm -rf "$temp_dir"
+    echo "❌ 无法安装 Kill Switch 开机恢复服务"
+    return 1
+  fi
+
+  /bin/rm -rf "$temp_dir"
+}
+
+persist_enabled_intent() {
+  local marker_source
+  marker_source=$(/usr/bin/mktemp /tmp/cloudcheck-killswitch-enabled.XXXXXX) || return 1
+  /usr/bin/printf '%s\n' enabled > "$marker_source"
+  if ! install_private_file "$marker_source" "$PERSIST_MARKER" 600; then
+    /bin/rm -f "$marker_source"
+    return 1
+  fi
+  /bin/rm -f "$marker_source"
+}
+
+clear_persisted_intent() {
+  /bin/rm -f "$PERSIST_MARKER"
 }
 
 install_rules() {
@@ -465,7 +552,15 @@ case "$ACTION" in
     ;;
 
   on)
-    enable_rules
+    install_persistence_infrastructure || exit 1
+    enable_rules || exit 1
+    if ! persist_enabled_intent; then
+      "$PFCTL" -a "$ANCHOR" -F rules >/dev/null 2>&1 || true
+      release_owned_reference
+      echo "❌ 无法保存 Kill Switch 开机恢复状态，已回滚本次开启"
+      exit 1
+    fi
+    echo "✅ 已保存开机恢复状态，重启后将自动重新加载保护"
     ;;
 
   off)
@@ -474,8 +569,28 @@ case "$ACTION" in
       exit 1
     fi
     release_owned_reference
+    if ! clear_persisted_intent; then
+      echo "❌ Kill Switch 已在当前启动周期关闭，但无法清除开机恢复状态"
+      exit 1
+    fi
     echo "🔓 Kill Switch 已关闭 — 仅已清空 $ANCHOR anchor，未全局关闭 PF"
     echo "⚠️ 现在真实 IP 无 Kill Switch 保护，代理恢复后请重新开启"
+    ;;
+
+  restore)
+    if [ "$#" -ne 1 ]; then
+      echo "用法: cloudcheck-killswitch restore"
+      exit 2
+    fi
+    if [ "$TEST_MODE" -eq 0 ] && [ "$0" != "$PERSIST_HELPER" ]; then
+      echo "❌ 拒绝从非持久化 helper 调用开机恢复"
+      exit 1
+    fi
+    if [ ! -r "$PERSIST_MARKER" ]; then
+      echo "Kill Switch 未设置为开机恢复，保持关闭"
+      exit 0
+    fi
+    enable_rules
     ;;
 
   status)

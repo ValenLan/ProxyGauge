@@ -42,7 +42,8 @@ if [ -z "${CLOUDCHECK_KILL_TOKEN:-}" ] && [ ! -e "$KILL_TOKEN" ]; then
   for legacy_token in \
     /var/run/cloudlink-guard-killswitch.pf-token \
     /var/run/cloudroute-killswitch.pf-token \
-    /var/run/puffroute-killswitch.pf-token; do
+    /var/run/puffroute-killswitch.pf-token \
+    /var/run/proxy-tools-killswitch.pf-token; do
     if [ -e "$legacy_token" ]; then
       KILL_TOKEN="$legacy_token"
       break
@@ -316,11 +317,18 @@ kill_switch_snapshot() {
   if [ -r "$result_file" ]; then
     action_status=$(/usr/bin/sed -n 's/^__STATUS__=//p' "$result_file" | /usr/bin/tail -1)
     if [ "$action_status" = "0" ]; then
-      if /usr/bin/grep -qE 'Kill Switch([:：][[:space:]]*|[[:space:]]+)(Enabled|已开启)([[:space:]]|$)' "$result_file"; then
+      # /var/run is boot-scoped. Requiring the current boot's PF reference
+      # prevents a successful result cached before reboot from claiming that
+      # protection is still active after the runtime anchor was cleared.
+      if [ -e "$KILL_TOKEN" ] && /usr/bin/grep -qE \
+        'Kill Switch([:：][[:space:]]*|[[:space:]]+)(Enabled|已开启)([[:space:]]|$)' \
+        "$result_file"; then
         /usr/bin/printf '已开启\tok\n'
         return
       fi
-      if /usr/bin/grep -qE 'Kill Switch([:：][[:space:]]*|[[:space:]]+)(Disabled|已关闭)([[:space:]]|$)' "$result_file"; then
+      if [ ! -e "$KILL_TOKEN" ] && /usr/bin/grep -qE \
+        'Kill Switch([:：][[:space:]]*|[[:space:]]+)(Disabled|已关闭)([[:space:]]|$)' \
+        "$result_file"; then
         /usr/bin/printf '已关闭\twarning\n'
         return
       fi

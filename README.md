@@ -174,6 +174,14 @@ CLOUDCHECK_ACTIVE_AI_PROBES="0"  # 默认关闭：不主动请求任何 AI 平�
 如果发现兼容的旧规则仍在、但 `/etc/pf.conf` 中的入口被清理，CloudCheck 只恢复入口并原样
 加载旧 anchor，不覆盖旧规则。应用启动和普通状态刷新不会请求管理员权限，也不会修改 PF。
 
+用户开启 Kill Switch 后，helper 会把一份 root-owned 恢复程序安装到
+`/Library/PrivilegedHelperTools/com.valenlan.cloudcheck.killswitch`，并注册
+`/Library/LaunchDaemons/com.valenlan.cloudcheck.killswitch.plist`。开启意图以 root-only 标记
+保存在 `/var/db/cloudcheck/enabled`；重启时 LaunchDaemon 重新加载已有 anchor 并取得新的 PF
+enable reference。用户主动关闭时会同时清除该标记，因此关闭状态也会跨重启保持。界面缓存
+只有在当前启动周期的 `/var/run/*killswitch.pf-token` 仍存在时才能显示“已开启”，不会沿用
+重启前的绿色状态。
+
 PF 会影响整台 Mac 的联网行为，因此自动安装只允许 root 身份运行的代理核心经物理接口联网；
 普通应用必须走本机代理或 TUN。命令行用户也可以运行同一套无参数安装流程：
 
@@ -274,7 +282,8 @@ Firewall/WFP 策略，误配置可能让整台电脑断网；当前分享版刻�
   出口 IP 和浏览器指纹，因此“隔离”不等于对网站匿名。该功能不会改变系统代理，也不会
   影响普通 Chrome 窗口和其他应用的流量。
 - CloudCheck 不上传配置，不收集遥测，也不保存浏览记录。
-- macOS 管理员权限仅用于读取或修改 CloudCheck 自己的 PF anchor。
+- macOS 管理员权限仅用于读取或修改 CloudCheck 自己的 PF anchor，以及安装和维护上述
+  root-owned 开机恢复 helper、LaunchDaemon 与启用标记。
 - Windows 版不请求管理员权限，也不修改 Windows Firewall。
 - 发布前请不要提交 `~/.config/cloudcheck/config`。
 
