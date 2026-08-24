@@ -5,17 +5,17 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>zh_CN</string>
     <key>CFBundleDisplayName</key>
-    <string>CloudCheck</string>
+    <string>ProxyGauge</string>
     <key>CFBundleExecutable</key>
-    <string>CloudCheck</string>
+    <string>ProxyGauge</string>
     <key>CFBundleIconFile</key>
-    <string>CloudCheck.icns</string>
+    <string>ProxyGauge.icns</string>
     <key>CFBundleIdentifier</key>
-    <string>com.valenlan.cloudcheck</string>
+    <string>com.valenlan.proxygauge</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>CloudCheck</string>
+    <string>ProxyGauge</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>

@@ -2,9 +2,9 @@ using System.Diagnostics;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using Microsoft.Win32;
-using CloudCheck.Models;
+using ProxyGauge.Models;
 
-namespace CloudCheck.Services;
+namespace ProxyGauge.Services;
 
 public sealed class ProxyProbeService
 {
@@ -148,6 +148,11 @@ public sealed class ProxyProbeService
         int timeoutSeconds,
         CancellationToken cancellationToken = default)
     {
+        if (!LocalEndpointPolicy.IsLoopbackHost(host) || port is < 1 or > 65535)
+        {
+            return false;
+        }
+
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

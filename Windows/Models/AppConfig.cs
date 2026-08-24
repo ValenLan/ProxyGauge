@@ -1,4 +1,4 @@
-namespace CloudCheck.Models;
+namespace ProxyGauge.Models;
 
 public sealed class AppConfig
 {
@@ -6,12 +6,29 @@ public sealed class AppConfig
     public int MixedPort { get; set; } = 7890;
     public string ExpectedIp { get; set; } = string.Empty;
     public int TimeoutSeconds { get; set; } = 6;
+    public bool SecondaryEnabled { get; set; }
+    public string SecondaryLabel { get; set; } = "Google / Gemini";
+    public string SecondaryGroup { get; set; } = "Google-Chain";
+    public string DefaultGroup { get; set; } = "PROXY";
+    public string SecondaryMixedHost { get; set; } = "127.0.0.1";
+    public int SecondaryMixedPort { get; set; } = 7891;
+    public string SecondaryDomains { get; set; } =
+        "gemini.google.com,generativelanguage.googleapis.com,www.google.com";
+    public string ExpectedSecondaryIp { get; set; } = string.Empty;
 
     public AppConfig Clone() => new()
     {
         MixedHost = MixedHost,
         MixedPort = MixedPort,
         ExpectedIp = ExpectedIp,
-        TimeoutSeconds = TimeoutSeconds
+        TimeoutSeconds = TimeoutSeconds,
+        SecondaryEnabled = SecondaryEnabled,
+        SecondaryLabel = SecondaryLabel,
+        SecondaryGroup = SecondaryGroup,
+        DefaultGroup = DefaultGroup,
+        SecondaryMixedHost = SecondaryMixedHost,
+        SecondaryMixedPort = SecondaryMixedPort,
+        SecondaryDomains = SecondaryDomains,
+        ExpectedSecondaryIp = ExpectedSecondaryIp
     };
 }

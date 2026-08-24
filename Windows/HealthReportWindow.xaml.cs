@@ -3,10 +3,10 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using CloudCheck.Models;
-using CloudCheck.ViewModels;
+using ProxyGauge.Models;
+using ProxyGauge.ViewModels;
 
-namespace CloudCheck;
+namespace ProxyGauge;
 
 public partial class HealthReportWindow : Window
 {
@@ -28,7 +28,7 @@ public partial class HealthReportWindow : Window
         : Report.WarningCount > 0
             ? "网络可用；请按提示复查实际链路或配置。"
             : "本地代理、出口与自动风险检查通过。";
-    public string CheckedAtText => $"检查时间 {Report.CheckedAt:yyyy-MM-dd HH:mm:ss}";
+    public string CheckedAtText => $"{Report.PlanName} · {Report.CheckedAt:yyyy-MM-dd HH:mm:ss}";
     public string PassedText => $"{Report.PassedCount} 通过";
     public string WarningText => $"{Report.WarningCount} 提示";
     public string FailedText => $"{Report.FailedCount} 失败";

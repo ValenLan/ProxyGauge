@@ -1,4 +1,4 @@
-namespace CloudCheck.Models;
+namespace ProxyGauge.Models;
 
 public enum HealthLevel
 {

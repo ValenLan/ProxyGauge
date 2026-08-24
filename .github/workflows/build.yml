@@ -14,7 +14,7 @@ jobs:
       version: ${{ steps.package.outputs.version }}
     steps:
       - uses: actions/checkout@v6
-      - name: Build CloudCheck
+      - name: Build ProxyGauge
         run: |
           chmod +x Scripts/*.sh
           Scripts/test-backend.sh
@@ -25,14 +25,15 @@ jobs:
           Scripts/test-private-browser.sh
           Scripts/test-ui-semantics.sh
           Scripts/test-branding.sh
+          Scripts/test-windows-parity.sh
           Scripts/build.sh
       - name: Verify bundle
-        run: codesign --verify --deep --strict --verbose=2 "build/CloudCheck.app"
+        run: codesign --verify --deep --strict --verbose=2 "build/ProxyGauge.app"
       - name: Package macOS app
         id: package
         run: |
           VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)
-          ARCHIVE="dist/CloudCheck-$VERSION-macOS-arm64.zip"
+          ARCHIVE="dist/ProxyGauge-$VERSION-macOS-arm64.zip"
           Scripts/package-macos.sh "$ARCHIVE"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "archive=$ARCHIVE" >> "$GITHUB_OUTPUT"
@@ -53,10 +54,13 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 8.0.x
-      - name: Publish CloudCheck for Windows
+      - name: Run Windows logic tests
+        if: ${{ matrix.runtime == 'win-x64' }}
+        run: dotnet run --project Windows.Tests/ProxyGauge.Windows.Tests.csproj --configuration Release
+      - name: Publish ProxyGauge for Windows
         shell: pwsh
         run: |
-          dotnet publish Windows/CloudCheck.Windows.csproj `
+          dotnet publish Windows/ProxyGauge.Windows.csproj `
             --configuration Release `
             --runtime ${{ matrix.runtime }} `
             --self-contained true `
@@ -67,9 +71,9 @@ jobs:
             -p:DebugType=None `
             -p:DebugSymbols=false
           Copy-Item Windows/README.md "publish/${{ matrix.runtime }}/README-Windows.md"
-          $Project = [xml](Get-Content Windows/CloudCheck.Windows.csproj -Raw)
+          $Project = [xml](Get-Content Windows/ProxyGauge.Windows.csproj -Raw)
           $Version = $Project.Project.PropertyGroup.Version
-          $Archive = "CloudCheck-$Version-${{ matrix.runtime }}.zip"
+          $Archive = "ProxyGauge-$Version-${{ matrix.runtime }}.zip"
           Compress-Archive `
             -Path "publish/${{ matrix.runtime }}/*" `
             -DestinationPath $Archive
@@ -100,27 +104,27 @@ jobs:
       - name: Download release packages
         uses: actions/download-artifact@v8
         with:
-          pattern: CloudCheck-*.zip
+          pattern: ProxyGauge-*.zip
           path: release-assets
           merge-multiple: true
           skip-decompress: true
       - name: Generate checksums
         run: |
           shopt -s nullglob
-          ASSETS=(release-assets/CloudCheck-*.zip)
+          ASSETS=(release-assets/ProxyGauge-*.zip)
           if [ "${#ASSETS[@]}" -ne 3 ]; then
             echo "Expected 3 release packages, found ${#ASSETS[@]}." >&2
             exit 1
           fi
           cd release-assets
-          sha256sum CloudCheck-*.zip > SHA256SUMS.txt
+          sha256sum ProxyGauge-*.zip > SHA256SUMS.txt
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" \
-            release-assets/CloudCheck-*.zip \
+            release-assets/ProxyGauge-*.zip \
             release-assets/SHA256SUMS.txt \
             --verify-tag \
             --generate-notes \
-            --title "CloudCheck $GITHUB_REF_NAME"
+            --title "ProxyGauge $GITHUB_REF_NAME"

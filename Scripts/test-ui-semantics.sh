@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR=$(/usr/bin/dirname "$0")
 PROJECT_ROOT=$(cd "$SCRIPT_DIR/.." && /bin/pwd)
-APP_SOURCE="$PROJECT_ROOT/Sources/CloudCheckApp.swift"
+APP_SOURCE="$PROJECT_ROOT/Sources/ProxyGaugeApp.swift"
 WINDOWS_RESOURCES="$PROJECT_ROOT/Windows/App.xaml"
 WINDOWS_MAIN="$PROJECT_ROOT/Windows/MainWindow.xaml"
 
@@ -19,7 +19,9 @@ WINDOWS_MAIN="$PROJECT_ROOT/Windows/MainWindow.xaml"
 /usr/bin/grep -Fq 'static let minimumContentHeight: CGFloat = 448' "$APP_SOURCE"
 /usr/bin/grep -Fq 'static let defaultWidth: CGFloat = 680' "$APP_SOURCE"
 /usr/bin/grep -Fq 'static let defaultHeight: CGFloat = 500' "$APP_SOURCE"
-/usr/bin/grep -Fq 'Window("CloudCheck", id: "main")' "$APP_SOURCE"
+/usr/bin/grep -Fq 'Window("ProxyGauge", id: "main")' "$APP_SOURCE"
+/usr/bin/grep -Fq '.appendingPathComponent("com.valenlan.cloudcheck.lock")' "$APP_SOURCE"
+/usr/bin/grep -Fq 'UserDefaults(suiteName: "com.valenlan.cloudcheck")' "$APP_SOURCE"
 /usr/bin/grep -Fq 'UserDefaults(suiteName: "com.valenlan.cloudlinkguard")' "$APP_SOURCE"
 /usr/bin/grep -Fq 'UserDefaults(suiteName: "com.valenlan.cloudroute")' "$APP_SOURCE"
 /usr/bin/grep -Fq 'UserDefaults(suiteName: "com.valenlan.puffroute")' "$APP_SOURCE"
@@ -120,4 +122,4 @@ fi
 /usr/bin/grep -Fq 'x:Key="RulesBrush"' "$WINDOWS_RESOURCES"
 /usr/bin/grep -Fq 'Foreground="{StaticResource RulesBrush}"' "$WINDOWS_MAIN"
 
-echo "CloudCheck UI color semantics tests passed."
+echo "ProxyGauge UI color semantics tests passed."

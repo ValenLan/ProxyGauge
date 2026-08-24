@@ -1,4 +1,4 @@
-<Application x:Class="CloudCheck.App"
+<Application x:Class="ProxyGauge.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <Application.Resources>
@@ -16,6 +16,8 @@
         <Color x:Key="IdleColor">#718096</Color>
         <Color x:Key="RulesColor">#A78BFA</Color>
         <Color x:Key="RulesSurfaceColor">#2B2442</Color>
+        <Color x:Key="AdvancedColor">#5BD8D0</Color>
+        <Color x:Key="AdvancedSurfaceColor">#183C42</Color>
 
         <SolidColorBrush x:Key="CanvasBrush" Color="{StaticResource CanvasColor}" />
         <SolidColorBrush x:Key="SurfaceBrush" Color="{StaticResource SurfaceColor}" />
@@ -31,6 +33,8 @@
         <SolidColorBrush x:Key="IdleBrush" Color="{StaticResource IdleColor}" />
         <SolidColorBrush x:Key="RulesBrush" Color="{StaticResource RulesColor}" />
         <SolidColorBrush x:Key="RulesSurfaceBrush" Color="{StaticResource RulesSurfaceColor}" />
+        <SolidColorBrush x:Key="AdvancedBrush" Color="{StaticResource AdvancedColor}" />
+        <SolidColorBrush x:Key="AdvancedSurfaceBrush" Color="{StaticResource AdvancedSurfaceColor}" />
 
         <Style TargetType="TextBlock">
             <Setter Property="FontFamily" Value="Segoe UI Variable Text, Segoe UI" />

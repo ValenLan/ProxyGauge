@@ -1,9 +1,9 @@
 using Microsoft.Win32;
 using System.Windows;
 using System.Windows.Input;
-using CloudCheck.Services;
+using ProxyGauge.Services;
 
-namespace CloudCheck;
+namespace ProxyGauge;
 
 public partial class RulePackWindow : Window
 {
@@ -34,8 +34,8 @@ public partial class RulePackWindow : Window
     {
         var dialog = new SaveFileDialog
         {
-            Title = "导出 CloudCheck 规则包",
-            FileName = "CloudCheck-Merge.yaml",
+            Title = "导出 ProxyGauge 规则包",
+            FileName = "ProxyGauge-Merge.yaml",
             DefaultExt = ".yaml",
             Filter = "YAML 配置 (*.yaml)|*.yaml|所有文件 (*.*)|*.*"
         };

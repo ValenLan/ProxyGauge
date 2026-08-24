@@ -1,11 +1,11 @@
 using System.IO;
 using System.Reflection;
 
-namespace CloudCheck.Services;
+namespace ProxyGauge.Services;
 
 public sealed class RulePackService
 {
-    private const string ResourceName = "CloudCheck.Rules.CloudCheck-Merge.yaml";
+    private const string ResourceName = "ProxyGauge.Rules.ProxyGauge-Merge.yaml";
 
     public string Version => "2026.08";
 

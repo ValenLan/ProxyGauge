@@ -5,9 +5,9 @@ RESOURCE_DIR=$(/usr/bin/dirname "$0")
 import_legacy_compat() {
   local suffix current legacy_prefix legacy
   for suffix in "$@"; do
-    current="CLOUDCHECK_$suffix"
+    current="PROXYGAUGE_$suffix"
     declare -p "$current" >/dev/null 2>&1 && continue
-    for legacy_prefix in CLOUDLINK_GUARD CLOUDROUTE PUFFROUTE; do
+    for legacy_prefix in CLOUDCHECK CLOUDLINK_GUARD CLOUDROUTE PUFFROUTE; do
       legacy="${legacy_prefix}_$suffix"
       if declare -p "$legacy" >/dev/null 2>&1; then
         printf -v "$current" '%s' "${!legacy}"
@@ -25,21 +25,24 @@ import_legacy_compat \
   DISCOVERY_PORT_ACTIVE DISCOVERY_SYSTEM_PROXY DISCOVERY_SOCKET \
   DISCOVERY_SOCKET_JSON DISCOVERY_CLIENT DISCOVERY_CONFIG PF_CONF
 
-CHECK="$RESOURCE_DIR/cloudcheck-check.sh"
-[ -x "$CHECK" ] || CHECK="$HOME/.local/bin/cloudcheck-check"
-ADMIN_SCRIPT="${CLOUDCHECK_ADMIN_SCRIPT:-$RESOURCE_DIR/cloudcheck-admin.applescript}"
+CHECK="$RESOURCE_DIR/proxygauge-check.sh"
+[ -x "$CHECK" ] || CHECK="$HOME/.local/bin/proxygauge-check"
+ADMIN_SCRIPT="${PROXYGAUGE_ADMIN_SCRIPT:-$RESOURCE_DIR/proxygauge-admin.applescript}"
+[ -r "$ADMIN_SCRIPT" ] || ADMIN_SCRIPT="$HOME/.local/share/proxygauge/proxygauge-admin.applescript"
 [ -r "$ADMIN_SCRIPT" ] || ADMIN_SCRIPT="$HOME/.local/share/cloudcheck/cloudcheck-admin.applescript"
 [ -r "$ADMIN_SCRIPT" ] || ADMIN_SCRIPT="$HOME/.local/share/cloudlink-guard/cloudlink-guard-admin.applescript"
-OSASCRIPT="${CLOUDCHECK_OSASCRIPT:-/usr/bin/osascript}"
-KILL_HELPER="${CLOUDCHECK_KILLSWITCH:-$RESOURCE_DIR/cloudcheck-killswitch}"
+OSASCRIPT="${PROXYGAUGE_OSASCRIPT:-/usr/bin/osascript}"
+KILL_HELPER="${PROXYGAUGE_KILLSWITCH:-$RESOURCE_DIR/proxygauge-killswitch}"
+[ -x "$KILL_HELPER" ] || KILL_HELPER="$HOME/.local/bin/proxygauge-killswitch"
 [ -x "$KILL_HELPER" ] || KILL_HELPER="$HOME/.local/bin/cloudcheck-killswitch"
 [ -x "$KILL_HELPER" ] || KILL_HELPER="$HOME/.local/bin/cloudlink-guard-killswitch"
 CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
-ADMIN_RESULT="${CLOUDCHECK_ADMIN_RESULT:-$CACHE_HOME/cloudcheck/admin-result}"
-KILL_TOKEN="${CLOUDCHECK_KILL_TOKEN:-/var/run/cloudcheck-killswitch.pf-token}"
-PF_CONF="${CLOUDCHECK_PF_CONF:-/etc/pf.conf}"
-if [ -z "${CLOUDCHECK_KILL_TOKEN:-}" ] && [ ! -e "$KILL_TOKEN" ]; then
+ADMIN_RESULT="${PROXYGAUGE_ADMIN_RESULT:-$CACHE_HOME/proxygauge/admin-result}"
+KILL_TOKEN="${PROXYGAUGE_KILL_TOKEN:-/var/run/proxygauge-killswitch.pf-token}"
+PF_CONF="${PROXYGAUGE_PF_CONF:-/etc/pf.conf}"
+if [ -z "${PROXYGAUGE_KILL_TOKEN:-}" ] && [ ! -e "$KILL_TOKEN" ]; then
   for legacy_token in \
+    /var/run/cloudcheck-killswitch.pf-token \
     /var/run/cloudlink-guard-killswitch.pf-token \
     /var/run/cloudroute-killswitch.pf-token \
     /var/run/puffroute-killswitch.pf-token \
@@ -50,20 +53,23 @@ if [ -z "${CLOUDCHECK_KILL_TOKEN:-}" ] && [ ! -e "$KILL_TOKEN" ]; then
     fi
   done
 fi
-DEFAULT_CONFIG="$HOME/.config/cloudcheck/config"
+DEFAULT_CONFIG="$HOME/.config/proxygauge/config"
+CLOUDCHECK_CONFIG_PATH="$HOME/.config/cloudcheck/config"
 CLOUDLINK_GUARD_CONFIG_PATH="$HOME/.config/cloudlink-guard/config"
 CLOUDROUTE_CONFIG_PATH="$HOME/.config/cloudroute/config"
 PUFFROUTE_CONFIG_PATH="$HOME/.config/puffroute/config"
-CONFIG_FILE="${CLOUDCHECK_CONFIG:-$DEFAULT_CONFIG}"
-ENV_CLOUDCHECK_MIXED="${CLOUDCHECK_MIXED:-}"
-ENV_SECONDARY_ENABLED="${CLOUDCHECK_SECONDARY_ENABLED:-}"
-ENV_SECONDARY_LABEL="${CLOUDCHECK_SECONDARY_LABEL:-}"
-ENV_SECONDARY_GROUP="${CLOUDCHECK_SECONDARY_GROUP:-}"
-ENV_DEFAULT_GROUP="${CLOUDCHECK_DEFAULT_GROUP:-}"
-ENV_SECONDARY_MIXED="${CLOUDCHECK_SECONDARY_MIXED:-}"
-ENV_SECONDARY_DOMAINS="${CLOUDCHECK_SECONDARY_DOMAINS:-}"
-if [ -z "${CLOUDCHECK_CONFIG:-}" ] && [ ! -r "$CONFIG_FILE" ]; then
-  if [ -r "$CLOUDLINK_GUARD_CONFIG_PATH" ]; then
+CONFIG_FILE="${PROXYGAUGE_CONFIG:-$DEFAULT_CONFIG}"
+ENV_PROXYGAUGE_MIXED="${PROXYGAUGE_MIXED:-}"
+ENV_SECONDARY_ENABLED="${PROXYGAUGE_SECONDARY_ENABLED:-}"
+ENV_SECONDARY_LABEL="${PROXYGAUGE_SECONDARY_LABEL:-}"
+ENV_SECONDARY_GROUP="${PROXYGAUGE_SECONDARY_GROUP:-}"
+ENV_DEFAULT_GROUP="${PROXYGAUGE_DEFAULT_GROUP:-}"
+ENV_SECONDARY_MIXED="${PROXYGAUGE_SECONDARY_MIXED:-}"
+ENV_SECONDARY_DOMAINS="${PROXYGAUGE_SECONDARY_DOMAINS:-}"
+if [ -z "${PROXYGAUGE_CONFIG:-}" ] && [ ! -r "$CONFIG_FILE" ]; then
+  if [ -r "$CLOUDCHECK_CONFIG_PATH" ]; then
+    CONFIG_FILE="$CLOUDCHECK_CONFIG_PATH"
+  elif [ -r "$CLOUDLINK_GUARD_CONFIG_PATH" ]; then
     CONFIG_FILE="$CLOUDLINK_GUARD_CONFIG_PATH"
   elif [ -r "$CLOUDROUTE_CONFIG_PATH" ]; then
     CONFIG_FILE="$CLOUDROUTE_CONFIG_PATH"
@@ -75,25 +81,25 @@ fi
 import_legacy_compat \
   MIXED SECONDARY_ENABLED SECONDARY_LABEL SECONDARY_GROUP DEFAULT_GROUP \
   SECONDARY_MIXED SECONDARY_DOMAINS
-if [ -n "$ENV_CLOUDCHECK_MIXED" ]; then
-  CLOUDCHECK_MIXED="$ENV_CLOUDCHECK_MIXED"
+if [ -n "$ENV_PROXYGAUGE_MIXED" ]; then
+  PROXYGAUGE_MIXED="$ENV_PROXYGAUGE_MIXED"
 fi
-if [ -n "$ENV_SECONDARY_ENABLED" ]; then CLOUDCHECK_SECONDARY_ENABLED="$ENV_SECONDARY_ENABLED"; fi
-if [ -n "$ENV_SECONDARY_LABEL" ]; then CLOUDCHECK_SECONDARY_LABEL="$ENV_SECONDARY_LABEL"; fi
-if [ -n "$ENV_SECONDARY_GROUP" ]; then CLOUDCHECK_SECONDARY_GROUP="$ENV_SECONDARY_GROUP"; fi
-if [ -n "$ENV_DEFAULT_GROUP" ]; then CLOUDCHECK_DEFAULT_GROUP="$ENV_DEFAULT_GROUP"; fi
-if [ -n "$ENV_SECONDARY_MIXED" ]; then CLOUDCHECK_SECONDARY_MIXED="$ENV_SECONDARY_MIXED"; fi
-if [ -n "$ENV_SECONDARY_DOMAINS" ]; then CLOUDCHECK_SECONDARY_DOMAINS="$ENV_SECONDARY_DOMAINS"; fi
-CONFIGURED_MIXED="${CLOUDCHECK_MIXED:-}"
-MIXED="${CLOUDCHECK_MIXED:-127.0.0.1:7890}"
+if [ -n "$ENV_SECONDARY_ENABLED" ]; then PROXYGAUGE_SECONDARY_ENABLED="$ENV_SECONDARY_ENABLED"; fi
+if [ -n "$ENV_SECONDARY_LABEL" ]; then PROXYGAUGE_SECONDARY_LABEL="$ENV_SECONDARY_LABEL"; fi
+if [ -n "$ENV_SECONDARY_GROUP" ]; then PROXYGAUGE_SECONDARY_GROUP="$ENV_SECONDARY_GROUP"; fi
+if [ -n "$ENV_DEFAULT_GROUP" ]; then PROXYGAUGE_DEFAULT_GROUP="$ENV_DEFAULT_GROUP"; fi
+if [ -n "$ENV_SECONDARY_MIXED" ]; then PROXYGAUGE_SECONDARY_MIXED="$ENV_SECONDARY_MIXED"; fi
+if [ -n "$ENV_SECONDARY_DOMAINS" ]; then PROXYGAUGE_SECONDARY_DOMAINS="$ENV_SECONDARY_DOMAINS"; fi
+CONFIGURED_MIXED="${PROXYGAUGE_MIXED:-}"
+MIXED="${PROXYGAUGE_MIXED:-127.0.0.1:7890}"
 MIXED_HOST="${MIXED%:*}"
 MIXED_PORT="${MIXED##*:}"
-export CLOUDCHECK_MIXED="$MIXED"
-export CLOUDCHECK_SECONDARY_ENABLED CLOUDCHECK_SECONDARY_LABEL CLOUDCHECK_SECONDARY_GROUP
-export CLOUDCHECK_DEFAULT_GROUP CLOUDCHECK_SECONDARY_MIXED CLOUDCHECK_SECONDARY_DOMAINS
+export PROXYGAUGE_MIXED="$MIXED"
+export PROXYGAUGE_SECONDARY_ENABLED PROXYGAUGE_SECONDARY_LABEL PROXYGAUGE_SECONDARY_GROUP
+export PROXYGAUGE_DEFAULT_GROUP PROXYGAUGE_SECONDARY_MIXED PROXYGAUGE_SECONDARY_DOMAINS
 
 has_tun_route() {
-  case "${CLOUDCHECK_TUN_ACTIVE:-}" in
+  case "${PROXYGAUGE_TUN_ACTIVE:-}" in
     1|true|yes) return 0 ;;
     0|false|no) return 1 ;;
   esac
@@ -104,7 +110,7 @@ has_tun_route() {
 }
 
 system_proxy_active() {
-  case "${CLOUDCHECK_SYSTEM_PROXY_ACTIVE:-}" in
+  case "${PROXYGAUGE_SYSTEM_PROXY_ACTIVE:-}" in
     1|true|yes) return 0 ;;
     0|false|no) return 1 ;;
   esac
@@ -115,7 +121,7 @@ discovery_port_open() {
   local host port
   host="$1"
   port="$2"
-  case "${CLOUDCHECK_DISCOVERY_PORT_ACTIVE:-}" in
+  case "${PROXYGAUGE_DISCOVERY_PORT_ACTIVE:-}" in
     1|true|yes) return 0 ;;
     0|false|no) return 1 ;;
   esac
@@ -138,8 +144,8 @@ valid_local_endpoint() {
 }
 
 system_proxy_endpoint() {
-  if [ -n "${CLOUDCHECK_DISCOVERY_SYSTEM_PROXY:-}" ]; then
-    /usr/bin/printf '%s\n' "$CLOUDCHECK_DISCOVERY_SYSTEM_PROXY"
+  if [ -n "${PROXYGAUGE_DISCOVERY_SYSTEM_PROXY:-}" ]; then
+    /usr/bin/printf '%s\n' "$PROXYGAUGE_DISCOVERY_SYSTEM_PROXY"
     return
   fi
 
@@ -173,11 +179,11 @@ yaml_mixed_port() {
 
 runtime_mixed_port() {
   local socket_path json port
-  socket_path="${CLOUDCHECK_DISCOVERY_SOCKET:-/private/tmp/verge/verge-mihomo.sock}"
+  socket_path="${PROXYGAUGE_DISCOVERY_SOCKET:-/private/tmp/verge/verge-mihomo.sock}"
 
-  if [ -n "${CLOUDCHECK_DISCOVERY_SOCKET_JSON:-}" ]; then
-    [ -r "$CLOUDCHECK_DISCOVERY_SOCKET_JSON" ] || return 1
-    json=$(/bin/cat "$CLOUDCHECK_DISCOVERY_SOCKET_JSON")
+  if [ -n "${PROXYGAUGE_DISCOVERY_SOCKET_JSON:-}" ]; then
+    [ -r "$PROXYGAUGE_DISCOVERY_SOCKET_JSON" ] || return 1
+    json=$(/bin/cat "$PROXYGAUGE_DISCOVERY_SOCKET_JSON")
   else
     [ -S "$socket_path" ] || return 1
     json=$(/usr/bin/curl -fsS --max-time 2 --unix-socket "$socket_path" \
@@ -204,8 +210,8 @@ discover() {
   system_active=""
   tun_active=""
 
-  if [ -n "${CLOUDCHECK_DISCOVERY_CLIENT:-}" ]; then
-    client="$CLOUDCHECK_DISCOVERY_CLIENT"
+  if [ -n "${PROXYGAUGE_DISCOVERY_CLIENT:-}" ]; then
+    client="$PROXYGAUGE_DISCOVERY_CLIENT"
   elif /usr/bin/pgrep -x verge-mihomo >/dev/null 2>&1; then
     client="Clash Verge Rev"
   elif /usr/bin/pgrep -x mihomo >/dev/null 2>&1; then
@@ -243,7 +249,7 @@ discover() {
     fi
   fi
 
-  config_path="${CLOUDCHECK_DISCOVERY_CONFIG:-$HOME/Library/Application Support/io.github.clash-verge-rev.clash-verge-rev/clash-verge.yaml}"
+  config_path="${PROXYGAUGE_DISCOVERY_CONFIG:-$HOME/Library/Application Support/io.github.clash-verge-rev.clash-verge-rev/clash-verge.yaml}"
   if [ -z "$endpoint" ]; then
     port=$(yaml_mixed_port "$config_path" 2>/dev/null || true)
     if [ -n "$port" ]; then
@@ -256,7 +262,7 @@ discover() {
   if [ -z "$endpoint" ] && [ -n "$CONFIGURED_MIXED" ] \
     && valid_local_endpoint "$CONFIGURED_MIXED"; then
     endpoint="$CONFIGURED_MIXED"
-    source="CloudCheck 设置"
+    source="ProxyGauge 设置"
   fi
 
   if [ -z "$endpoint" ]; then
@@ -294,15 +300,17 @@ kill_switch_snapshot() {
   local action_status result_file legacy_result
 
   if [ ! -r "$PF_CONF" ] || ! /usr/bin/grep -qE \
-    '^[[:space:]]*anchor[[:space:]]+"(cloudcheck|cloudlink-guard|cloudroute|puffroute|killswitch)"' \
+    '^[[:space:]]*anchor[[:space:]]+"(proxygauge|cloudcheck|cloudlink-guard|cloudroute|puffroute|killswitch)"' \
     "$PF_CONF" 2>/dev/null; then
     /usr/bin/printf '未配置\tidle\n'
     return
   fi
 
   result_file="$ADMIN_RESULT"
-  if [ ! -r "$result_file" ] && [ -z "${CLOUDCHECK_ADMIN_RESULT:-}" ]; then
+  if [ ! -r "$result_file" ] && [ -z "${PROXYGAUGE_ADMIN_RESULT:-}" ]; then
     for legacy_result in \
+      "$CACHE_HOME/cloudcheck/admin-result" \
+      /var/run/cloudcheck/admin-result \
       "$CACHE_HOME/cloudlink-guard/admin-result" \
       /var/run/cloudlink-guard/admin-result \
       /var/run/cloudroute/admin-result \

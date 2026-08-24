@@ -4,7 +4,8 @@ set -euo pipefail
 # Launch a separate Chrome instance for browser-based proxy checks. A temporary
 # profile and a per-process proxy keep normal browser activity unchanged.
 
-DEFAULT_CONFIG="$HOME/.config/cloudcheck/config"
+DEFAULT_CONFIG="$HOME/.config/proxygauge/config"
+CLOUDCHECK_CONFIG_PATH="$HOME/.config/cloudcheck/config"
 CLOUDLINK_GUARD_CONFIG_PATH="$HOME/.config/cloudlink-guard/config"
 CLOUDROUTE_CONFIG_PATH="$HOME/.config/cloudroute/config"
 PUFFROUTE_CONFIG_PATH="$HOME/.config/puffroute/config"
@@ -12,9 +13,9 @@ PUFFROUTE_CONFIG_PATH="$HOME/.config/puffroute/config"
 import_legacy_compat() {
   local suffix current legacy_prefix legacy
   for suffix in "$@"; do
-    current="CLOUDCHECK_$suffix"
+    current="PROXYGAUGE_$suffix"
     declare -p "$current" >/dev/null 2>&1 && continue
-    for legacy_prefix in CLOUDLINK_GUARD CLOUDROUTE PUFFROUTE; do
+    for legacy_prefix in CLOUDCHECK CLOUDLINK_GUARD CLOUDROUTE PUFFROUTE; do
       legacy="${legacy_prefix}_$suffix"
       if declare -p "$legacy" >/dev/null 2>&1; then
         printf -v "$current" '%s' "${!legacy}"
@@ -29,12 +30,14 @@ import_legacy_compat \
   CONFIG MIXED SECONDARY_MIXED SECONDARY_LABEL GOOGLE_MIXED CHROME \
   PRIVATE_BROWSER_DRY_RUN
 
-CONFIG_FILE="${CLOUDCHECK_CONFIG:-$DEFAULT_CONFIG}"
-ENV_CLOUDCHECK_MIXED="${CLOUDCHECK_MIXED:-}"
-ENV_SECONDARY_MIXED="${CLOUDCHECK_SECONDARY_MIXED:-}"
-ENV_SECONDARY_LABEL="${CLOUDCHECK_SECONDARY_LABEL:-}"
-if [ -z "${CLOUDCHECK_CONFIG:-}" ] && [ ! -r "$CONFIG_FILE" ]; then
-  if [ -r "$CLOUDLINK_GUARD_CONFIG_PATH" ]; then
+CONFIG_FILE="${PROXYGAUGE_CONFIG:-$DEFAULT_CONFIG}"
+ENV_PROXYGAUGE_MIXED="${PROXYGAUGE_MIXED:-}"
+ENV_SECONDARY_MIXED="${PROXYGAUGE_SECONDARY_MIXED:-}"
+ENV_SECONDARY_LABEL="${PROXYGAUGE_SECONDARY_LABEL:-}"
+if [ -z "${PROXYGAUGE_CONFIG:-}" ] && [ ! -r "$CONFIG_FILE" ]; then
+  if [ -r "$CLOUDCHECK_CONFIG_PATH" ]; then
+    CONFIG_FILE="$CLOUDCHECK_CONFIG_PATH"
+  elif [ -r "$CLOUDLINK_GUARD_CONFIG_PATH" ]; then
     CONFIG_FILE="$CLOUDLINK_GUARD_CONFIG_PATH"
   elif [ -r "$CLOUDROUTE_CONFIG_PATH" ]; then
     CONFIG_FILE="$CLOUDROUTE_CONFIG_PATH"
@@ -46,19 +49,19 @@ fi
 import_legacy_compat \
   MIXED SECONDARY_MIXED SECONDARY_LABEL GOOGLE_MIXED CHROME \
   PRIVATE_BROWSER_DRY_RUN
-if [ -n "$ENV_CLOUDCHECK_MIXED" ]; then
-  CLOUDCHECK_MIXED="$ENV_CLOUDCHECK_MIXED"
+if [ -n "$ENV_PROXYGAUGE_MIXED" ]; then
+  PROXYGAUGE_MIXED="$ENV_PROXYGAUGE_MIXED"
 fi
-if [ -n "$ENV_SECONDARY_MIXED" ]; then CLOUDCHECK_SECONDARY_MIXED="$ENV_SECONDARY_MIXED"; fi
-if [ -n "$ENV_SECONDARY_LABEL" ]; then CLOUDCHECK_SECONDARY_LABEL="$ENV_SECONDARY_LABEL"; fi
+if [ -n "$ENV_SECONDARY_MIXED" ]; then PROXYGAUGE_SECONDARY_MIXED="$ENV_SECONDARY_MIXED"; fi
+if [ -n "$ENV_SECONDARY_LABEL" ]; then PROXYGAUGE_SECONDARY_LABEL="$ENV_SECONDARY_LABEL"; fi
 
 ROUTE="${1:-}"
 EXIT_IP="${2:-}"
-DEFAULT_MIXED="${CLOUDCHECK_MIXED:-127.0.0.1:7890}"
-GOOGLE_MIXED="${CLOUDCHECK_SECONDARY_MIXED:-${CLOUDCHECK_GOOGLE_MIXED:-127.0.0.1:7891}}"
-SECONDARY_LABEL="${CLOUDCHECK_SECONDARY_LABEL:-Google / Gemini}"
-CHROME="${CLOUDCHECK_CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
-DRY_RUN="${CLOUDCHECK_PRIVATE_BROWSER_DRY_RUN:-}"
+DEFAULT_MIXED="${PROXYGAUGE_MIXED:-127.0.0.1:7890}"
+GOOGLE_MIXED="${PROXYGAUGE_SECONDARY_MIXED:-${PROXYGAUGE_GOOGLE_MIXED:-127.0.0.1:7891}}"
+SECONDARY_LABEL="${PROXYGAUGE_SECONDARY_LABEL:-Google / Gemini}"
+CHROME="${PROXYGAUGE_CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
+DRY_RUN="${PROXYGAUGE_PRIVATE_BROWSER_DRY_RUN:-}"
 
 case "$ROUTE" in
   default)
@@ -81,7 +84,7 @@ if ! printf '%s' "$PROXY" | /usr/bin/grep -qE '^127\.0\.0\.1:[0-9]{2,5}$'; then
 fi
 
 if [ ! -x "$CHROME" ]; then
-  echo "未找到 Google Chrome；请先安装 Chrome，或设置 CLOUDCHECK_CHROME。" >&2
+  echo "未找到 Google Chrome；请先安装 Chrome，或设置 PROXYGAUGE_CHROME。" >&2
   exit 1
 fi
 
@@ -114,10 +117,10 @@ if [ "$DRY_RUN" = "1" ]; then
   exit 0
 fi
 
-PROFILE_DIR=$(/usr/bin/mktemp -d -t cloudcheck-browser)
+PROFILE_DIR=$(/usr/bin/mktemp -d -t proxygauge-browser)
 cleanup() {
   case "$PROFILE_DIR" in
-    /private/var/folders/*/T/cloudcheck-browser.*|/var/folders/*/T/cloudcheck-browser.*|/private/tmp/cloudcheck-browser.*)
+    /private/var/folders/*/T/proxygauge-browser.*|/var/folders/*/T/proxygauge-browser.*|/private/tmp/proxygauge-browser.*)
       /bin/rm -rf -- "$PROFILE_DIR"
       ;;
   esac

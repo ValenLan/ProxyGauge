@@ -5,18 +5,18 @@
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>CloudCheck</AssemblyName>
-    <RootNamespace>CloudCheck</RootNamespace>
-    <ApplicationIcon>Assets\CloudCheck.ico</ApplicationIcon>
+    <AssemblyName>ProxyGauge</AssemblyName>
+    <RootNamespace>ProxyGauge</RootNamespace>
+    <ApplicationIcon>Assets\ProxyGauge.ico</ApplicationIcon>
     <Version>1.5.4</Version>
     <AssemblyVersion>1.5.4.0</AssemblyVersion>
     <FileVersion>1.5.4.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
-    <Resource Include="Assets\CloudCheck.ico" />
-    <EmbeddedResource Include="..\Rules\CloudCheck-Merge.yaml"
-                      Link="Rules\CloudCheck-Merge.yaml"
-                      LogicalName="CloudCheck.Rules.CloudCheck-Merge.yaml" />
+    <Resource Include="Assets\ProxyGauge.ico" />
+    <EmbeddedResource Include="..\Rules\ProxyGauge-Merge.yaml"
+                      Link="Rules\ProxyGauge-Merge.yaml"
+                      LogicalName="ProxyGauge.Rules.ProxyGauge-Merge.yaml" />
   </ItemGroup>
 </Project>

@@ -1,0 +1,79 @@
+<Window x:Class="ProxyGauge.AdvancedDetectionWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="ProxyGauge 高级检测"
+        Width="590"
+        Height="480"
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        Icon="Assets/ProxyGauge.ico">
+    <Border Background="{StaticResource CanvasBrush}"
+            BorderBrush="{StaticResource BorderBrush}"
+            BorderThickness="1"
+            CornerRadius="16">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="44" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <Border Grid.Row="0" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
+                <Grid MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+                    <TextBlock Text="高级检测" FontSize="13" FontWeight="SemiBold" Margin="17,0" VerticalAlignment="Center" />
+                    <Button Style="{StaticResource TitleButtonStyle}" Content="&#xE8BB;" HorizontalAlignment="Right" Margin="0,4,5,4" Click="CloseButton_Click" />
+                </Grid>
+            </Border>
+
+            <Grid Grid.Row="1" Margin="24,20,24,22">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <StackPanel Grid.Row="0">
+                    <TextBlock Text="用隔离浏览器复核" FontFamily="Segoe UI Variable Display, Segoe UI" FontSize="21" FontWeight="SemiBold" />
+                    <TextBlock Text="打开独立 Chrome 或 Edge 资料目录，不复用 Cookie、扩展和日常浏览器设置。" Foreground="{StaticResource MutedTextBrush}" FontSize="12" Margin="0,6,0,0" TextWrapping="Wrap" />
+                </StackPanel>
+
+                <Border Grid.Row="1" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="13" Padding="14" Margin="0,18,0,0">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="默认出口" FontSize="13" FontWeight="SemiBold" />
+                            <TextBlock x:Name="DefaultEndpointText" Foreground="{StaticResource MutedTextBrush}" FontSize="11" Margin="0,4,0,0" />
+                        </StackPanel>
+                        <Button x:Name="DefaultButton" Grid.Column="1" Style="{StaticResource PrimaryButtonStyle}" Content="打开检测" Click="DefaultButton_Click" />
+                    </Grid>
+                </Border>
+
+                <Border x:Name="SecondaryCard" Grid.Row="2" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="13" Padding="14" Margin="0,11,0,0">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock x:Name="SecondaryLabelText" FontSize="13" FontWeight="SemiBold" />
+                            <TextBlock x:Name="SecondaryEndpointText" Foreground="{StaticResource MutedTextBrush}" FontSize="11" Margin="0,4,0,0" />
+                        </StackPanel>
+                        <Button x:Name="SecondaryButton" Grid.Column="1" Style="{StaticResource QuietButtonStyle}" Content="打开检测" Click="SecondaryButton_Click" />
+                    </Grid>
+                </Border>
+
+                <TextBlock x:Name="StatusText" Grid.Row="3" Foreground="{StaticResource MutedTextBrush}" FontSize="11" Margin="2,13,0,0" TextWrapping="Wrap" />
+
+                <Border Grid.Row="4" Background="#121D2B" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="11" Padding="12">
+                    <TextBlock Text="不会修改系统代理。检测网站仍能看到所选出口 IP、浏览器特征、时区、DNS 与 WebRTC 行为；结果不计入链路分。" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
+                </Border>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

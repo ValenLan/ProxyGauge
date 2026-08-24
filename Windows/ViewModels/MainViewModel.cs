@@ -1,8 +1,8 @@
 using System.Windows.Media;
-using CloudCheck.Models;
-using CloudCheck.Services;
+using ProxyGauge.Models;
+using ProxyGauge.Services;
 
-namespace CloudCheck.ViewModels;
+namespace ProxyGauge.ViewModels;
 
 public sealed class MainViewModel : ObservableObject
 {
@@ -11,7 +11,7 @@ public sealed class MainViewModel : ObservableObject
     private readonly HealthCheckService _healthCheckService;
     private AppConfig _config;
     private string _headline = "正在读取代理状态";
-    private string _detail = "稍等片刻，CloudCheck 正在检查本地流量入口";
+    private string _detail = "稍等片刻，ProxyGauge 正在检查本地流量入口";
     private HealthLevel _overallLevel = HealthLevel.Idle;
     private bool _isBusy;
     private bool _isHealthCheckRunning;
@@ -41,6 +41,9 @@ public sealed class MainViewModel : ObservableObject
     public string HealthButtonLabel { get => _healthButtonLabel; private set => SetProperty(ref _healthButtonLabel, value); }
     public string LastUpdated { get => _lastUpdated; private set => SetProperty(ref _lastUpdated, value); }
     public string Endpoint => $"{_config.MixedHost}:{_config.MixedPort}";
+    public string PlanSummary => _config.SecondaryEnabled
+        ? $"通用检测 + {_config.SecondaryLabel}"
+        : "通用检测";
 
     public HealthLevel OverallLevel
     {
@@ -142,6 +145,7 @@ public sealed class MainViewModel : ObservableObject
         _configService.Save(config);
         _config = _configService.Load();
         OnPropertyChanged(nameof(Endpoint));
+        OnPropertyChanged(nameof(PlanSummary));
     }
 
     private async Task RefreshAfterHealthCheckAsync()

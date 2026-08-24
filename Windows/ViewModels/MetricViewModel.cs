@@ -1,7 +1,7 @@
 using System.Windows.Media;
-using CloudCheck.Models;
+using ProxyGauge.Models;
 
-namespace CloudCheck.ViewModels;
+namespace ProxyGauge.ViewModels;
 
 public sealed class MetricViewModel : ObservableObject
 {

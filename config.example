@@ -1,24 +1,24 @@
-# Copy to ~/.config/cloudcheck/config and fill in your own values.
-# Legacy CloudLinkGuard/CloudRoute/PuffRoute config files and environment variables remain readable.
-CLOUDCHECK_MIXED="127.0.0.1:7890"
-CLOUDCHECK_TIMEOUT="6"
+# Copy to ~/.config/proxygauge/config and fill in your own values.
+# Legacy CloudCheck/CloudLinkGuard/CloudRoute/PuffRoute config files and environment variables remain readable.
+PROXYGAUGE_MIXED="127.0.0.1:7890"
+PROXYGAUGE_TIMEOUT="6"
 
 # Optional: when set, the health check verifies the exact proxy exit IP.
-CLOUDCHECK_EXPECT_IP=""
+PROXYGAUGE_EXPECT_IP=""
 
 # Optional extra route/rule template. Disabled for a generic single-exit setup.
-# The prefilled values preserve CloudCheck's original Google/Gemini template.
-CLOUDCHECK_MIHOMO_SOCKET="/private/tmp/verge/verge-mihomo.sock"
-CLOUDCHECK_SECONDARY_ENABLED="0"
-CLOUDCHECK_SECONDARY_LABEL="Google / Gemini"
-CLOUDCHECK_SECONDARY_GROUP="Google-Chain"
-CLOUDCHECK_DEFAULT_GROUP="PROXY"
-CLOUDCHECK_SECONDARY_MIXED="127.0.0.1:7891"
-CLOUDCHECK_SECONDARY_DOMAINS="gemini.google.com,generativelanguage.googleapis.com,www.google.com"
-CLOUDCHECK_EXPECT_SECONDARY_IP=""
+# The prefilled values preserve ProxyGauge's original Google/Gemini template.
+PROXYGAUGE_MIHOMO_SOCKET="/private/tmp/verge/verge-mihomo.sock"
+PROXYGAUGE_SECONDARY_ENABLED="0"
+PROXYGAUGE_SECONDARY_LABEL="Google / Gemini"
+PROXYGAUGE_SECONDARY_GROUP="Google-Chain"
+PROXYGAUGE_DEFAULT_GROUP="PROXY"
+PROXYGAUGE_SECONDARY_MIXED="127.0.0.1:7891"
+PROXYGAUGE_SECONDARY_DOMAINS="gemini.google.com,generativelanguage.googleapis.com,www.google.com"
+PROXYGAUGE_EXPECT_SECONDARY_IP=""
 
 # Off by default: active requests to AI APIs can create automated access logs.
-CLOUDCHECK_ACTIVE_AI_PROBES="0"
+PROXYGAUGE_ACTIVE_AI_PROBES="0"
 
 # Optional: Chrome executable used by the isolated browser check.
-CLOUDCHECK_CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+PROXYGAUGE_CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"

@@ -3,18 +3,18 @@ set -euo pipefail
 
 SCRIPT_DIR=$(/usr/bin/dirname "$0")
 PROJECT_ROOT=$(cd "$SCRIPT_DIR/.." && /bin/pwd)
-CHECK="$PROJECT_ROOT/Scripts/cloudcheck-check.sh"
-APP_SOURCE="$PROJECT_ROOT/Sources/CloudCheckApp.swift"
+CHECK="$PROJECT_ROOT/Scripts/proxygauge-check.sh"
+APP_SOURCE="$PROJECT_ROOT/Sources/ProxyGaugeApp.swift"
 WINDOWS_MODEL="$PROJECT_ROOT/Windows/Models/HealthReport.cs"
 WINDOWS_SERVICE="$PROJECT_ROOT/Windows/Services/HealthCheckService.cs"
 WINDOWS_MAIN="$PROJECT_ROOT/Windows/MainWindow.xaml"
 
-/usr/bin/grep -Fq 'ACTIVE_AI_PROBES="${CLOUDCHECK_ACTIVE_AI_PROBES:-0}"' "$CHECK"
+/usr/bin/grep -Fq 'ACTIVE_AI_PROBES="${PROXYGAUGE_ACTIVE_AI_PROBES:-0}"' "$CHECK"
 /usr/bin/grep -Fq 'GEMINI_PROBE_PROXY="$MIXED"' "$CHECK"
 /usr/bin/grep -Fq 'GEMINI_PROBE_PROXY="$GOOGLE_MIXED"' "$CHECK"
 /usr/bin/grep -q 'url=https://cp.cloudflare.com/generate_204' "$CHECK"
 /usr/bin/grep -q 'dscacheutil -q host -a name www.cloudflare.com' "$CHECK"
-/usr/bin/grep -Fq 'SECONDARY_ENABLED="${CLOUDCHECK_SECONDARY_ENABLED:-auto}"' "$CHECK"
+/usr/bin/grep -Fq 'SECONDARY_ENABLED="${PROXYGAUGE_SECONDARY_ENABLED:-auto}"' "$CHECK"
 /usr/bin/grep -Fq 'run_secondary_checks() {' "$CHECK"
 /usr/bin/grep -Fq '===== 6. 主动平台探测 (手动启用) =====' "$CHECK"
 /usr/bin/grep -Fq '===== 7. 分流确认 (默认低风险模式) =====' "$CHECK"
@@ -57,17 +57,18 @@ score_weights=$(/usr/bin/awk '
 /usr/bin/grep -Fq 'new HealthCheckSection("本地代理", localItems, 45, IsCritical: true)' "$WINDOWS_SERVICE"
 /usr/bin/grep -Fq 'new HealthCheckSection("代理出口", [exitResult.Item], 30, IsCritical: true)' "$WINDOWS_SERVICE"
 /usr/bin/grep -Fq 'new HealthCheckSection("IP 风险画像", riskItems, 15)' "$WINDOWS_SERVICE"
-/usr/bin/grep -Fq 'new HealthCheckSection("检测边界（默认低风险模式）"' "$WINDOWS_SERVICE"
+/usr/bin/grep -Fq 'CreateBoundarySection(10)' "$WINDOWS_SERVICE"
+/usr/bin/grep -Fq 'CreateBoundarySection(5)' "$WINDOWS_SERVICE"
+/usr/bin/grep -Fq 'new("检测边界（默认低风险模式）"' "$WINDOWS_SERVICE"
 /usr/bin/grep -Fq 'snapshot.SystemProxyEnabled && snapshot.TunDetected' "$WINDOWS_SERVICE"
-/usr/bin/grep -Fq '                ], 10)' "$WINDOWS_SERVICE"
 /usr/bin/grep -Fq 'value = Math.Min(value, 49)' "$WINDOWS_MODEL"
 /usr/bin/grep -Fq 'Binding="{Binding IsHealthCheckRunning}"' "$WINDOWS_MAIN"
 
-generic_output=$(CLOUDCHECK_CONFIG=/dev/null \
-  CLOUDCHECK_MIXED=127.0.0.1:9 \
-  CLOUDCHECK_SECONDARY_ENABLED=0 \
-  CLOUDCHECK_ACTIVE_AI_PROBES=0 \
-  CLOUDCHECK_TIMEOUT=1 \
+generic_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_MIXED=127.0.0.1:9 \
+  PROXYGAUGE_SECONDARY_ENABLED=0 \
+  PROXYGAUGE_ACTIVE_AI_PROBES=0 \
+  PROXYGAUGE_TIMEOUT=1 \
   /bin/bash "$CHECK" 2>&1 || true)
 /usr/bin/grep -Fq '检测方案: 通用检测' <<< "$generic_output"
 [ "$(/usr/bin/grep -c '^===== [1-8]\.' <<< "$generic_output")" = "5" ]
@@ -76,15 +77,15 @@ if /usr/bin/grep -Fq '===== 6.' <<< "$generic_output"; then
   exit 1
 fi
 
-extended_output=$(CLOUDCHECK_CONFIG=/dev/null \
-  CLOUDCHECK_MIXED=127.0.0.1:9 \
-  CLOUDCHECK_SECONDARY_ENABLED=1 \
-  CLOUDCHECK_SECONDARY_MIXED=127.0.0.1:10 \
-  CLOUDCHECK_MIHOMO_SOCKET=/private/tmp/cloudcheck-missing-test.sock \
-  CLOUDCHECK_ACTIVE_AI_PROBES=0 \
-  CLOUDCHECK_TIMEOUT=1 \
+extended_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_MIXED=127.0.0.1:9 \
+  PROXYGAUGE_SECONDARY_ENABLED=1 \
+  PROXYGAUGE_SECONDARY_MIXED=127.0.0.1:10 \
+  PROXYGAUGE_MIHOMO_SOCKET=/private/tmp/proxygauge-missing-test.sock \
+  PROXYGAUGE_ACTIVE_AI_PROBES=0 \
+  PROXYGAUGE_TIMEOUT=1 \
   /bin/bash "$CHECK" 2>&1 || true)
 /usr/bin/grep -Fq '检测方案: 通用检测 + Google / Gemini' <<< "$extended_output"
 [ "$(/usr/bin/grep -c '^===== [1-8]\.' <<< "$extended_output")" = "8" ]
 
-echo "CloudCheck low-risk health tests passed."
+echo "ProxyGauge low-risk health tests passed."

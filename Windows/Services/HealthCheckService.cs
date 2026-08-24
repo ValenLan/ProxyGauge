@@ -2,9 +2,9 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.Text.Json;
-using CloudCheck.Models;
+using ProxyGauge.Models;
 
-namespace CloudCheck.Services;
+namespace ProxyGauge.Services;
 
 public sealed class HealthCheckService
 {
@@ -16,10 +16,14 @@ public sealed class HealthCheckService
     ];
 
     private readonly ProxyProbeService _probeService;
+    private readonly MihomoPlanInspectionService _planInspectionService;
 
-    public HealthCheckService(ProxyProbeService probeService)
+    public HealthCheckService(
+        ProxyProbeService probeService,
+        MihomoPlanInspectionService planInspectionService)
     {
         _probeService = probeService;
+        _planInspectionService = planInspectionService;
     }
 
     public async Task<HealthReport> RunAsync(AppConfig config, CancellationToken cancellationToken = default)
@@ -32,8 +36,8 @@ public sealed class HealthCheckService
                 : HealthLevel.Error;
         var localItems = new List<HealthCheckItem>
         {
-            new("代理核心", snapshot.Core.Value, snapshot.Core.Level == HealthLevel.Ok),
-            new("本地混合端口", $"{config.MixedHost}:{config.MixedPort} · {snapshot.Port.Value}", snapshot.Port.Level == HealthLevel.Ok),
+            new("代理核心", snapshot.Core.Value, snapshot.Core.Level),
+            new("本地混合端口", $"{config.MixedHost}:{config.MixedPort} · {snapshot.Port.Value}", snapshot.Port.Level),
             new("流量入口", $"{snapshot.Route.Title} · {snapshot.Route.Value}", entryLevel)
         };
         if (snapshot.TunDetected)
@@ -41,47 +45,139 @@ public sealed class HealthCheckService
             localItems.Add(await CheckFakeIpDnsAsync(cancellationToken));
         }
 
-        using var handler = new SocketsHttpHandler
-        {
-            Proxy = new WebProxy(new Uri($"http://{config.MixedHost}:{config.MixedPort}")),
-            UseProxy = true,
-            ConnectTimeout = TimeSpan.FromSeconds(config.TimeoutSeconds)
-        };
-        using var client = new HttpClient(handler)
-        {
-            // PeeringDB metadata can take slightly longer than ordinary reachability
-            // probes. Match the macOS metadata budget without changing connect timeout.
-            Timeout = TimeSpan.FromSeconds(Math.Max(config.TimeoutSeconds, 12))
-        };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("CloudCheck/1.5.4 (+https://github.com/ValenLan/CloudCheck)");
+        using var client = CreateProxyClient(config.MixedHost, config.MixedPort, config.TimeoutSeconds);
+        var exitResult = await CheckExitIpAsync(
+            client,
+            config.ExpectedIp,
+            "默认出口",
+            cancellationToken);
+        var riskItems = await CheckIpRiskAsync(client, exitResult.Address, cancellationToken);
 
-        var exitResult = await CheckExitIpAsync(client, config, cancellationToken);
-        var riskTask = CheckIpRiskAsync(client, exitResult.Address, cancellationToken);
+        if (!config.SecondaryEnabled)
+        {
+            return new HealthReport
+            {
+                CheckedAt = DateTime.Now,
+                PlanName = "通用检测",
+                Sections =
+                [
+                    new HealthCheckSection("本地代理", localItems, 45, IsCritical: true),
+                    new HealthCheckSection("代理出口", [exitResult.Item], 30, IsCritical: true),
+                    new HealthCheckSection("IP 风险画像", riskItems, 15),
+                    CreateBoundarySection(10)
+                ]
+            };
+        }
 
-        var riskItems = await riskTask;
+        var planItems = (await _planInspectionService.InspectAsync(config, cancellationToken)).ToList();
+        var secondaryPortOpen = await _probeService.CanConnectAsync(
+            config.SecondaryMixedHost,
+            config.SecondaryMixedPort,
+            config.TimeoutSeconds,
+            cancellationToken);
+        planItems.Insert(0, secondaryPortOpen
+            ? new HealthCheckItem(
+                "额外混合端口",
+                $"{config.SecondaryMixedHost}:{config.SecondaryMixedPort} 正在监听",
+                HealthLevel.Ok)
+            : new HealthCheckItem(
+                "额外混合端口",
+                $"{config.SecondaryMixedHost}:{config.SecondaryMixedPort} 未监听",
+                HealthLevel.Error));
+
+        (HealthCheckItem Item, string? Address) secondaryExit;
+        IReadOnlyList<HealthCheckItem> secondaryRisk;
+        if (secondaryPortOpen)
+        {
+            using var secondaryClient = CreateProxyClient(
+                config.SecondaryMixedHost,
+                config.SecondaryMixedPort,
+                config.TimeoutSeconds);
+            secondaryExit = await CheckExitIpAsync(
+                secondaryClient,
+                config.ExpectedSecondaryIp,
+                config.SecondaryLabel,
+                cancellationToken);
+            secondaryRisk = await CheckIpRiskAsync(
+                secondaryClient,
+                secondaryExit.Address,
+                cancellationToken);
+        }
+        else
+        {
+            secondaryExit = (new HealthCheckItem(
+                "额外出口",
+                "本地额外入口不可用，未发送出口查询",
+                HealthLevel.Error), null);
+            secondaryRisk =
+            [
+                new HealthCheckItem("风险画像", "未取得额外出口 IP，暂时无法查询", HealthLevel.Idle)
+            ];
+        }
+
+        var exitComparison = exitResult.Address is not null && secondaryExit.Address is not null
+            ? string.Equals(exitResult.Address, secondaryExit.Address, StringComparison.OrdinalIgnoreCase)
+                ? new HealthCheckItem("出口结论", "额外入口与默认入口返回相同公网出口", HealthLevel.Warning)
+                : new HealthCheckItem("出口结论", "默认入口与额外入口返回不同公网出口", HealthLevel.Ok)
+            : new HealthCheckItem("出口结论", "出口数据不足，暂时无法比较", HealthLevel.Warning);
 
         return new HealthReport
         {
             CheckedAt = DateTime.Now,
+            PlanName = $"通用检测 + {config.SecondaryLabel}",
             Sections =
             [
-                new HealthCheckSection("本地代理", localItems, 45, IsCritical: true),
-                new HealthCheckSection("代理出口", [exitResult.Item], 30, IsCritical: true),
-                new HealthCheckSection("IP 风险画像", riskItems, 15),
-                new HealthCheckSection("检测边界（默认低风险模式）",
-                [
-                    new HealthCheckItem(
-                        "主动平台探测",
-                        "已关闭 · 不请求 Claude、ChatGPT 或 Gemini 网页与 API",
-                        HealthLevel.Ok)
-                ], 10)
+                new HealthCheckSection("本地代理", localItems, 30, IsCritical: true),
+                new HealthCheckSection("默认出口", [exitResult.Item], 20, IsCritical: true),
+                new HealthCheckSection("默认出口 IP 风险", riskItems, 10),
+                new HealthCheckSection($"{config.SecondaryLabel} · 策略与规则", planItems, 15, IsCritical: true),
+                new HealthCheckSection(
+                    $"{config.SecondaryLabel} · 实际出口",
+                    [secondaryExit.Item, exitComparison],
+                    15,
+                    IsCritical: true),
+                new HealthCheckSection($"{config.SecondaryLabel} · IP 风险", secondaryRisk, 5),
+                CreateBoundarySection(5)
             ]
         };
     }
 
+    private static HealthCheckSection CreateBoundarySection(int weight) =>
+        new("检测边界（默认低风险模式）",
+        [
+            new HealthCheckItem(
+                "主动平台探测",
+                "已关闭 · 不请求 Claude、ChatGPT 或 Gemini 网页与 API",
+                HealthLevel.Ok)
+        ], weight);
+
+    private static HttpClient CreateProxyClient(string host, int port, int timeoutSeconds)
+    {
+        if (!LocalEndpointPolicy.IsLoopbackHost(host) || port is < 1 or > 65535)
+        {
+            throw new InvalidOperationException("ProxyGauge 只允许通过本机回环代理执行检测。");
+        }
+
+        var handler = new SocketsHttpHandler
+        {
+            Proxy = new WebProxy(new UriBuilder(Uri.UriSchemeHttp, host.Trim('[', ']'), port).Uri),
+            UseProxy = true,
+            ConnectTimeout = TimeSpan.FromSeconds(timeoutSeconds)
+        };
+        var client = new HttpClient(handler)
+        {
+            // PeeringDB metadata can take slightly longer than ordinary reachability probes.
+            Timeout = TimeSpan.FromSeconds(Math.Max(timeoutSeconds, 12))
+        };
+        client.DefaultRequestHeaders.UserAgent.ParseAdd(
+            "ProxyGauge/1.5.4 (+https://github.com/ValenLan/ProxyGauge)");
+        return client;
+    }
+
     private static async Task<(HealthCheckItem Item, string? Address)> CheckExitIpAsync(
         HttpClient client,
-        AppConfig config,
+        string expectedIp,
+        string label,
         CancellationToken cancellationToken)
     {
         var results = new List<(string Name, string Address)>();
@@ -112,7 +208,7 @@ public sealed class HealthCheckService
         var sourceSummary = string.Join(" · ", results.Select(result => $"{result.Name} {result.Address}"));
         var hasConflict = groups.Length > 1;
         var insufficient = results.Count < 2;
-        var expected = config.ExpectedIp.Trim();
+        var expected = expectedIp.Trim();
         var expectedMismatch = !string.IsNullOrWhiteSpace(expected) &&
             !string.Equals(address, expected, StringComparison.OrdinalIgnoreCase);
 
@@ -126,7 +222,7 @@ public sealed class HealthCheckService
                 : insufficient
                     ? "只收到一个查询源响应，暂时无法交叉验证"
                     : $"{results.Count} 个查询源确认出口一致 ({address})";
-        return (new HealthCheckItem("出口一致性", $"{verdict} · {sourceSummary}", level), address);
+        return (new HealthCheckItem($"{label} · 出口一致性", $"{verdict} · {sourceSummary}", level), address);
     }
 
     private static async Task<HealthCheckItem> CheckFakeIpDnsAsync(CancellationToken cancellationToken)

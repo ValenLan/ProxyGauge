@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR=$(/usr/bin/dirname "$0")
 PROJECT_ROOT=$(cd "$SCRIPT_DIR/.." && /bin/pwd)
 BUILD_DIR="$PROJECT_ROOT/build"
-APP="$BUILD_DIR/CloudCheck.app"
+APP="$BUILD_DIR/ProxyGauge.app"
 MODULE_CACHE="$BUILD_DIR/module-cache"
 
 if [ -d "$APP" ]; then
@@ -23,42 +23,42 @@ fi
   -target arm64-apple-macosx26.0 \
   -module-cache-path "$MODULE_CACHE" \
   -parse-as-library \
-  "$PROJECT_ROOT/Sources/CloudCheckApp.swift" \
-  -o "$APP/Contents/MacOS/CloudCheck"
+  "$PROJECT_ROOT/Sources/ProxyGaugeApp.swift" \
+  -o "$APP/Contents/MacOS/ProxyGauge"
 
 /bin/cp "$PROJECT_ROOT/Info.plist" "$APP/Contents/Info.plist"
-/bin/cp "$PROJECT_ROOT/Resources/CloudCheck.icns" "$APP/Contents/Resources/CloudCheck.icns"
-/bin/cp "$PROJECT_ROOT/Scripts/cloudcheck-backend.sh" "$APP/Contents/Resources/cloudcheck-backend.sh"
-/bin/cp "$PROJECT_ROOT/Scripts/cloudcheck-check.sh" "$APP/Contents/Resources/cloudcheck-check.sh"
-/bin/cp "$PROJECT_ROOT/Scripts/cloudcheck-killswitch" "$APP/Contents/Resources/cloudcheck-killswitch"
-/bin/cp "$PROJECT_ROOT/Scripts/cloudcheck-ip-risk.jxa" "$APP/Contents/Resources/cloudcheck-ip-risk.jxa"
-/bin/cp "$PROJECT_ROOT/Scripts/cloudcheck-chain-check.jxa" "$APP/Contents/Resources/cloudcheck-chain-check.jxa"
-/bin/cp "$PROJECT_ROOT/Scripts/cloudcheck-private-browser.sh" "$APP/Contents/Resources/cloudcheck-private-browser.sh"
-/bin/cp "$PROJECT_ROOT/PF/cloudcheck.conf.template" "$APP/Contents/Resources/cloudcheck.conf.template"
-/bin/cp "$PROJECT_ROOT/Rules/CloudCheck-Merge.yaml" "$APP/Contents/Resources/Rules/CloudCheck-Merge.yaml"
-/bin/cp "$PROJECT_ROOT/Rules/CloudCheck-Google-Chain-Probe.yaml" "$APP/Contents/Resources/Rules/CloudCheck-Google-Chain-Probe.yaml"
-/bin/cp "$PROJECT_ROOT/Helpers/CloudCheck Admin.applescript" \
-  "$APP/Contents/Resources/cloudcheck-admin.applescript"
+/bin/cp "$PROJECT_ROOT/Resources/ProxyGauge.icns" "$APP/Contents/Resources/ProxyGauge.icns"
+/bin/cp "$PROJECT_ROOT/Scripts/proxygauge-backend.sh" "$APP/Contents/Resources/proxygauge-backend.sh"
+/bin/cp "$PROJECT_ROOT/Scripts/proxygauge-check.sh" "$APP/Contents/Resources/proxygauge-check.sh"
+/bin/cp "$PROJECT_ROOT/Scripts/proxygauge-killswitch" "$APP/Contents/Resources/proxygauge-killswitch"
+/bin/cp "$PROJECT_ROOT/Scripts/proxygauge-ip-risk.jxa" "$APP/Contents/Resources/proxygauge-ip-risk.jxa"
+/bin/cp "$PROJECT_ROOT/Scripts/proxygauge-chain-check.jxa" "$APP/Contents/Resources/proxygauge-chain-check.jxa"
+/bin/cp "$PROJECT_ROOT/Scripts/proxygauge-private-browser.sh" "$APP/Contents/Resources/proxygauge-private-browser.sh"
+/bin/cp "$PROJECT_ROOT/PF/proxygauge.conf.template" "$APP/Contents/Resources/proxygauge.conf.template"
+/bin/cp "$PROJECT_ROOT/Rules/ProxyGauge-Merge.yaml" "$APP/Contents/Resources/Rules/ProxyGauge-Merge.yaml"
+/bin/cp "$PROJECT_ROOT/Rules/ProxyGauge-Google-Chain-Probe.yaml" "$APP/Contents/Resources/Rules/ProxyGauge-Google-Chain-Probe.yaml"
+/bin/cp "$PROJECT_ROOT/Helpers/ProxyGauge Admin.applescript" \
+  "$APP/Contents/Resources/proxygauge-admin.applescript"
 
 /bin/chmod 755 \
-  "$APP/Contents/MacOS/CloudCheck" \
-  "$APP/Contents/Resources/cloudcheck-backend.sh" \
-  "$APP/Contents/Resources/cloudcheck-check.sh" \
-  "$APP/Contents/Resources/cloudcheck-killswitch" \
-  "$APP/Contents/Resources/cloudcheck-ip-risk.jxa" \
-  "$APP/Contents/Resources/cloudcheck-chain-check.jxa" \
-  "$APP/Contents/Resources/cloudcheck-private-browser.sh"
+  "$APP/Contents/MacOS/ProxyGauge" \
+  "$APP/Contents/Resources/proxygauge-backend.sh" \
+  "$APP/Contents/Resources/proxygauge-check.sh" \
+  "$APP/Contents/Resources/proxygauge-killswitch" \
+  "$APP/Contents/Resources/proxygauge-ip-risk.jxa" \
+  "$APP/Contents/Resources/proxygauge-chain-check.jxa" \
+  "$APP/Contents/Resources/proxygauge-private-browser.sh"
 
 for required_path in \
-  "$APP/Contents/Resources/cloudcheck-check.sh" \
-  "$APP/Contents/Resources/cloudcheck-killswitch" \
-  "$APP/Contents/Resources/cloudcheck-ip-risk.jxa" \
-  "$APP/Contents/Resources/cloudcheck-chain-check.jxa" \
-  "$APP/Contents/Resources/cloudcheck-private-browser.sh" \
-  "$APP/Contents/Resources/cloudcheck.conf.template" \
-  "$APP/Contents/Resources/cloudcheck-admin.applescript" \
-  "$APP/Contents/Resources/Rules/CloudCheck-Merge.yaml" \
-  "$APP/Contents/Resources/Rules/CloudCheck-Google-Chain-Probe.yaml"; do
+  "$APP/Contents/Resources/proxygauge-check.sh" \
+  "$APP/Contents/Resources/proxygauge-killswitch" \
+  "$APP/Contents/Resources/proxygauge-ip-risk.jxa" \
+  "$APP/Contents/Resources/proxygauge-chain-check.jxa" \
+  "$APP/Contents/Resources/proxygauge-private-browser.sh" \
+  "$APP/Contents/Resources/proxygauge.conf.template" \
+  "$APP/Contents/Resources/proxygauge-admin.applescript" \
+  "$APP/Contents/Resources/Rules/ProxyGauge-Merge.yaml" \
+  "$APP/Contents/Resources/Rules/ProxyGauge-Google-Chain-Probe.yaml"; do
   if [ ! -e "$required_path" ]; then
     echo "Missing required bundled component: $required_path" >&2
     exit 1

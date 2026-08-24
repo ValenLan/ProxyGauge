@@ -1,6 +1,6 @@
 using System.Windows;
 
-namespace CloudCheck;
+namespace ProxyGauge;
 
 public partial class App : Application
 {

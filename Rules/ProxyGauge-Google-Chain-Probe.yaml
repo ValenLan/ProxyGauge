@@ -5,7 +5,7 @@
 # subscription URL, credential, or server address.
 
 listeners:
-  - name: cloudcheck-google-chain-probe
+  - name: proxygauge-google-chain-probe
     type: mixed
     listen: 127.0.0.1
     port: 7891

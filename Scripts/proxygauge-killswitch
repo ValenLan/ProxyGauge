@@ -1,48 +1,51 @@
 #!/bin/bash
-# cloudcheck-killswitch — PF 独立 anchor 的安装与防泄漏开关
+# proxygauge-killswitch — PF 独立 anchor 的安装与防泄漏开关
 #   install                      自动发现物理接口并安装内置规则（保持关闭）
 #   on                           必要时安装/恢复内置规则，然后开启保护
 #   off                          清空专属 anchor 并释放本工具的 reference
 #   status                       检查 PF 与 anchor 的真实状态
 
 SCRIPT_DIR=$(/usr/bin/dirname "$0")
-TEST_ROOT="${CLOUDCHECK_KILLSWITCH_TEST_ROOT:-}"
+TEST_ROOT="${PROXYGAUGE_KILLSWITCH_TEST_ROOT:-}"
 
 if [ -n "$TEST_ROOT" ]; then
   case "$TEST_ROOT" in
-    /tmp/cloudcheck-killswitch-test.*) ;;
+    /tmp/proxygauge-killswitch-test.*) ;;
     *) echo "❌ 非法的 Kill Switch 测试目录"; exit 2 ;;
   esac
   if [ "$(/usr/bin/id -u)" -eq 0 ]; then
     echo "❌ 测试模式禁止以 root 运行"
     exit 2
   fi
-  PFCTL="${CLOUDCHECK_KILLSWITCH_TEST_PFCTL:-/sbin/pfctl}"
+  PFCTL="${PROXYGAUGE_KILLSWITCH_TEST_PFCTL:-/sbin/pfctl}"
   MAIN_CONF="$TEST_ROOT/etc/pf.conf"
   ANCHOR_DIR="$TEST_ROOT/etc/pf.anchors"
-  TOKEN_FILE="$TEST_ROOT/var/run/cloudcheck-killswitch.pf-token"
-  PF_TEMPLATE="${CLOUDCHECK_KILLSWITCH_TEST_TEMPLATE:-$SCRIPT_DIR/../PF/cloudcheck.conf.template}"
-  PERSIST_HELPER="$TEST_ROOT/Library/PrivilegedHelperTools/com.valenlan.cloudcheck.killswitch"
-  PERSIST_PLIST="$TEST_ROOT/Library/LaunchDaemons/com.valenlan.cloudcheck.killswitch.plist"
-  PERSIST_STATE_DIR="$TEST_ROOT/var/db/cloudcheck"
+  TOKEN_FILE="$TEST_ROOT/var/run/proxygauge-killswitch.pf-token"
+  PF_TEMPLATE="${PROXYGAUGE_KILLSWITCH_TEST_TEMPLATE:-$SCRIPT_DIR/../PF/proxygauge.conf.template}"
+  PERSIST_HELPER="$TEST_ROOT/Library/PrivilegedHelperTools/com.valenlan.proxygauge.killswitch"
+  PERSIST_PLIST="$TEST_ROOT/Library/LaunchDaemons/com.valenlan.proxygauge.killswitch.plist"
+  PERSIST_STATE_DIR="$TEST_ROOT/var/db/proxygauge"
+  LEGACY_PERSIST_STATE_DIR="$TEST_ROOT/var/db/cloudcheck"
   TEST_MODE=1
 else
   PFCTL=/sbin/pfctl
   MAIN_CONF=/etc/pf.conf
   ANCHOR_DIR=/etc/pf.anchors
-  TOKEN_FILE=/var/run/cloudcheck-killswitch.pf-token
-  PF_TEMPLATE="$SCRIPT_DIR/cloudcheck.conf.template"
-  PERSIST_HELPER=/Library/PrivilegedHelperTools/com.valenlan.cloudcheck.killswitch
-  PERSIST_PLIST=/Library/LaunchDaemons/com.valenlan.cloudcheck.killswitch.plist
-  PERSIST_STATE_DIR=/var/db/cloudcheck
+  TOKEN_FILE=/var/run/proxygauge-killswitch.pf-token
+  PF_TEMPLATE="$SCRIPT_DIR/proxygauge.conf.template"
+  PERSIST_HELPER=/Library/PrivilegedHelperTools/com.valenlan.proxygauge.killswitch
+  PERSIST_PLIST=/Library/LaunchDaemons/com.valenlan.proxygauge.killswitch.plist
+  PERSIST_STATE_DIR=/var/db/proxygauge
+  LEGACY_PERSIST_STATE_DIR=/var/db/cloudcheck
   TEST_MODE=0
 fi
 
-PERSIST_LABEL=com.valenlan.cloudcheck.killswitch
+PERSIST_LABEL=com.valenlan.proxygauge.killswitch
 PERSIST_MARKER="$PERSIST_STATE_DIR/enabled"
+LEGACY_PERSIST_MARKER="$LEGACY_PERSIST_STATE_DIR/enabled"
 
-ANCHOR=cloudcheck
-ANCHOR_CONF="$ANCHOR_DIR/cloudcheck"
+ANCHOR=proxygauge
+ANCHOR_CONF="$ANCHOR_DIR/proxygauge"
 
 console_home() {
   local console_user
@@ -53,12 +56,12 @@ console_home() {
 }
 
 if [ "$TEST_MODE" -eq 0 ] && [ ! -r "$PF_TEMPLATE" ]; then
-  if [ -r "$SCRIPT_DIR/../PF/cloudcheck.conf.template" ]; then
-    PF_TEMPLATE="$SCRIPT_DIR/../PF/cloudcheck.conf.template"
+  if [ -r "$SCRIPT_DIR/../PF/proxygauge.conf.template" ]; then
+    PF_TEMPLATE="$SCRIPT_DIR/../PF/proxygauge.conf.template"
   else
     CONSOLE_HOME=$(console_home)
-    if [ -n "$CONSOLE_HOME" ] && [ -r "$CONSOLE_HOME/.local/share/cloudcheck/cloudcheck.conf.template" ]; then
-      PF_TEMPLATE="$CONSOLE_HOME/.local/share/cloudcheck/cloudcheck.conf.template"
+    if [ -n "$CONSOLE_HOME" ] && [ -r "$CONSOLE_HOME/.local/share/proxygauge/proxygauge.conf.template" ]; then
+      PF_TEMPLATE="$CONSOLE_HOME/.local/share/proxygauge/proxygauge.conf.template"
     fi
   fi
 fi
@@ -72,7 +75,7 @@ BOOTSTRAP_DEFAULT=0
 if /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"killswitch"' "$MAIN_CONF" 2>/dev/null; then
   if [ "$ACTION" = "install" ]; then
     echo "❌ 检测到旧版 killswitch anchor，未叠加第二套 PF 规则"
-    echo "请先单独迁移旧规则，再重新配置 CloudCheck"
+    echo "请先单独迁移旧规则，再重新配置 ProxyGauge"
     exit 1
   fi
 fi
@@ -81,11 +84,11 @@ fi
 # removed only its /etc/pf.conf entry, recover that entry without regenerating
 # the anchor or asking the user for server/network parameters again.
 if [ "$ACTION" = "on" ] && ! /usr/bin/grep -qE \
-  '^[[:space:]]*anchor[[:space:]]+"(cloudcheck|cloudlink-guard|cloudroute|puffroute|killswitch)"' \
+  '^[[:space:]]*anchor[[:space:]]+"(proxygauge|cloudcheck|cloudlink-guard|cloudroute|puffroute|killswitch)"' \
   "$MAIN_CONF" 2>/dev/null; then
   existing_count=0
   existing_anchor=""
-  for candidate_anchor in cloudcheck cloudlink-guard cloudroute puffroute killswitch; do
+  for candidate_anchor in proxygauge cloudcheck cloudlink-guard cloudroute puffroute killswitch; do
     if [ -r "$ANCHOR_DIR/$candidate_anchor" ]; then
       existing_count=$((existing_count + 1))
       existing_anchor="$candidate_anchor"
@@ -101,6 +104,7 @@ if [ "$ACTION" = "on" ] && ! /usr/bin/grep -qE \
     ANCHOR="$existing_anchor"
     ANCHOR_CONF="$ANCHOR_DIR/$existing_anchor"
     case "$existing_anchor" in
+      proxygauge) TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/proxygauge-killswitch.pf-token" ;;
       cloudcheck) TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/cloudcheck-killswitch.pf-token" ;;
       cloudlink-guard) TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/cloudlink-guard-killswitch.pf-token" ;;
       cloudroute) TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/cloudroute-killswitch.pf-token" ;;
@@ -111,9 +115,15 @@ if [ "$ACTION" = "on" ] && ! /usr/bin/grep -qE \
 fi
 
 # Preserve previous migrations: Proxy Tools -> PuffRoute -> CloudRoute ->
-# CloudLinkGuard -> CloudCheck. A configured predecessor remains authoritative.
-if ! /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"cloudcheck"' "$MAIN_CONF" 2>/dev/null; then
-  if /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"cloudlink-guard"' "$MAIN_CONF" 2>/dev/null \
+# CloudLinkGuard -> CloudCheck -> ProxyGauge. A configured predecessor remains
+# authoritative.
+if ! /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"proxygauge"' "$MAIN_CONF" 2>/dev/null; then
+  if /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"cloudcheck"' "$MAIN_CONF" 2>/dev/null \
+    && [ -r "$ANCHOR_DIR/cloudcheck" ]; then
+    ANCHOR=cloudcheck
+    ANCHOR_CONF="$ANCHOR_DIR/cloudcheck"
+    TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/cloudcheck-killswitch.pf-token"
+  elif /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"cloudlink-guard"' "$MAIN_CONF" 2>/dev/null \
     && [ -r "$ANCHOR_DIR/cloudlink-guard" ]; then
     ANCHOR=cloudlink-guard
     ANCHOR_CONF="$ANCHOR_DIR/cloudlink-guard"
@@ -169,8 +179,8 @@ EOF
 detect_physical_interfaces() {
   local interfaces default_interface
 
-  if [ "$TEST_MODE" -eq 1 ] && [ -n "${CLOUDCHECK_KILLSWITCH_TEST_INTERFACES:-}" ]; then
-    interfaces="$CLOUDCHECK_KILLSWITCH_TEST_INTERFACES"
+  if [ "$TEST_MODE" -eq 1 ] && [ -n "${PROXYGAUGE_KILLSWITCH_TEST_INTERFACES:-}" ]; then
+    interfaces="$PROXYGAUGE_KILLSWITCH_TEST_INTERFACES"
   else
     interfaces=$(/sbin/ifconfig -l 2>/dev/null \
       | /usr/bin/tr ' ' '\n' \
@@ -237,7 +247,7 @@ install_persistence_infrastructure() {
 
   helper_dir=$(/usr/bin/dirname "$PERSIST_HELPER")
   plist_dir=$(/usr/bin/dirname "$PERSIST_PLIST")
-  temp_dir=$(/usr/bin/mktemp -d /tmp/cloudcheck-killswitch-persist.XXXXXX) || return 1
+  temp_dir=$(/usr/bin/mktemp -d /tmp/proxygauge-killswitch-persist.XXXXXX) || return 1
   plist_source="$temp_dir/$PERSIST_LABEL.plist"
 
   if ! /bin/mkdir -p "$helper_dir" "$plist_dir" "$PERSIST_STATE_DIR"; then
@@ -285,17 +295,18 @@ install_persistence_infrastructure() {
 
 persist_enabled_intent() {
   local marker_source
-  marker_source=$(/usr/bin/mktemp /tmp/cloudcheck-killswitch-enabled.XXXXXX) || return 1
+  marker_source=$(/usr/bin/mktemp /tmp/proxygauge-killswitch-enabled.XXXXXX) || return 1
   /usr/bin/printf '%s\n' enabled > "$marker_source"
   if ! install_private_file "$marker_source" "$PERSIST_MARKER" 600; then
     /bin/rm -f "$marker_source"
     return 1
   fi
   /bin/rm -f "$marker_source"
+  /bin/rm -f "$LEGACY_PERSIST_MARKER"
 }
 
 clear_persisted_intent() {
-  /bin/rm -f "$PERSIST_MARKER"
+  /bin/rm -f "$PERSIST_MARKER" "$LEGACY_PERSIST_MARKER"
 }
 
 install_rules() {
@@ -323,7 +334,7 @@ install_rules() {
     return 1
   fi
 
-  temp_dir=$(/usr/bin/mktemp -d /tmp/cloudcheck-pf.XXXXXX) || return 1
+  temp_dir=$(/usr/bin/mktemp -d /tmp/proxygauge-pf.XXXXXX) || return 1
   /usr/bin/sed \
     -e "s/__INTERFACES__/$interfaces/g" \
     "$PF_TEMPLATE" > "$temp_dir/$ANCHOR" || {
@@ -354,7 +365,7 @@ install_rules() {
     return 1
   fi
 
-  backup_path="$MAIN_CONF.cloudcheck.bak"
+  backup_path="$MAIN_CONF.proxygauge.bak"
   if [ ! -e "$backup_path" ]; then
     /bin/cp -p "$MAIN_CONF" "$backup_path" || {
       /bin/rm -rf "$temp_dir"
@@ -371,13 +382,13 @@ install_rules() {
   fi
   if ! install_config_file "$temp_dir/pf.conf" "$MAIN_CONF"; then
     /bin/rm -rf "$temp_dir"
-    echo "❌ 无法注册 CloudCheck PF anchor"
+    echo "❌ 无法注册 ProxyGauge PF anchor"
     return 1
   fi
   if ! install_config_file "$temp_dir/$ANCHOR" "$ANCHOR_CONF"; then
     install_config_file "$temp_dir/pf.conf.original" "$MAIN_CONF" >/dev/null 2>&1 || true
     /bin/rm -rf "$temp_dir"
-    echo "❌ 无法安装 CloudCheck PF anchor，已恢复系统配置"
+    echo "❌ 无法安装 ProxyGauge PF anchor，已恢复系统配置"
     return 1
   fi
   if ! "$PFCTL" -f "$MAIN_CONF" >/dev/null 2>&1; then
@@ -413,7 +424,7 @@ ensure_existing_anchor_registered() {
     return 1
   fi
 
-  temp_dir=$(/usr/bin/mktemp -d /tmp/cloudcheck-pf-entry.XXXXXX) || return 1
+  temp_dir=$(/usr/bin/mktemp -d /tmp/proxygauge-pf-entry.XXXXXX) || return 1
   /bin/cp "$MAIN_CONF" "$temp_dir/pf.conf.original" || {
     /bin/rm -rf "$temp_dir"
     return 1
@@ -430,7 +441,7 @@ ensure_existing_anchor_registered() {
     return 1
   fi
 
-  backup_path="$MAIN_CONF.cloudcheck-entry.bak"
+  backup_path="$MAIN_CONF.proxygauge-entry.bak"
   if [ ! -e "$backup_path" ]; then
     /bin/cp -p "$MAIN_CONF" "$backup_path" || {
       /bin/rm -rf "$temp_dir"
@@ -533,16 +544,16 @@ enable_rules() {
 case "$ACTION" in
   install)
     if [ "$#" -ne 1 ]; then
-      echo "用法: cloudcheck-killswitch install"
+      echo "用法: proxygauge-killswitch install"
       exit 2
     fi
     if /usr/bin/grep -qE \
-      '^[[:space:]]*anchor[[:space:]]+"(cloudcheck|cloudlink-guard|cloudroute|puffroute|killswitch)"' \
+      '^[[:space:]]*anchor[[:space:]]+"(proxygauge|cloudcheck|cloudlink-guard|cloudroute|puffroute|killswitch)"' \
       "$MAIN_CONF" 2>/dev/null; then
       echo "❌ 已存在 Kill Switch 规则入口，未覆盖"
       exit 1
     fi
-    for candidate_anchor in cloudcheck cloudlink-guard cloudroute puffroute killswitch; do
+    for candidate_anchor in proxygauge cloudcheck cloudlink-guard cloudroute puffroute killswitch; do
       if [ -e "$ANCHOR_DIR/$candidate_anchor" ]; then
         echo "❌ 已存在 Kill Switch 规则文件，未覆盖"
         exit 1
@@ -579,7 +590,7 @@ case "$ACTION" in
 
   restore)
     if [ "$#" -ne 1 ]; then
-      echo "用法: cloudcheck-killswitch restore"
+      echo "用法: proxygauge-killswitch restore"
       exit 2
     fi
     if [ "$TEST_MODE" -eq 0 ] && [ "$0" != "$PERSIST_HELPER" ]; then
@@ -609,7 +620,7 @@ case "$ACTION" in
     ;;
 
   *)
-    echo "用法: cloudcheck-killswitch install | on | off | status"
+    echo "用法: proxygauge-killswitch install | on | off | status"
     exit 2
     ;;
 esac

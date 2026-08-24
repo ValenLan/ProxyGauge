@@ -1,9 +1,10 @@
 #!/bin/bash
-# CloudCheck 代理链路检测脚本
-# 用法: bash ~/.local/bin/cloudcheck-check
+# ProxyGauge 代理链路检测脚本
+# 用法: bash ~/.local/bin/proxygauge-check
 # 退出码: 0 = 链路检查通过; 1 = 有失败项
 
-DEFAULT_CONFIG="$HOME/.config/cloudcheck/config"
+DEFAULT_CONFIG="$HOME/.config/proxygauge/config"
+CLOUDCHECK_CONFIG_PATH="$HOME/.config/cloudcheck/config"
 CLOUDLINK_GUARD_CONFIG_PATH="$HOME/.config/cloudlink-guard/config"
 CLOUDROUTE_CONFIG_PATH="$HOME/.config/cloudroute/config"
 PUFFROUTE_CONFIG_PATH="$HOME/.config/puffroute/config"
@@ -11,9 +12,9 @@ PUFFROUTE_CONFIG_PATH="$HOME/.config/puffroute/config"
 import_legacy_compat() {
   local suffix current legacy_prefix legacy
   for suffix in "$@"; do
-    current="CLOUDCHECK_$suffix"
+    current="PROXYGAUGE_$suffix"
     declare -p "$current" >/dev/null 2>&1 && continue
-    for legacy_prefix in CLOUDLINK_GUARD CLOUDROUTE PUFFROUTE; do
+    for legacy_prefix in CLOUDCHECK CLOUDLINK_GUARD CLOUDROUTE PUFFROUTE; do
       legacy="${legacy_prefix}_$suffix"
       if declare -p "$legacy" >/dev/null 2>&1; then
         printf -v "$current" '%s' "${!legacy}"
@@ -30,16 +31,18 @@ import_legacy_compat \
   SECONDARY_MIXED SECONDARY_DOMAINS EXPECT_SECONDARY_IP ACTIVE_AI_PROBES \
   RISK_PARSER CHAIN_PARSER GOOGLE_GROUP GOOGLE_MIXED EXPECT_GOOGLE_IP
 
-CONFIG_FILE="${CLOUDCHECK_CONFIG:-$DEFAULT_CONFIG}"
-ENV_CLOUDCHECK_MIXED="${CLOUDCHECK_MIXED:-}"
-ENV_SECONDARY_ENABLED="${CLOUDCHECK_SECONDARY_ENABLED:-}"
-ENV_SECONDARY_LABEL="${CLOUDCHECK_SECONDARY_LABEL:-}"
-ENV_SECONDARY_GROUP="${CLOUDCHECK_SECONDARY_GROUP:-}"
-ENV_DEFAULT_GROUP="${CLOUDCHECK_DEFAULT_GROUP:-}"
-ENV_SECONDARY_MIXED="${CLOUDCHECK_SECONDARY_MIXED:-}"
-ENV_SECONDARY_DOMAINS="${CLOUDCHECK_SECONDARY_DOMAINS:-}"
-if [ -z "${CLOUDCHECK_CONFIG:-}" ] && [ ! -r "$CONFIG_FILE" ]; then
-  if [ -r "$CLOUDLINK_GUARD_CONFIG_PATH" ]; then
+CONFIG_FILE="${PROXYGAUGE_CONFIG:-$DEFAULT_CONFIG}"
+ENV_PROXYGAUGE_MIXED="${PROXYGAUGE_MIXED:-}"
+ENV_SECONDARY_ENABLED="${PROXYGAUGE_SECONDARY_ENABLED:-}"
+ENV_SECONDARY_LABEL="${PROXYGAUGE_SECONDARY_LABEL:-}"
+ENV_SECONDARY_GROUP="${PROXYGAUGE_SECONDARY_GROUP:-}"
+ENV_DEFAULT_GROUP="${PROXYGAUGE_DEFAULT_GROUP:-}"
+ENV_SECONDARY_MIXED="${PROXYGAUGE_SECONDARY_MIXED:-}"
+ENV_SECONDARY_DOMAINS="${PROXYGAUGE_SECONDARY_DOMAINS:-}"
+if [ -z "${PROXYGAUGE_CONFIG:-}" ] && [ ! -r "$CONFIG_FILE" ]; then
+  if [ -r "$CLOUDCHECK_CONFIG_PATH" ]; then
+    CONFIG_FILE="$CLOUDCHECK_CONFIG_PATH"
+  elif [ -r "$CLOUDLINK_GUARD_CONFIG_PATH" ]; then
     CONFIG_FILE="$CLOUDLINK_GUARD_CONFIG_PATH"
   elif [ -r "$CLOUDROUTE_CONFIG_PATH" ]; then
     CONFIG_FILE="$CLOUDROUTE_CONFIG_PATH"
@@ -53,43 +56,43 @@ import_legacy_compat \
   SECONDARY_LABEL SECONDARY_GROUP DEFAULT_GROUP SECONDARY_MIXED \
   SECONDARY_DOMAINS EXPECT_SECONDARY_IP ACTIVE_AI_PROBES RISK_PARSER \
   CHAIN_PARSER GOOGLE_GROUP GOOGLE_MIXED EXPECT_GOOGLE_IP
-if [ -n "$ENV_CLOUDCHECK_MIXED" ]; then
-  CLOUDCHECK_MIXED="$ENV_CLOUDCHECK_MIXED"
+if [ -n "$ENV_PROXYGAUGE_MIXED" ]; then
+  PROXYGAUGE_MIXED="$ENV_PROXYGAUGE_MIXED"
 fi
-if [ -n "$ENV_SECONDARY_ENABLED" ]; then CLOUDCHECK_SECONDARY_ENABLED="$ENV_SECONDARY_ENABLED"; fi
-if [ -n "$ENV_SECONDARY_LABEL" ]; then CLOUDCHECK_SECONDARY_LABEL="$ENV_SECONDARY_LABEL"; fi
-if [ -n "$ENV_SECONDARY_GROUP" ]; then CLOUDCHECK_SECONDARY_GROUP="$ENV_SECONDARY_GROUP"; fi
-if [ -n "$ENV_DEFAULT_GROUP" ]; then CLOUDCHECK_DEFAULT_GROUP="$ENV_DEFAULT_GROUP"; fi
-if [ -n "$ENV_SECONDARY_MIXED" ]; then CLOUDCHECK_SECONDARY_MIXED="$ENV_SECONDARY_MIXED"; fi
-if [ -n "$ENV_SECONDARY_DOMAINS" ]; then CLOUDCHECK_SECONDARY_DOMAINS="$ENV_SECONDARY_DOMAINS"; fi
+if [ -n "$ENV_SECONDARY_ENABLED" ]; then PROXYGAUGE_SECONDARY_ENABLED="$ENV_SECONDARY_ENABLED"; fi
+if [ -n "$ENV_SECONDARY_LABEL" ]; then PROXYGAUGE_SECONDARY_LABEL="$ENV_SECONDARY_LABEL"; fi
+if [ -n "$ENV_SECONDARY_GROUP" ]; then PROXYGAUGE_SECONDARY_GROUP="$ENV_SECONDARY_GROUP"; fi
+if [ -n "$ENV_DEFAULT_GROUP" ]; then PROXYGAUGE_DEFAULT_GROUP="$ENV_DEFAULT_GROUP"; fi
+if [ -n "$ENV_SECONDARY_MIXED" ]; then PROXYGAUGE_SECONDARY_MIXED="$ENV_SECONDARY_MIXED"; fi
+if [ -n "$ENV_SECONDARY_DOMAINS" ]; then PROXYGAUGE_SECONDARY_DOMAINS="$ENV_SECONDARY_DOMAINS"; fi
 
-EXPECT_IP="${CLOUDCHECK_EXPECT_IP:-}"
-MIXED="${CLOUDCHECK_MIXED:-127.0.0.1:7890}"
-TIMEOUT="${CLOUDCHECK_TIMEOUT:-6}"
-METADATA_TIMEOUT="${CLOUDCHECK_METADATA_TIMEOUT:-12}"
-MIHOMO_SOCKET="${CLOUDCHECK_MIHOMO_SOCKET:-/private/tmp/verge/verge-mihomo.sock}"
-SECONDARY_ENABLED="${CLOUDCHECK_SECONDARY_ENABLED:-auto}"
-SECONDARY_LABEL="${CLOUDCHECK_SECONDARY_LABEL:-Google / Gemini}"
-GOOGLE_GROUP="${CLOUDCHECK_SECONDARY_GROUP:-${CLOUDCHECK_GOOGLE_GROUP:-Google-Chain}}"
-DEFAULT_GROUP="${CLOUDCHECK_DEFAULT_GROUP:-PROXY}"
-GOOGLE_MIXED="${CLOUDCHECK_SECONDARY_MIXED:-${CLOUDCHECK_GOOGLE_MIXED:-127.0.0.1:7891}}"
-EXPECT_GOOGLE_IP="${CLOUDCHECK_EXPECT_SECONDARY_IP:-${CLOUDCHECK_EXPECT_GOOGLE_IP:-}}"
-SECONDARY_DOMAINS="${CLOUDCHECK_SECONDARY_DOMAINS:-gemini.google.com,generativelanguage.googleapis.com,www.google.com}"
-ACTIVE_AI_PROBES="${CLOUDCHECK_ACTIVE_AI_PROBES:-0}"
+EXPECT_IP="${PROXYGAUGE_EXPECT_IP:-}"
+MIXED="${PROXYGAUGE_MIXED:-127.0.0.1:7890}"
+TIMEOUT="${PROXYGAUGE_TIMEOUT:-6}"
+METADATA_TIMEOUT="${PROXYGAUGE_METADATA_TIMEOUT:-12}"
+MIHOMO_SOCKET="${PROXYGAUGE_MIHOMO_SOCKET:-/private/tmp/verge/verge-mihomo.sock}"
+SECONDARY_ENABLED="${PROXYGAUGE_SECONDARY_ENABLED:-auto}"
+SECONDARY_LABEL="${PROXYGAUGE_SECONDARY_LABEL:-Google / Gemini}"
+GOOGLE_GROUP="${PROXYGAUGE_SECONDARY_GROUP:-${PROXYGAUGE_GOOGLE_GROUP:-Google-Chain}}"
+DEFAULT_GROUP="${PROXYGAUGE_DEFAULT_GROUP:-PROXY}"
+GOOGLE_MIXED="${PROXYGAUGE_SECONDARY_MIXED:-${PROXYGAUGE_GOOGLE_MIXED:-127.0.0.1:7891}}"
+EXPECT_GOOGLE_IP="${PROXYGAUGE_EXPECT_SECONDARY_IP:-${PROXYGAUGE_EXPECT_GOOGLE_IP:-}}"
+SECONDARY_DOMAINS="${PROXYGAUGE_SECONDARY_DOMAINS:-gemini.google.com,generativelanguage.googleapis.com,www.google.com}"
+ACTIVE_AI_PROBES="${PROXYGAUGE_ACTIVE_AI_PROBES:-0}"
 MIXED_HOST="${MIXED%:*}"
 MIXED_PORT="${MIXED##*:}"
 GOOGLE_MIXED_HOST="${GOOGLE_MIXED%:*}"
 GOOGLE_MIXED_PORT="${GOOGLE_MIXED##*:}"
 SCRIPT_DIR=$(/usr/bin/dirname "$0")
-RISK_PARSER="${CLOUDCHECK_RISK_PARSER:-$SCRIPT_DIR/cloudcheck-ip-risk.jxa}"
-CHAIN_PARSER="${CLOUDCHECK_CHAIN_PARSER:-$SCRIPT_DIR/cloudcheck-chain-check.jxa}"
+RISK_PARSER="${PROXYGAUGE_RISK_PARSER:-$SCRIPT_DIR/proxygauge-ip-risk.jxa}"
+CHAIN_PARSER="${PROXYGAUGE_CHAIN_PARSER:-$SCRIPT_DIR/proxygauge-chain-check.jxa}"
 
 SECONDARY_ACTIVE=""
 case "$SECONDARY_ENABLED" in
   1|true|yes) SECONDARY_ACTIVE=1 ;;
   0|false|no) ;;
   *)
-    if [ -n "${CLOUDCHECK_GOOGLE_GROUP:-}${CLOUDCHECK_GOOGLE_MIXED:-}" ]; then
+    if [ -n "${PROXYGAUGE_GOOGLE_GROUP:-}${PROXYGAUGE_GOOGLE_MIXED:-}" ]; then
       SECONDARY_ACTIVE=1
     fi
     ;;
@@ -132,9 +135,9 @@ render_risk_profile() {
     return
   fi
 
-  IPAPI_JSON=$(/usr/bin/mktemp -t cloudcheck-ipapi)
-  PROXYCHECK_JSON=$(/usr/bin/mktemp -t cloudcheck-proxycheck)
-  PEERINGDB_JSON=$(/usr/bin/mktemp -t cloudcheck-peeringdb)
+  IPAPI_JSON=$(/usr/bin/mktemp -t proxygauge-ipapi)
+  PROXYCHECK_JSON=$(/usr/bin/mktemp -t proxygauge-proxycheck)
+  PEERINGDB_JSON=$(/usr/bin/mktemp -t proxygauge-peeringdb)
   : > "$IPAPI_JSON"
   : > "$PROXYCHECK_JSON"
   : > "$PEERINGDB_JSON"
@@ -150,7 +153,7 @@ render_risk_profile() {
     extract-asn "$IPAPI_JSON" "$PROXYCHECK_JSON" "$risk_ip" 2>/dev/null || true)
   if printf '%s' "$ASN_NUMBER" | /usr/bin/grep -qE '^[0-9]+$'; then
     /usr/bin/curl -sS --retry 1 --retry-all-errors --retry-delay 1 \
-      -A "CloudCheck/1.5.4 (+https://github.com/ValenLan/CloudCheck)" \
+      -A "ProxyGauge/1.5.4 (+https://github.com/ValenLan/ProxyGauge)" \
       --proxy "http://$risk_proxy" --max-time "$METADATA_TIMEOUT" \
       "https://www.peeringdb.com/api/net?asn=$ASN_NUMBER" \
       -o "$PEERINGDB_JSON" 2>/dev/null || true
@@ -173,8 +176,8 @@ check_site() {
   url="$2"
   kind="$3"
   probe_proxy="$4"
-  headers=$(/usr/bin/mktemp -t cloudcheck-site-headers)
-  body=$(/usr/bin/mktemp -t cloudcheck-site-body)
+  headers=$(/usr/bin/mktemp -t proxygauge-site-headers)
+  body=$(/usr/bin/mktemp -t proxygauge-site-body)
   out=$(/usr/bin/curl -sS -D "$headers" -o "$body" -w '%{http_code} %{time_total}' \
     --retry 1 --retry-all-errors --retry-delay 1 \
     --proxy "http://$probe_proxy" --max-time "$TIMEOUT" "$url" 2>/dev/null)
@@ -325,9 +328,9 @@ echo "===== 6. 额外分流链路 ($SECONDARY_LABEL) ====="
 GOOGLE_EXT=""
 CHAIN_CONFIGURED=""
 if [ -S "$MIHOMO_SOCKET" ] && [ -r "$CHAIN_PARSER" ]; then
-  PROXIES_JSON=$(/usr/bin/mktemp -t cloudcheck-proxies)
-  RULES_JSON=$(/usr/bin/mktemp -t cloudcheck-rules)
-  DELAY_JSON=$(/usr/bin/mktemp -t cloudcheck-chain-delay)
+  PROXIES_JSON=$(/usr/bin/mktemp -t proxygauge-proxies)
+  RULES_JSON=$(/usr/bin/mktemp -t proxygauge-rules)
+  DELAY_JSON=$(/usr/bin/mktemp -t proxygauge-chain-delay)
   : > "$PROXIES_JSON"
   : > "$RULES_JSON"
   : > "$DELAY_JSON"

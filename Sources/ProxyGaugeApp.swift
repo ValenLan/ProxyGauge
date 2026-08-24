@@ -90,21 +90,21 @@ struct HealthCheckPlan: Sendable, Equatable {
         return !secondaryEnabled || (
             labelsAreValid
                 && groupsAreValid
-                && CloudCheckPreferences.validLocalEndpoint(secondaryEndpoint)
+                && ProxyGaugePreferences.validLocalEndpoint(secondaryEndpoint)
                 && domainsAreValid
         )
     }
 }
 
-private enum CloudCheckPreferences {
-    static let setupCompletedKey = "cloudcheck.connectionSetupCompleted.v1"
-    static let selectedEndpointKey = "cloudcheck.selectedMixedEndpoint"
-    static let secondaryEnabledKey = "cloudcheck.health.secondaryEnabled.v1"
-    static let secondaryLabelKey = "cloudcheck.health.secondaryLabel.v1"
-    static let secondaryGroupKey = "cloudcheck.health.secondaryGroup.v1"
-    static let defaultGroupKey = "cloudcheck.health.defaultGroup.v1"
-    static let secondaryEndpointKey = "cloudcheck.health.secondaryEndpoint.v1"
-    static let secondaryDomainsKey = "cloudcheck.health.secondaryDomains.v1"
+private enum ProxyGaugePreferences {
+    static let setupCompletedKey = "proxygauge.connectionSetupCompleted.v1"
+    static let selectedEndpointKey = "proxygauge.selectedMixedEndpoint"
+    static let secondaryEnabledKey = "proxygauge.health.secondaryEnabled.v1"
+    static let secondaryLabelKey = "proxygauge.health.secondaryLabel.v1"
+    static let secondaryGroupKey = "proxygauge.health.secondaryGroup.v1"
+    static let defaultGroupKey = "proxygauge.health.defaultGroup.v1"
+    static let secondaryEndpointKey = "proxygauge.health.secondaryEndpoint.v1"
+    static let secondaryDomainsKey = "proxygauge.health.secondaryDomains.v1"
 
     private struct MigrationKey {
         let current: String
@@ -113,41 +113,49 @@ private enum CloudCheckPreferences {
 
     private static let migrationKeys = [
         MigrationKey(current: setupCompletedKey, legacy: [
+            "cloudcheck.connectionSetupCompleted.v1",
             "cloudlink-guard.connectionSetupCompleted.v1",
             "cloudroute.connectionSetupCompleted.v1",
             "puffroute.connectionSetupCompleted.v1"
         ]),
         MigrationKey(current: selectedEndpointKey, legacy: [
+            "cloudcheck.selectedMixedEndpoint",
             "cloudlink-guard.selectedMixedEndpoint",
             "cloudroute.selectedMixedEndpoint",
             "puffroute.selectedMixedEndpoint"
         ]),
         MigrationKey(current: secondaryEnabledKey, legacy: [
+            "cloudcheck.health.secondaryEnabled.v1",
             "cloudlink-guard.health.secondaryEnabled.v1",
             "cloudroute.health.secondaryEnabled.v1",
             "puffroute.health.secondaryEnabled.v1"
         ]),
         MigrationKey(current: secondaryLabelKey, legacy: [
+            "cloudcheck.health.secondaryLabel.v1",
             "cloudlink-guard.health.secondaryLabel.v1",
             "cloudroute.health.secondaryLabel.v1",
             "puffroute.health.secondaryLabel.v1"
         ]),
         MigrationKey(current: secondaryGroupKey, legacy: [
+            "cloudcheck.health.secondaryGroup.v1",
             "cloudlink-guard.health.secondaryGroup.v1",
             "cloudroute.health.secondaryGroup.v1",
             "puffroute.health.secondaryGroup.v1"
         ]),
         MigrationKey(current: defaultGroupKey, legacy: [
+            "cloudcheck.health.defaultGroup.v1",
             "cloudlink-guard.health.defaultGroup.v1",
             "cloudroute.health.defaultGroup.v1",
             "puffroute.health.defaultGroup.v1"
         ]),
         MigrationKey(current: secondaryEndpointKey, legacy: [
+            "cloudcheck.health.secondaryEndpoint.v1",
             "cloudlink-guard.health.secondaryEndpoint.v1",
             "cloudroute.health.secondaryEndpoint.v1",
             "puffroute.health.secondaryEndpoint.v1"
         ]),
         MigrationKey(current: secondaryDomainsKey, legacy: [
+            "cloudcheck.health.secondaryDomains.v1",
             "cloudlink-guard.health.secondaryDomains.v1",
             "cloudroute.health.secondaryDomains.v1",
             "puffroute.health.secondaryDomains.v1"
@@ -157,6 +165,7 @@ private enum CloudCheckPreferences {
     private static func migrateLegacySettingsIfNeeded() {
         let current = UserDefaults.standard
         let legacySuites = [
+            UserDefaults(suiteName: "com.valenlan.cloudcheck"),
             UserDefaults(suiteName: "com.valenlan.cloudlinkguard"),
             UserDefaults(suiteName: "com.valenlan.cloudroute"),
             UserDefaults(suiteName: "com.valenlan.puffroute")
@@ -228,21 +237,21 @@ final class ProxyModel: ObservableObject {
     @Published var showHealthPlanSetup = false
     @Published var isDiscoveringConnection = false
     @Published var discovery = ProxyDiscovery()
-    @Published var healthPlan = CloudCheckPreferences.loadHealthPlan()
+    @Published var healthPlan = ProxyGaugePreferences.loadHealthPlan()
 
     @Published var core = MetricState(title: "代理核心", symbol: CloudSymbols.core, value: "检查中", level: .idle)
     @Published var port = MetricState(title: "本地端口", symbol: CloudSymbols.localPort, value: "检查中", level: .idle)
     @Published var entry = MetricState(title: "流量入口", symbol: CloudSymbols.entryInactive, value: "检查中", level: .idle)
     @Published var killSwitch = MetricState(title: "Kill Switch", symbol: CloudSymbols.killSwitch, value: "检查中", level: .idle)
 
-    private let backendPath = Bundle.main.path(forResource: "cloudcheck-backend", ofType: "sh")
+    private let backendPath = Bundle.main.path(forResource: "proxygauge-backend", ofType: "sh")
         ?? FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".local/share/cloudcheck/cloudcheck-backend.sh").path
+            .appendingPathComponent(".local/share/proxygauge/proxygauge-backend.sh").path
     init() {
         Task { [weak self] in
             guard let self else { return }
             await self.refresh()
-            if !UserDefaults.standard.bool(forKey: CloudCheckPreferences.setupCompletedKey) {
+            if !UserDefaults.standard.bool(forKey: ProxyGaugePreferences.setupCompletedKey) {
                 await self.discoverConnection(showSheet: true)
             }
         }
@@ -278,9 +287,9 @@ final class ProxyModel: ObservableObject {
     }
 
     func confirmConnection(endpoint: String) {
-        guard CloudCheckPreferences.validLocalEndpoint(endpoint) else { return }
-        UserDefaults.standard.set(endpoint, forKey: CloudCheckPreferences.selectedEndpointKey)
-        UserDefaults.standard.set(true, forKey: CloudCheckPreferences.setupCompletedKey)
+        guard ProxyGaugePreferences.validLocalEndpoint(endpoint) else { return }
+        UserDefaults.standard.set(endpoint, forKey: ProxyGaugePreferences.selectedEndpointKey)
+        UserDefaults.standard.set(true, forKey: ProxyGaugePreferences.setupCompletedKey)
         showConnectionSetup = false
         Task { [weak self] in
             await self?.refresh()
@@ -312,8 +321,8 @@ final class ProxyModel: ObservableObject {
 
     func saveHealthPlan(_ plan: HealthCheckPlan) {
         guard plan.isValid else { return }
-        CloudCheckPreferences.saveHealthPlan(plan)
-        healthPlan = CloudCheckPreferences.loadHealthPlan()
+        ProxyGaugePreferences.saveHealthPlan(plan)
+        healthPlan = ProxyGaugePreferences.loadHealthPlan()
         showHealthPlanSetup = false
     }
 
@@ -392,7 +401,7 @@ final class ProxyModel: ObservableObject {
 
         let endpoint = fields["endpoint"] ?? "127.0.0.1:7890"
         return ProxyDiscovery(
-            found: fields["found"] == "1" && CloudCheckPreferences.validLocalEndpoint(endpoint),
+            found: fields["found"] == "1" && ProxyGaugePreferences.validLocalEndpoint(endpoint),
             client: fields["client"] ?? "未识别",
             endpoint: endpoint,
             mode: fields["mode"] ?? "未开启",
@@ -418,9 +427,9 @@ final class ProxyModel: ObservableObject {
     ) async -> (status: Int32, output: String) {
         let path = backendPath
         let healthPlan = healthPlan
-        let selectedEndpoint = UserDefaults.standard.string(forKey: CloudCheckPreferences.selectedEndpointKey)
+        let selectedEndpoint = UserDefaults.standard.string(forKey: ProxyGaugePreferences.selectedEndpointKey)
         let validSelectedEndpoint = selectedEndpoint.flatMap {
-            CloudCheckPreferences.validLocalEndpoint($0) ? $0 : nil
+            ProxyGaugePreferences.validLocalEndpoint($0) ? $0 : nil
         }
         return await Task.detached(priority: .userInitiated) {
             let process = Process()
@@ -431,16 +440,16 @@ final class ProxyModel: ObservableObject {
             process.standardError = pipe
             if let validSelectedEndpoint {
                 var environment = ProcessInfo.processInfo.environment
-                environment["CLOUDCHECK_MIXED"] = validSelectedEndpoint
+                environment["PROXYGAUGE_MIXED"] = validSelectedEndpoint
                 process.environment = environment
             }
             var environment = process.environment ?? ProcessInfo.processInfo.environment
-            environment["CLOUDCHECK_SECONDARY_ENABLED"] = healthPlan.secondaryEnabled ? "1" : "0"
-            environment["CLOUDCHECK_SECONDARY_LABEL"] = healthPlan.secondaryLabel
-            environment["CLOUDCHECK_SECONDARY_GROUP"] = healthPlan.secondaryGroup
-            environment["CLOUDCHECK_DEFAULT_GROUP"] = healthPlan.defaultGroup
-            environment["CLOUDCHECK_SECONDARY_MIXED"] = healthPlan.secondaryEndpoint
-            environment["CLOUDCHECK_SECONDARY_DOMAINS"] = healthPlan.normalizedDomains.joined(separator: ",")
+            environment["PROXYGAUGE_SECONDARY_ENABLED"] = healthPlan.secondaryEnabled ? "1" : "0"
+            environment["PROXYGAUGE_SECONDARY_LABEL"] = healthPlan.secondaryLabel
+            environment["PROXYGAUGE_SECONDARY_GROUP"] = healthPlan.secondaryGroup
+            environment["PROXYGAUGE_DEFAULT_GROUP"] = healthPlan.defaultGroup
+            environment["PROXYGAUGE_SECONDARY_MIXED"] = healthPlan.secondaryEndpoint
+            environment["PROXYGAUGE_SECONDARY_DOMAINS"] = healthPlan.normalizedDomains.joined(separator: ",")
             process.environment = environment
 
             do {
@@ -1657,13 +1666,13 @@ struct AdvancedCheckView: View {
     }
 
     private func launchIsolatedBrowser(_ route: IsolatedBrowserRoute) {
-        let bundledPath = Bundle.main.path(forResource: "cloudcheck-private-browser", ofType: "sh")
+        let bundledPath = Bundle.main.path(forResource: "proxygauge-private-browser", ofType: "sh")
         let fallbackPath = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".local/bin/cloudcheck-private-browser").path
+            .appendingPathComponent(".local/bin/proxygauge-private-browser").path
         let scriptPath = bundledPath ?? fallbackPath
 
         guard FileManager.default.isExecutableFile(atPath: scriptPath) else {
-            message = "高级检测组件不可用，请重新安装 CloudCheck。"
+            message = "高级检测组件不可用，请重新安装 ProxyGauge。"
             return
         }
 
@@ -1673,12 +1682,12 @@ struct AdvancedCheckView: View {
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         var environment = ProcessInfo.processInfo.environment
-        if let endpoint = UserDefaults.standard.string(forKey: CloudCheckPreferences.selectedEndpointKey),
-           CloudCheckPreferences.validLocalEndpoint(endpoint) {
-            environment["CLOUDCHECK_MIXED"] = endpoint
+        if let endpoint = UserDefaults.standard.string(forKey: ProxyGaugePreferences.selectedEndpointKey),
+           ProxyGaugePreferences.validLocalEndpoint(endpoint) {
+            environment["PROXYGAUGE_MIXED"] = endpoint
         }
-        environment["CLOUDCHECK_SECONDARY_MIXED"] = plan.secondaryEndpoint
-        environment["CLOUDCHECK_SECONDARY_LABEL"] = plan.secondaryLabel
+        environment["PROXYGAUGE_SECONDARY_MIXED"] = plan.secondaryEndpoint
+        environment["PROXYGAUGE_SECONDARY_LABEL"] = plan.secondaryLabel
         process.environment = environment
 
         do {
@@ -1730,7 +1739,7 @@ struct RulePackView: View {
                 )
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("CloudCheck 规则包")
+                    Text("ProxyGauge 规则包")
                         .font(.system(size: 21, weight: .semibold, design: .rounded))
                     Text("分流规则与 TUN DNS · 版本 \(version)")
                         .font(.callout)
@@ -1803,7 +1812,7 @@ struct RulePackView: View {
     }
 
     private var bundledRuleURL: URL? {
-        Bundle.main.url(forResource: "CloudCheck-Merge", withExtension: "yaml", subdirectory: "Rules")
+        Bundle.main.url(forResource: "ProxyGauge-Merge", withExtension: "yaml", subdirectory: "Rules")
     }
 
     private func loadPreview() {
@@ -1830,8 +1839,8 @@ struct RulePackView: View {
         }
 
         let panel = NSSavePanel()
-        panel.title = "导出 CloudCheck 规则包"
-        panel.nameFieldStringValue = "CloudCheck-Merge.yaml"
+        panel.title = "导出 ProxyGauge 规则包"
+        panel.nameFieldStringValue = "ProxyGauge-Merge.yaml"
         panel.canCreateDirectories = true
         if let yamlType = UTType(filenameExtension: "yaml") {
             panel.allowedContentTypes = [yamlType]
@@ -2055,8 +2064,8 @@ private struct ConnectionSetupView: View {
                     Text(discovery.found ? "已找到本地代理" : "连接本地代理")
                         .font(.system(size: 21, weight: .semibold, design: .rounded))
                     Text(discovery.found
-                         ? "确认一次即可开始使用 CloudCheck。"
-                         : "启动 Clash Verge 或 Mihomo，CloudCheck 会自动识别。")
+                         ? "确认一次即可开始使用 ProxyGauge。"
+                         : "启动 Clash Verge 或 Mihomo，ProxyGauge 会自动识别。")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
@@ -2412,23 +2421,38 @@ struct ContentView: View {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var singletonLockFD: Int32 = -1
+    private var legacySingletonLockFD: Int32 = -1
     private var ownsSingletonLock = false
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         let lockPath = (NSTemporaryDirectory() as NSString)
+            .appendingPathComponent("com.valenlan.proxygauge.lock")
+        let legacyLockPath = (NSTemporaryDirectory() as NSString)
             .appendingPathComponent("com.valenlan.cloudcheck.lock")
         singletonLockFD = Darwin.open(lockPath, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
+        legacySingletonLockFD = Darwin.open(
+            legacyLockPath,
+            O_CREAT | O_RDWR,
+            S_IRUSR | S_IWUSR
+        )
 
         guard singletonLockFD >= 0,
-              flock(singletonLockFD, LOCK_EX | LOCK_NB) == 0 else {
+              legacySingletonLockFD >= 0,
+              flock(singletonLockFD, LOCK_EX | LOCK_NB) == 0,
+              flock(legacySingletonLockFD, LOCK_EX | LOCK_NB) == 0 else {
             if singletonLockFD >= 0 {
                 Darwin.close(singletonLockFD)
                 singletonLockFD = -1
             }
+            if legacySingletonLockFD >= 0 {
+                Darwin.close(legacySingletonLockFD)
+                legacySingletonLockFD = -1
+            }
 
             let currentPID = ProcessInfo.processInfo.processIdentifier
-            let existing = NSRunningApplication
-                .runningApplications(withBundleIdentifier: "com.valenlan.cloudcheck")
+            let existing = ["com.valenlan.proxygauge", "com.valenlan.cloudcheck"]
+                .lazy
+                .flatMap { NSRunningApplication.runningApplications(withBundleIdentifier: $0) }
                 .first { $0.processIdentifier != currentPID && !$0.isTerminated }
             existing?.activate(options: [.activateAllWindows])
 
@@ -2453,7 +2477,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func applyApplicationIcon() {
-        guard let iconURL = Bundle.main.url(forResource: "CloudCheck", withExtension: "icns"),
+        guard let iconURL = Bundle.main.url(forResource: "ProxyGauge", withExtension: "icns"),
               let icon = NSImage(contentsOf: iconURL) else { return }
         NSApp.applicationIconImage = icon
         NSApp.dockTile.display()
@@ -2464,19 +2488,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        guard singletonLockFD >= 0 else { return }
-        flock(singletonLockFD, LOCK_UN)
-        Darwin.close(singletonLockFD)
+        for fileDescriptor in [singletonLockFD, legacySingletonLockFD]
+            where fileDescriptor >= 0 {
+            flock(fileDescriptor, LOCK_UN)
+            Darwin.close(fileDescriptor)
+        }
         singletonLockFD = -1
+        legacySingletonLockFD = -1
     }
 }
 
 @main
-struct CloudCheckApp: App {
+struct ProxyGaugeApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        Window("CloudCheck", id: "main") {
+        Window("ProxyGauge", id: "main") {
             ContentView()
         }
         .defaultSize(

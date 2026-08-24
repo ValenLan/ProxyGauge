@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 
-namespace CloudCheck.ViewModels;
+namespace ProxyGauge.ViewModels;
 
 public abstract class ObservableObject : INotifyPropertyChanged
 {

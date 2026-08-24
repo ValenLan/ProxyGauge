@@ -11,3 +11,6 @@ config
 Windows/bin/
 Windows/obj/
 Windows/publish/
+Windows.Tests/bin/
+Windows.Tests/obj/
+docs/handoffs/

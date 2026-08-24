@@ -1,7 +1,7 @@
-<Window x:Class="CloudCheck.HealthReportWindow"
+<Window x:Class="ProxyGauge.HealthReportWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="CloudCheck 链路检测"
+        Title="ProxyGauge 链路检测"
         Width="720"
         Height="640"
         MaxHeight="720"
@@ -11,7 +11,7 @@
         AllowsTransparency="True"
         Background="Transparent"
         ShowInTaskbar="False"
-        Icon="Assets/CloudCheck.ico">
+        Icon="Assets/ProxyGauge.ico">
     <Border Background="{StaticResource CanvasBrush}"
             BorderBrush="{StaticResource BorderBrush}"
             BorderThickness="1"

@@ -1,8 +1,8 @@
 using System.IO;
 using System.Text.Json;
-using CloudCheck.Models;
+using ProxyGauge.Models;
 
-namespace CloudCheck.Services;
+namespace ProxyGauge.Services;
 
 public sealed class ConfigService
 {
@@ -14,14 +14,17 @@ public sealed class ConfigService
 
     public string ConfigPath { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "CloudCheck",
+        "ProxyGauge",
         "config.json");
+
+    public bool HasSavedConfig => File.Exists(ConfigPath) || LegacyConfigPaths.Any(File.Exists);
 
     private IEnumerable<string> LegacyConfigPaths
     {
         get
         {
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            yield return Path.Combine(appData, "CloudCheck", "config.json");
             yield return Path.Combine(appData, "CloudLinkGuard", "config.json");
             yield return Path.Combine(appData, "CloudRoute", "config.json");
             yield return Path.Combine(appData, "PuffRoute", "config.json");
@@ -65,12 +68,21 @@ public sealed class ConfigService
 
     private static AppConfig Normalize(AppConfig config)
     {
-        config.MixedHost = string.IsNullOrWhiteSpace(config.MixedHost)
-            ? "127.0.0.1"
-            : config.MixedHost.Trim();
+        config.MixedHost = LocalEndpointPolicy.NormalizeLoopbackHost(config.MixedHost);
         config.MixedPort = Math.Clamp(config.MixedPort, 1, 65535);
-        config.ExpectedIp = config.ExpectedIp.Trim();
+        config.ExpectedIp = config.ExpectedIp?.Trim() ?? string.Empty;
         config.TimeoutSeconds = Math.Clamp(config.TimeoutSeconds, 3, 30);
+        config.SecondaryLabel = NormalizeText(config.SecondaryLabel, "额外出口");
+        config.SecondaryGroup = NormalizeText(config.SecondaryGroup, "Google-Chain");
+        config.DefaultGroup = NormalizeText(config.DefaultGroup, "PROXY");
+        config.SecondaryMixedHost = LocalEndpointPolicy.NormalizeLoopbackHost(
+            config.SecondaryMixedHost);
+        config.SecondaryMixedPort = Math.Clamp(config.SecondaryMixedPort, 1, 65535);
+        config.SecondaryDomains = config.SecondaryDomains?.Trim() ?? string.Empty;
+        config.ExpectedSecondaryIp = config.ExpectedSecondaryIp?.Trim() ?? string.Empty;
         return config;
     }
+
+    private static string NormalizeText(string? value, string fallback) =>
+        string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
 }

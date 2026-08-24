@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace CloudCheck.Models;
+namespace ProxyGauge.Models;
 
 public sealed record HealthCheckItem(string Label, string Detail, HealthLevel Level)
 {
@@ -37,6 +37,7 @@ public sealed record HealthCheckSection(
 public sealed class HealthReport
 {
     public required DateTime CheckedAt { get; init; }
+    public string PlanName { get; init; } = "通用检测";
     public required IReadOnlyList<HealthCheckSection> Sections { get; init; }
 
     public int PassedCount => Sections.SelectMany(section => section.Items).Count(item => item.Level == HealthLevel.Ok);
@@ -66,7 +67,8 @@ public sealed class HealthReport
     public string ToPlainText()
     {
         var text = new StringBuilder();
-        text.AppendLine($"CloudCheck Windows 链路检测 · {CheckedAt:yyyy-MM-dd HH:mm:ss}");
+        text.AppendLine($"ProxyGauge Windows 链路检测 · {CheckedAt:yyyy-MM-dd HH:mm:ss}");
+        text.AppendLine($"检测方案：{PlanName}");
         text.AppendLine($"链路分：{Score}/100 · {ScoreLabel}");
         text.AppendLine($"结果：{PassedCount} 通过 / {WarningCount} 提示 / {FailedCount} 失败");
         text.AppendLine();
