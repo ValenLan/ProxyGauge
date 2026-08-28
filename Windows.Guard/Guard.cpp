@@ -862,8 +862,9 @@ std::optional<std::vector<BYTE>> SidFromString(const std::wstring& value)
 
 bool SameSid(const std::wstring& ownerSid, const ClientIdentity& identity)
 {
-    const auto owner = SidFromString(ownerSid);
-    return owner.has_value() && EqualSid(owner->data(), identity.sid.data());
+    auto owner = SidFromString(ownerSid);
+    return owner.has_value() &&
+        EqualSid(owner->data(), const_cast<BYTE*>(identity.sid.data()));
 }
 
 std::optional<ClientIdentity> ReadClientIdentity(HANDLE pipe)
@@ -982,7 +983,7 @@ public:
             return;
         }
 
-        const auto sid = SidFromString(state_.ownerSid);
+        auto sid = SidFromString(state_.ownerSid);
         if (!sid.has_value())
         {
             return;
@@ -1062,7 +1063,10 @@ public:
             }
 
             const auto tunLuids = FindTunInterfaces();
-            const DWORD result = InstallFilters(identity.sid.data(), *proxyPath, tunLuids);
+            const DWORD result = InstallFilters(
+                const_cast<BYTE*>(identity.sid.data()),
+                *proxyPath,
+                tunLuids);
             if (result != ERROR_SUCCESS)
             {
                 return ResponseError(L"WFP_ENABLE_FAILED", result);

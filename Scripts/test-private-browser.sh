@@ -33,7 +33,7 @@ done
 /usr/bin/grep -Fq 'https://www.abuseipdb.com/check/{escapedIp}' "$WINDOWS_SOURCE"
 /usr/bin/grep -Fq '/bin/rm -f "$USER_BIN/proxygauge-private-browser"' "$PROJECT_ROOT/Scripts/install.sh"
 
-if rg -n \
+if /usr/bin/grep -rnE \
   'proxygauge-private-browser|PrivateBrowserService|AdvancedDetectionWindow|--user-data-dir=|--proxy-server=' \
   "$PROJECT_ROOT/Sources" "$PROJECT_ROOT/Windows" "$PROJECT_ROOT/Scripts/build.sh"; then
   echo "Legacy isolated browser implementation must not be referenced." >&2

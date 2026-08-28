@@ -1,9 +1,12 @@
 <Project Sdk="WixToolset.Sdk/6.0.2">
   <PropertyGroup>
-    <OutputName>ProxyGauge-$(ProductVersion)-win-$(RuntimeLabel)</OutputName>
+    <OutputName>ProxyGauge-$(ProductVersion)-$(RuntimeLabel)</OutputName>
     <OutputPath>..\installer-output\$(RuntimeLabel)\</OutputPath>
     <IntermediateOutputPath>obj\$(RuntimeLabel)\$(Configuration)\</IntermediateOutputPath>
     <DebugType>none</DebugType>
     <DefineConstants>ProductVersion=$(ProductVersion);PublishDir=$(PublishDir);GuardExe=$(GuardExe);IconPath=$(IconPath)</DefineConstants>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Util.wixext" Version="6.0.2" />
+  </ItemGroup>
 </Project>

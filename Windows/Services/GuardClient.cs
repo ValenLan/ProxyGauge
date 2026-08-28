@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.IO;
 using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -157,7 +158,7 @@ public sealed class GuardClient
         }
     }
 
-    private static void VerifyGuardServiceServer(SafeFileHandle pipe)
+    private static void VerifyGuardServiceServer(SafePipeHandle pipe)
     {
         if (!GetNamedPipeServerProcessId(pipe, out var serverProcessId))
         {
@@ -236,7 +237,7 @@ public sealed class GuardClient
         CharSet = CharSet.Unicode,
         ExactSpelling = true,
         SetLastError = true)]
-    private static extern SafeFileHandle CreateFileW(
+    private static extern SafePipeHandle CreateFileW(
         string fileName,
         uint desiredAccess,
         uint shareMode,
@@ -247,7 +248,7 @@ public sealed class GuardClient
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool GetNamedPipeServerProcessId(
-        SafeFileHandle pipe,
+        SafePipeHandle pipe,
         out uint serverProcessId);
 
     [DllImport(

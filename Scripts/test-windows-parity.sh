@@ -86,7 +86,9 @@ done
   "$PROJECT_ROOT/Windows.Guard/Guard.cpp"
 /usr/bin/grep -Fq 'Start="auto"' \
   "$PROJECT_ROOT/Windows.Installer/Package.wxs"
-/usr/bin/grep -Fq 'WindowsBuild &gt;= 22000' \
+/usr/bin/grep -Fq 'WINDOWS_CURRENT_BUILD &gt;= 22000' \
+  "$PROJECT_ROOT/Windows.Installer/Package.wxs"
+/usr/bin/grep -Fq 'Name="CurrentBuild"' \
   "$PROJECT_ROOT/Windows.Installer/Package.wxs"
 /usr/bin/grep -Fq 'After="StopServices"' \
   "$PROJECT_ROOT/Windows.Installer/Package.wxs"
