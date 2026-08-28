@@ -25,11 +25,6 @@ public partial class DetectionPlanWindow : Window
 
     public AppConfig Config { get; private set; }
 
-    private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (e.LeftButton == MouseButtonState.Pressed) DragMove();
-    }
-
     private void EnableCheckBox_Changed(object sender, RoutedEventArgs e) => UpdateEnabledState();
 
     private void UpdateEnabledState()

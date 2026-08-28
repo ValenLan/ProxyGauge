@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media;
 using ProxyGauge.Models;
 using ProxyGauge.Services;
 using ProxyGauge.ViewModels;
@@ -40,7 +41,20 @@ public partial class MainWindow : Window
         DataContext = _viewModel;
 
         Loaded += MainWindow_Loaded;
+        StateChanged += (_, _) => UpdateMaxRestoreIcon();
         // Guard is intentionally not contacted on close. Closing the UI must never disable protection.
+    }
+
+    private void MaximizeButton_Click(object sender, RoutedEventArgs e) =>
+        WindowState = WindowState == WindowState.Maximized
+            ? WindowState.Normal
+            : WindowState.Maximized;
+
+    private void UpdateMaxRestoreIcon()
+    {
+        MaximizeIcon.Data = Geometry.Parse(WindowState == WindowState.Maximized
+            ? "M3.6,1.4 L8.6,1.4 L8.6,6.4 L6.6,6.4 M1.4,3.6 L6.4,3.6 L6.4,8.6 L1.4,8.6 Z"
+            : "M1.8,1.8 L8.2,1.8 L8.2,8.2 L1.8,8.2 Z");
     }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -58,14 +72,6 @@ public partial class MainWindow : Window
         }
 
         await _viewModel.RefreshAsync();
-    }
-
-    private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (e.LeftButton == MouseButtonState.Pressed)
-        {
-            DragMove();
-        }
     }
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e) =>

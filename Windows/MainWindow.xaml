@@ -1,23 +1,28 @@
 <Window x:Class="ProxyGauge.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="ProxyGauge"
         Width="880"
         Height="700"
+        MinWidth="880"
+        MinHeight="700"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
-        ResizeMode="NoResize"
-        AllowsTransparency="True"
+        ResizeMode="CanResize"
         Background="Transparent"
         Icon="Assets/ProxyGauge.ico"
         UseLayoutRounding="True">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="44"
+                            GlassFrameThickness="0"
+                            CornerRadius="0"
+                            ResizeBorderThickness="6"
+                            UseAeroCaptionButtons="False" />
+    </shell:WindowChrome.WindowChrome>
     <Border Background="{StaticResource CanvasBrush}"
             BorderBrush="{StaticResource BorderBrush}"
-            BorderThickness="1"
-            CornerRadius="18">
-        <Border.Effect>
-            <DropShadowEffect BlurRadius="26" ShadowDepth="8" Opacity="0.38" Color="#050A11" />
-        </Border.Effect>
+            BorderThickness="1">
 
         <Grid>
             <Grid.RowDefinitions>
@@ -26,7 +31,7 @@
             </Grid.RowDefinitions>
 
             <Border Grid.Row="0" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
-                <Grid MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+                <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
@@ -41,9 +46,22 @@
                     </StackPanel>
 
                     <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="0,4,5,4">
-                        <Button Style="{StaticResource TitleButtonStyle}" Content="&#xE713;" ToolTip="设置" IsEnabled="{Binding IsNotBusy}" Click="SettingsButton_Click" />
-                        <Button Style="{StaticResource TitleButtonStyle}" Content="&#xE921;" ToolTip="最小化" Click="MinimizeButton_Click" />
-                        <Button x:Name="CloseButton" Style="{StaticResource TitleButtonStyle}" Content="&#xE8BB;" ToolTip="关闭窗口（不会关闭系统保护）" Click="CloseButton_Click" />
+                        <Button Style="{StaticResource TitleButtonStyle}" ToolTip="设置" IsEnabled="{Binding IsNotBusy}" Click="SettingsButton_Click" shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                            <Path Width="13" Height="13" Stretch="Uniform" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.3"
+                                  Data="M8,6.2 A1.8,1.8 0 1 0 8,9.8 A1.8,1.8 0 1 0 8,6.2 Z M8,1.5 L8,3.5 M8,12.5 L8,14.5 M1.5,8 L3.5,8 M12.5,8 L14.5,8 M3.4,3.4 L4.8,4.8 M11.2,11.2 L12.6,12.6 M12.6,3.4 L11.2,4.8 M4.8,11.2 L3.4,12.6" />
+                        </Button>
+                        <Button Style="{StaticResource TitleButtonStyle}" ToolTip="最小化" Click="MinimizeButton_Click" shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                            <Path Width="13" Height="13" Stretch="Uniform" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.3"
+                                  Data="M1.5,5 L8.5,5" />
+                        </Button>
+                        <Button x:Name="MaximizeButton" Style="{StaticResource TitleButtonStyle}" ToolTip="最大化 / 还原" Click="MaximizeButton_Click" shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                            <Path x:Name="MaximizeIcon" Width="13" Height="13" Stretch="Uniform" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.3"
+                                  Data="M1.8,1.8 L8.2,1.8 L8.2,8.2 L1.8,8.2 Z" />
+                        </Button>
+                        <Button x:Name="CloseButton" Style="{StaticResource TitleButtonStyle}" ToolTip="关闭窗口（不会关闭系统保护）" Click="CloseButton_Click" shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                            <Path Width="13" Height="13" Stretch="Uniform" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.3"
+                                  Data="M1.5,1.5 L8.5,8.5 M8.5,1.5 L1.5,8.5" />
+                        </Button>
                     </StackPanel>
                 </Grid>
             </Border>

@@ -19,11 +19,6 @@ public partial class RulePackWindow : Window
 
     public string RuleText { get; }
 
-    private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (e.LeftButton == MouseButtonState.Pressed) DragMove();
-    }
-
     private void CopyButton_Click(object sender, RoutedEventArgs e)
     {
         Clipboard.SetText(RuleText);
