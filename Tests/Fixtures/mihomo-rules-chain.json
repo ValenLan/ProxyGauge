@@ -2,6 +2,10 @@
   "rules": [
     {"type": "DomainSuffix", "payload": "google.com", "proxy": "Google-Chain"},
     {"type": "DomainSuffix", "payload": "googleapis.com", "proxy": "Google-Chain"},
+    {"type": "DomainSuffix", "payload": "claude.ai", "proxy": "Google-Chain"},
+    {"type": "DomainSuffix", "payload": "anthropic.com", "proxy": "Google-Chain"},
+    {"type": "DomainSuffix", "payload": "claude.com", "proxy": "Google-Chain"},
+    {"type": "DomainSuffix", "payload": "claudeusercontent.com", "proxy": "Google-Chain"},
     {"type": "Match", "payload": "", "proxy": "PROXY"}
   ]
 }

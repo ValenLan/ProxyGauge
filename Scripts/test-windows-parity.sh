@@ -8,8 +8,7 @@ for xaml in \
   Windows/MainWindow.xaml \
   Windows/SettingsWindow.xaml \
   Windows/HealthReportWindow.xaml \
-  Windows/DetectionPlanWindow.xaml \
-  Windows/AdvancedDetectionWindow.xaml; do
+  Windows/DetectionPlanWindow.xaml; do
   /usr/bin/xmllint --noout "$PROJECT_ROOT/$xaml"
 done
 
@@ -21,16 +20,101 @@ done
 /usr/bin/grep -Fq 'LocalEndpointPolicy.IsLoopbackHost' "$PROJECT_ROOT/Windows/Services/HealthCheckService.cs"
 /usr/bin/grep -Fq 'Mihomo 控制接口' "$PROJECT_ROOT/Windows/Services/MihomoPlanInspectionService.cs"
 /usr/bin/grep -Fq '默认入口与额外入口返回不同公网出口' "$PROJECT_ROOT/Windows/Services/HealthCheckService.cs"
-/usr/bin/grep -Fq -- '--user-data-dir=' "$PROJECT_ROOT/Windows/Services/PrivateBrowserService.cs"
-/usr/bin/grep -Fq -- '--proxy-server=' "$PROJECT_ROOT/Windows/Services/PrivateBrowserService.cs"
-/usr/bin/grep -Fq 'proxygauge-browser.' "$PROJECT_ROOT/Windows/Services/PrivateBrowserService.cs"
+/usr/bin/grep -Fq 'https://ippure.com/' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'https://ipcheck.ing/?hl=zh' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'https://browserleaks.com/ip' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'https://www.ipqualityscore.com/free-ip-lookup-proxy-vpn-test' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'https://scamalytics.com/ip' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'https://www.abuseipdb.com/check/' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'ResolveDefaultExitIpAsync' "$PROJECT_ROOT/Windows/Services/HealthCheckService.cs"
+/usr/bin/grep -Fq 'https://scamalytics.com/ip/{escapedIp}' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'https://www.abuseipdb.com/check/{escapedIp}' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'UseShellExecute = true' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'MessageBoxButton.YesNo' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq '部分网站可能要求人机验证' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq '各站结果不会计入链路分' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
 /usr/bin/grep -Fq 'PlanButton_Click' "$PROJECT_ROOT/Windows/MainWindow.xaml"
 /usr/bin/grep -Fq 'AdvancedButton_Click' "$PROJECT_ROOT/Windows/MainWindow.xaml"
 /usr/bin/grep -Fq 'Windows.Tests/ProxyGauge.Windows.Tests.csproj' "$PROJECT_ROOT/.github/workflows/build.yml"
 /usr/bin/grep -Fq 'Remote hostnames must be rejected.' "$PROJECT_ROOT/Windows.Tests/Program.cs"
+/usr/bin/grep -Fq '<TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>' \
+  "$PROJECT_ROOT/Windows/ProxyGauge.Windows.csproj"
+/usr/bin/grep -Fq '<SupportedOSPlatformVersion>10.0.22000.0</SupportedOSPlatformVersion>' \
+  "$PROJECT_ROOT/Windows/ProxyGauge.Windows.csproj"
+/usr/bin/grep -Fq 'dotnet-version: 10.0.x' "$PROJECT_ROOT/.github/workflows/build.yml"
+/usr/bin/grep -Fq 'OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000)' \
+  "$PROJECT_ROOT/Windows/App.xaml.cs"
+/usr/bin/grep -Fq 'ProxyGauge 仅支持 Windows 11，不支持 Windows 10。' \
+  "$PROJECT_ROOT/Windows/App.xaml.cs"
+/usr/bin/grep -Fq 'public bool HasValidConfig => TryLoad(out _);' \
+  "$PROJECT_ROOT/Windows/Services/ConfigService.cs"
+/usr/bin/grep -Fq 'File.Replace(temporaryPath, ConfigPath' \
+  "$PROJECT_ROOT/Windows/Services/ConfigService.cs"
+/usr/bin/grep -Fq 'timeout.CancelAfter(RouteProbeTimeout);' \
+  "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
+/usr/bin/grep -Fq 'process.Kill(entireProcessTree: true);' \
+  "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
+/usr/bin/grep -Fq 'A corrupt config must require setup.' \
+  "$PROJECT_ROOT/Windows.Tests/Program.cs"
+/usr/bin/grep -Fq 'Closing the UI must never disable protection.' \
+  "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq '退出 ProxyGauge 后仍持续拦截直连' \
+  "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
+/usr/bin/grep -Fq 'ProxyGauge.Guard.v1' \
+  "$PROJECT_ROOT/Windows/Services/GuardClient.cs"
+/usr/bin/grep -Fq 'GenericRead | FileWriteData' \
+  "$PROJECT_ROOT/Windows/Services/GuardClient.cs"
+/usr/bin/grep -Fq 'GetNamedPipeServerProcessId' \
+  "$PROJECT_ROOT/Windows/Services/GuardClient.cs"
+/usr/bin/grep -Fq 'QueryServiceStatusEx' \
+  "$PROJECT_ROOT/Windows/Services/GuardClient.cs"
+/usr/bin/grep -Fq 'FWPM_FILTER_FLAG_PERSISTENT' \
+  "$PROJECT_ROOT/Windows.Guard/Guard.cpp"
+/usr/bin/grep -Fq 'provider.serviceName = const_cast<wchar_t*>(ServiceName);' \
+  "$PROJECT_ROOT/Windows.Guard/Guard.cpp"
+/usr/bin/grep -Fq 'FWPM_CONDITION_ALE_USER_ID' \
+  "$PROJECT_ROOT/Windows.Guard/Guard.cpp"
+/usr/bin/grep -Fq 'FWPM_LAYER_ALE_AUTH_CONNECT_V6' \
+  "$PROJECT_ROOT/Windows.Guard/Guard.cpp"
+/usr/bin/grep -Fq '(A;;GR;;;AU)(A;;0x00000002;;;AU)' \
+  "$PROJECT_ROOT/Windows.Guard/Guard.cpp"
+/usr/bin/grep -Fq 'FILE_FLAG_FIRST_PIPE_INSTANCE' \
+  "$PROJECT_ROOT/Windows.Guard/Guard.cpp"
+/usr/bin/grep -Fq -- '--emergency-off' \
+  "$PROJECT_ROOT/Windows.Guard/Guard.cpp"
+/usr/bin/grep -Fq 'ControlService(service, SERVICE_CONTROL_STOP' \
+  "$PROJECT_ROOT/Windows.Guard/Guard.cpp"
+/usr/bin/grep -Fq 'Start="auto"' \
+  "$PROJECT_ROOT/Windows.Installer/Package.wxs"
+/usr/bin/grep -Fq 'WindowsBuild &gt;= 22000' \
+  "$PROJECT_ROOT/Windows.Installer/Package.wxs"
+/usr/bin/grep -Fq 'After="StopServices"' \
+  "$PROJECT_ROOT/Windows.Installer/Package.wxs"
+/usr/bin/grep -Fq 'ProxyGauge.Guard.exe' \
+  "$PROJECT_ROOT/.github/workflows/build.yml"
+/usr/bin/grep -Fq 'ProxyGauge.Installer.wixproj' \
+  "$PROJECT_ROOT/.github/workflows/build.yml"
 
 if /usr/bin/grep -Eq 'GetRawText\(' "$PROJECT_ROOT/Windows/Services/MihomoPlanInspectionService.cs"; then
   echo 'Windows plan inspection must not render raw Mihomo controller data.' >&2
+  exit 1
+fi
+
+if /usr/bin/grep -Eq 'ProxyGauge-.*win-(x64|arm64)\.zip' "$PROJECT_ROOT/.github/workflows/build.yml"; then
+  echo 'Windows release must be an MSI so Guard remains independently installed.' >&2
+  exit 1
+fi
+
+if /usr/bin/grep -Fq '(A;;GRGW;;;AU)' "$PROJECT_ROOT/Windows.Guard/Guard.cpp"; then
+  echo 'Authenticated users must not receive FILE_GENERIC_WRITE on the Guard pipe.' >&2
+  exit 1
+fi
+
+if /usr/bin/grep -Eq 'PAUSED|PauseGuard|暂停[[:space:]]*10[[:space:]]*分钟' \
+  "$PROJECT_ROOT/Windows.Guard/Guard.cpp" \
+  "$PROJECT_ROOT/Windows/Services/GuardProtocol.cs" \
+  "$PROJECT_ROOT/Windows/MainWindow.xaml"; then
+  echo 'Windows Guard must expose a persistent on/off switch, not a timed pause.' >&2
   exit 1
 fi
 

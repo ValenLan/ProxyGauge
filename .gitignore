@@ -13,4 +13,8 @@ Windows/obj/
 Windows/publish/
 Windows.Tests/bin/
 Windows.Tests/obj/
+Windows.Guard/out/
+Windows.Installer/bin/
+Windows.Installer/obj/
+installer-output/
 docs/handoffs/

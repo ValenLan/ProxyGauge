@@ -1,5 +1,4 @@
 # Copy to ~/.config/proxygauge/config and fill in your own values.
-# Legacy CloudCheck/CloudLinkGuard/CloudRoute/PuffRoute config files and environment variables remain readable.
 PROXYGAUGE_MIXED="127.0.0.1:7890"
 PROXYGAUGE_TIMEOUT="6"
 
@@ -7,18 +6,15 @@ PROXYGAUGE_TIMEOUT="6"
 PROXYGAUGE_EXPECT_IP=""
 
 # Optional extra route/rule template. Disabled for a generic single-exit setup.
-# The prefilled values preserve ProxyGauge's original Google/Gemini template.
+# The prefilled values cover a Google/Gemini/Claude chained exit.
 PROXYGAUGE_MIHOMO_SOCKET="/private/tmp/verge/verge-mihomo.sock"
 PROXYGAUGE_SECONDARY_ENABLED="0"
-PROXYGAUGE_SECONDARY_LABEL="Google / Gemini"
+PROXYGAUGE_SECONDARY_LABEL="Google / Gemini / Claude"
 PROXYGAUGE_SECONDARY_GROUP="Google-Chain"
 PROXYGAUGE_DEFAULT_GROUP="PROXY"
 PROXYGAUGE_SECONDARY_MIXED="127.0.0.1:7891"
-PROXYGAUGE_SECONDARY_DOMAINS="gemini.google.com,generativelanguage.googleapis.com,www.google.com"
+PROXYGAUGE_SECONDARY_DOMAINS="gemini.google.com,generativelanguage.googleapis.com,www.google.com,claude.ai,api.anthropic.com,platform.claude.com,bridge.claudeusercontent.com"
 PROXYGAUGE_EXPECT_SECONDARY_IP=""
 
 # Off by default: active requests to AI APIs can create automated access logs.
 PROXYGAUGE_ACTIVE_AI_PROBES="0"
-
-# Optional: Chrome executable used by the isolated browser check.
-PROXYGAUGE_CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"

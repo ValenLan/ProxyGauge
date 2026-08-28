@@ -21,28 +21,30 @@ if [ -n "$TEST_ROOT" ]; then
   MAIN_CONF="$TEST_ROOT/etc/pf.conf"
   ANCHOR_DIR="$TEST_ROOT/etc/pf.anchors"
   TOKEN_FILE="$TEST_ROOT/var/run/proxygauge-killswitch.pf-token"
+  RUNTIME_STATE="$TEST_ROOT/var/run/proxygauge-killswitch.state"
   PF_TEMPLATE="${PROXYGAUGE_KILLSWITCH_TEST_TEMPLATE:-$SCRIPT_DIR/../PF/proxygauge.conf.template}"
   PERSIST_HELPER="$TEST_ROOT/Library/PrivilegedHelperTools/com.valenlan.proxygauge.killswitch"
   PERSIST_PLIST="$TEST_ROOT/Library/LaunchDaemons/com.valenlan.proxygauge.killswitch.plist"
   PERSIST_STATE_DIR="$TEST_ROOT/var/db/proxygauge"
-  LEGACY_PERSIST_STATE_DIR="$TEST_ROOT/var/db/cloudcheck"
+  PERSIST_TEMPLATE="$TEST_ROOT/Library/PrivilegedHelperTools/proxygauge.conf.template"
   TEST_MODE=1
 else
   PFCTL=/sbin/pfctl
   MAIN_CONF=/etc/pf.conf
   ANCHOR_DIR=/etc/pf.anchors
   TOKEN_FILE=/var/run/proxygauge-killswitch.pf-token
+  RUNTIME_STATE=/var/run/proxygauge-killswitch.state
   PF_TEMPLATE="$SCRIPT_DIR/proxygauge.conf.template"
   PERSIST_HELPER=/Library/PrivilegedHelperTools/com.valenlan.proxygauge.killswitch
   PERSIST_PLIST=/Library/LaunchDaemons/com.valenlan.proxygauge.killswitch.plist
   PERSIST_STATE_DIR=/var/db/proxygauge
-  LEGACY_PERSIST_STATE_DIR=/var/db/cloudcheck
+  PERSIST_TEMPLATE=/Library/PrivilegedHelperTools/proxygauge.conf.template
   TEST_MODE=0
 fi
 
 PERSIST_LABEL=com.valenlan.proxygauge.killswitch
 PERSIST_MARKER="$PERSIST_STATE_DIR/enabled"
-LEGACY_PERSIST_MARKER="$LEGACY_PERSIST_STATE_DIR/enabled"
+MANAGED_MARKER="$PERSIST_STATE_DIR/managed-anchor.sha256"
 
 ANCHOR=proxygauge
 ANCHOR_CONF="$ANCHOR_DIR/proxygauge"
@@ -56,7 +58,9 @@ console_home() {
 }
 
 if [ "$TEST_MODE" -eq 0 ] && [ ! -r "$PF_TEMPLATE" ]; then
-  if [ -r "$SCRIPT_DIR/../PF/proxygauge.conf.template" ]; then
+  if [ -r "$PERSIST_TEMPLATE" ]; then
+    PF_TEMPLATE="$PERSIST_TEMPLATE"
+  elif [ -r "$SCRIPT_DIR/../PF/proxygauge.conf.template" ]; then
     PF_TEMPLATE="$SCRIPT_DIR/../PF/proxygauge.conf.template"
   else
     CONSOLE_HOME=$(console_home)
@@ -68,82 +72,35 @@ fi
 
 ACTION="${1:-status}"
 BOOTSTRAP_DEFAULT=0
+RULES_CHANGED=0
 
-# A much older installation owns the generic "killswitch" anchor. Never
-# install a second rule set beside it automatically; the bundled root helper
-# operates the existing root-owned anchor directly.
-if /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"killswitch"' "$MAIN_CONF" 2>/dev/null; then
-  if [ "$ACTION" = "install" ]; then
-    echo "❌ 检测到旧版 killswitch anchor，未叠加第二套 PF 规则"
-    echo "请先单独迁移旧规则，再重新配置 ProxyGauge"
-    exit 1
+unsupported_rules_present() {
+  local candidate
+  if /usr/bin/grep -qE \
+    '^[[:space:]]*anchor[[:space:]]+"(cloudcheck|cloudlink-guard|cloudroute|puffroute|killswitch)"' \
+    "$MAIN_CONF" 2>/dev/null; then
+    return 0
   fi
-fi
-
-# The switch controls an already installed rule set. If a cleanup or migration
-# removed only its /etc/pf.conf entry, recover that entry without regenerating
-# the anchor or asking the user for server/network parameters again.
-if [ "$ACTION" = "on" ] && ! /usr/bin/grep -qE \
-  '^[[:space:]]*anchor[[:space:]]+"(proxygauge|cloudcheck|cloudlink-guard|cloudroute|puffroute|killswitch)"' \
-  "$MAIN_CONF" 2>/dev/null; then
-  existing_count=0
-  existing_anchor=""
-  for candidate_anchor in proxygauge cloudcheck cloudlink-guard cloudroute puffroute killswitch; do
-    if [ -r "$ANCHOR_DIR/$candidate_anchor" ]; then
-      existing_count=$((existing_count + 1))
-      existing_anchor="$candidate_anchor"
-    fi
+  for candidate in cloudcheck cloudlink-guard cloudroute puffroute killswitch; do
+    [ -e "$ANCHOR_DIR/$candidate" ] && return 0
   done
+  return 1
+}
 
-  if [ "$existing_count" -eq 0 ]; then
-    BOOTSTRAP_DEFAULT=1
-  elif [ "$existing_count" -ne 1 ]; then
-    echo "❌ 检测到多套未注册的 Kill Switch 规则，为避免启用错误规则，未做改动"
-    exit 1
-  else
-    ANCHOR="$existing_anchor"
-    ANCHOR_CONF="$ANCHOR_DIR/$existing_anchor"
-    case "$existing_anchor" in
-      proxygauge) TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/proxygauge-killswitch.pf-token" ;;
-      cloudcheck) TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/cloudcheck-killswitch.pf-token" ;;
-      cloudlink-guard) TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/cloudlink-guard-killswitch.pf-token" ;;
-      cloudroute) TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/cloudroute-killswitch.pf-token" ;;
-      puffroute) TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/puffroute-killswitch.pf-token" ;;
-      killswitch) TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/proxy-tools-killswitch.pf-token" ;;
-    esac
-  fi
+# Old rule sets are never selected or modified. Refuse to install or enable a
+# second anchor until the administrator has migrated or removed them separately.
+if { [ "$ACTION" = "install" ] || [ "$ACTION" = "on" ]; } && unsupported_rules_present; then
+  echo "❌ 检测到非 ProxyGauge 的 Kill Switch 规则，未做改动"
+  echo "请先单独清理或迁移旧规则，再重新配置 ProxyGauge"
+  exit 1
 fi
 
-# Preserve previous migrations: Proxy Tools -> PuffRoute -> CloudRoute ->
-# CloudLinkGuard -> CloudCheck -> ProxyGauge. A configured predecessor remains
-# authoritative.
-if ! /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"proxygauge"' "$MAIN_CONF" 2>/dev/null; then
-  if /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"cloudcheck"' "$MAIN_CONF" 2>/dev/null \
-    && [ -r "$ANCHOR_DIR/cloudcheck" ]; then
-    ANCHOR=cloudcheck
-    ANCHOR_CONF="$ANCHOR_DIR/cloudcheck"
-    TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/cloudcheck-killswitch.pf-token"
-  elif /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"cloudlink-guard"' "$MAIN_CONF" 2>/dev/null \
-    && [ -r "$ANCHOR_DIR/cloudlink-guard" ]; then
-    ANCHOR=cloudlink-guard
-    ANCHOR_CONF="$ANCHOR_DIR/cloudlink-guard"
-    TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/cloudlink-guard-killswitch.pf-token"
-  elif /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"cloudroute"' "$MAIN_CONF" 2>/dev/null \
-    && [ -r "$ANCHOR_DIR/cloudroute" ]; then
-    ANCHOR=cloudroute
-    ANCHOR_CONF="$ANCHOR_DIR/cloudroute"
-    TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/cloudroute-killswitch.pf-token"
-  elif /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"puffroute"' "$MAIN_CONF" 2>/dev/null \
-    && [ -r "$ANCHOR_DIR/puffroute" ]; then
-    ANCHOR=puffroute
-    ANCHOR_CONF="$ANCHOR_DIR/puffroute"
-    TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/puffroute-killswitch.pf-token"
-  elif /usr/bin/grep -qE '^[[:space:]]*anchor[[:space:]]+"killswitch"' "$MAIN_CONF" 2>/dev/null \
-    && [ -r "$ANCHOR_DIR/killswitch" ]; then
-    ANCHOR=killswitch
-    ANCHOR_CONF="$ANCHOR_DIR/killswitch"
-    TOKEN_FILE="${TEST_ROOT:+$TEST_ROOT}/var/run/proxy-tools-killswitch.pf-token"
-  fi
+# Recover only a previously installed ProxyGauge anchor. A fresh system gets
+# the bundled default rules; no other product's rule set is adopted.
+if [ "$ACTION" = "on" ] && ! /usr/bin/grep -qE \
+  '^[[:space:]]*anchor[[:space:]]+"proxygauge"' "$MAIN_CONF" 2>/dev/null \
+  && [ ! -r "$ANCHOR_CONF" ]; then
+  BOOTSTRAP_DEFAULT=1
 fi
 
 if [ "$TEST_MODE" -eq 0 ] && [ "$(/usr/bin/id -u)" -ne 0 ]; then
@@ -242,6 +199,25 @@ install_private_file() {
   fi
 }
 
+write_runtime_state() {
+  local state_value detail runtime_dir temp_state
+  state_value="$1"
+  detail="${2:-}"
+  runtime_dir=$(/usr/bin/dirname "$RUNTIME_STATE")
+  /bin/mkdir -p "$runtime_dir" || return 1
+  temp_state=$(/usr/bin/mktemp "$RUNTIME_STATE.XXXXXX") || return 1
+  if [ -n "$detail" ]; then
+    /usr/bin/printf '%s\t%s\n' "$state_value" "$detail" > "$temp_state"
+  else
+    /usr/bin/printf '%s\n' "$state_value" > "$temp_state"
+  fi
+  if [ "$TEST_MODE" -eq 0 ]; then
+    /usr/sbin/chown root:wheel "$temp_state" || { /bin/rm -f "$temp_state"; return 1; }
+  fi
+  /bin/chmod 644 "$temp_state" || { /bin/rm -f "$temp_state"; return 1; }
+  /bin/mv -f "$temp_state" "$RUNTIME_STATE"
+}
+
 install_persistence_infrastructure() {
   local temp_dir helper_dir plist_dir plist_source
 
@@ -277,6 +253,8 @@ install_persistence_infrastructure() {
     '  </array>' \
     '  <key>RunAtLoad</key>' \
     '  <true/>' \
+    '  <key>StartInterval</key>' \
+    '  <integer>15</integer>' \
     '  <key>ProcessType</key>' \
     '  <string>Background</string>' \
     '</dict>' \
@@ -284,12 +262,82 @@ install_persistence_infrastructure() {
 
   if ! /usr/bin/plutil -lint "$plist_source" >/dev/null 2>&1 \
     || ! install_private_file "$0" "$PERSIST_HELPER" 755 \
-    || ! install_private_file "$plist_source" "$PERSIST_PLIST" 644; then
+    || ! install_private_file "$plist_source" "$PERSIST_PLIST" 644 \
+    || { [ "$PF_TEMPLATE" != "$PERSIST_TEMPLATE" ] \
+      && ! install_private_file "$PF_TEMPLATE" "$PERSIST_TEMPLATE" 644; }; then
     /bin/rm -rf "$temp_dir"
     echo "❌ 无法安装 Kill Switch 开机恢复服务"
     return 1
   fi
 
+  if [ "$TEST_MODE" -eq 0 ]; then
+    /bin/launchctl bootout "system/$PERSIST_LABEL" >/dev/null 2>&1 || true
+    if ! /bin/launchctl bootstrap system "$PERSIST_PLIST" >/dev/null 2>&1; then
+      /bin/rm -rf "$temp_dir"
+      echo "❌ 无法启动 Kill Switch 运行时恢复服务"
+      return 1
+    fi
+  fi
+
+  /bin/rm -rf "$temp_dir"
+}
+
+file_sha256() {
+  /usr/bin/shasum -a 256 "$1" 2>/dev/null | /usr/bin/awk '{print $1}'
+}
+
+persist_managed_anchor_hash() {
+  local hash marker_source
+  hash=$(file_sha256 "$ANCHOR_CONF")
+  [ -n "$hash" ] || return 1
+  /bin/mkdir -p "$PERSIST_STATE_DIR" || return 1
+  marker_source=$(/usr/bin/mktemp /tmp/proxygauge-managed-anchor.XXXXXX) || return 1
+  /usr/bin/printf '%s\n' "$hash" > "$marker_source"
+  if ! install_private_file "$marker_source" "$MANAGED_MARKER" 600; then
+    /bin/rm -f "$marker_source"
+    return 1
+  fi
+  /bin/rm -f "$marker_source"
+}
+
+managed_anchor_unchanged() {
+  local expected actual
+  [ -r "$MANAGED_MARKER" ] || return 1
+  expected=$(/usr/bin/head -1 "$MANAGED_MARKER" 2>/dev/null | /usr/bin/tr -d '[:space:]')
+  actual=$(file_sha256 "$ANCHOR_CONF")
+  [ -n "$expected" ] && [ "$expected" = "$actual" ]
+}
+
+refresh_managed_rules() {
+  local interfaces temp_dir rendered current_hash rendered_hash
+  [ -r "$MANAGED_MARKER" ] || return 0
+  if ! managed_anchor_unchanged; then
+    # A root administrator replaced or edited the anchor. Stop managing its
+    # contents and preserve that explicit choice.
+    /bin/rm -f "$MANAGED_MARKER"
+    return 0
+  fi
+  interfaces=$(detect_physical_interfaces) || return 1
+  temp_dir=$(/usr/bin/mktemp -d /tmp/proxygauge-pf-refresh.XXXXXX) || return 1
+  rendered="$temp_dir/$ANCHOR"
+  /usr/bin/sed -e "s/__INTERFACES__/$interfaces/g" "$PERSIST_TEMPLATE" > "$rendered" || {
+    /bin/rm -rf "$temp_dir"
+    return 1
+  }
+  if ! "$PFCTL" -a "$ANCHOR" -nf "$rendered" >/dev/null 2>&1; then
+    /bin/rm -rf "$temp_dir"
+    return 1
+  fi
+  current_hash=$(file_sha256 "$ANCHOR_CONF")
+  rendered_hash=$(file_sha256 "$rendered")
+  if [ "$current_hash" != "$rendered_hash" ]; then
+    if ! install_config_file "$rendered" "$ANCHOR_CONF" \
+      || ! persist_managed_anchor_hash; then
+      /bin/rm -rf "$temp_dir"
+      return 1
+    fi
+    RULES_CHANGED=1
+  fi
   /bin/rm -rf "$temp_dir"
 }
 
@@ -302,11 +350,10 @@ persist_enabled_intent() {
     return 1
   fi
   /bin/rm -f "$marker_source"
-  /bin/rm -f "$LEGACY_PERSIST_MARKER"
 }
 
 clear_persisted_intent() {
-  /bin/rm -f "$PERSIST_MARKER" "$LEGACY_PERSIST_MARKER"
+  /bin/rm -f "$PERSIST_MARKER"
 }
 
 install_rules() {
@@ -397,6 +444,14 @@ install_rules() {
     "$PFCTL" -f "$MAIN_CONF" >/dev/null 2>&1 || true
     /bin/rm -rf "$temp_dir"
     echo "❌ 系统 PF 配置加载失败，已还原安装前状态"
+    return 1
+  fi
+  if ! persist_managed_anchor_hash; then
+    install_config_file "$temp_dir/pf.conf.original" "$MAIN_CONF" >/dev/null 2>&1 || true
+    /bin/rm -f "$ANCHOR_CONF"
+    "$PFCTL" -f "$MAIN_CONF" >/dev/null 2>&1 || true
+    /bin/rm -rf "$temp_dir"
+    echo "❌ 无法记录内置 PF 规则的管理状态，已还原安装前状态"
     return 1
   fi
   /bin/rm -rf "$temp_dir"
@@ -506,8 +561,16 @@ enable_rules() {
   if [ "$BOOTSTRAP_DEFAULT" -eq 1 ]; then
     install_rules || return 1
   fi
+  refresh_managed_rules || {
+    echo "❌ 无法刷新物理网络接口规则，保护未重新加载"
+    return 1
+  }
   validate_anchor_ownership || return 1
   ensure_existing_anchor_registered || return 1
+  if [ "$RULES_CHANGED" -eq 0 ] && [ -s "$TOKEN_FILE" ] && anchor_enabled; then
+    echo "🛡️ Kill Switch 已开启 — 运行时规则健康"
+    return 0
+  fi
   if ! "$PFCTL" -a "$ANCHOR" -nf "$ANCHOR_CONF" >/dev/null 2>&1; then
     echo "❌ $ANCHOR_CONF 语法校验失败，未做改动"
     return 1
@@ -517,6 +580,9 @@ enable_rules() {
     return 1
   fi
 
+  if [ -s "$TOKEN_FILE" ] && ! pf_enabled; then
+    release_owned_reference
+  fi
   if [ ! -s "$TOKEN_FILE" ]; then
     enable_output=$("$PFCTL" -E 2>&1)
     enable_status=$?
@@ -541,6 +607,29 @@ enable_rules() {
   fi
 }
 
+clear_existing_physical_states() {
+  local interfaces interface_name address addresses failed
+  interfaces=$(detect_physical_interfaces) || return 1
+  failed=0
+  for interface_name in $interfaces; do
+    addresses=$(/sbin/ifconfig "$interface_name" 2>/dev/null | /usr/bin/awk '
+      $1 == "inet" { print $2 }
+      $1 == "inet6" {
+        address = $2
+        sub(/%.*/, "", address)
+        print address
+      }
+    ')
+    for address in $addresses; do
+      case "$address" in
+        *[!0-9A-Fa-f:.]*) failed=1; continue ;;
+      esac
+      "$PFCTL" -k "$address" >/dev/null 2>&1 || failed=1
+    done
+  done
+  [ "$failed" -eq 0 ]
+}
+
 case "$ACTION" in
   install)
     if [ "$#" -ne 1 ]; then
@@ -548,21 +637,23 @@ case "$ACTION" in
       exit 2
     fi
     if /usr/bin/grep -qE \
-      '^[[:space:]]*anchor[[:space:]]+"(proxygauge|cloudcheck|cloudlink-guard|cloudroute|puffroute|killswitch)"' \
-      "$MAIN_CONF" 2>/dev/null; then
+      '^[[:space:]]*anchor[[:space:]]+"proxygauge"' "$MAIN_CONF" 2>/dev/null; then
       echo "❌ 已存在 Kill Switch 规则入口，未覆盖"
       exit 1
     fi
-    for candidate_anchor in proxygauge cloudcheck cloudlink-guard cloudroute puffroute killswitch; do
-      if [ -e "$ANCHOR_DIR/$candidate_anchor" ]; then
-        echo "❌ 已存在 Kill Switch 规则文件，未覆盖"
-        exit 1
-      fi
-    done
-    install_rules
+    if [ -e "$ANCHOR_CONF" ]; then
+      echo "❌ 已存在 Kill Switch 规则文件，未覆盖"
+      exit 1
+    fi
+    install_rules || exit 1
+    write_runtime_state disabled || true
     ;;
 
   on)
+    if [ "$#" -ne 1 ]; then
+      echo "用法: proxygauge-killswitch on"
+      exit 2
+    fi
     install_persistence_infrastructure || exit 1
     enable_rules || exit 1
     if ! persist_enabled_intent; then
@@ -571,10 +662,24 @@ case "$ACTION" in
       echo "❌ 无法保存 Kill Switch 开机恢复状态，已回滚本次开启"
       exit 1
     fi
+    if ! clear_existing_physical_states; then
+      write_runtime_state fault states-not-cleared || true
+      echo "❌ 保护已开启，但无法清理开启前的物理接口连接状态"
+      echo "规则保持为阻断状态；请重新连接网络或重启后再确认"
+      exit 1
+    fi
+    if ! write_runtime_state enabled; then
+      echo "❌ 保护已开启，但无法发布可信运行状态"
+      exit 1
+    fi
     echo "✅ 已保存开机恢复状态，重启后将自动重新加载保护"
     ;;
 
   off)
+    if [ "$#" -ne 1 ]; then
+      echo "用法: proxygauge-killswitch off"
+      exit 2
+    fi
     if ! "$PFCTL" -a "$ANCHOR" -F rules >/dev/null 2>&1; then
       echo "❌ Kill Switch anchor 清空失败"
       exit 1
@@ -584,6 +689,10 @@ case "$ACTION" in
       echo "❌ Kill Switch 已在当前启动周期关闭，但无法清除开机恢复状态"
       exit 1
     fi
+    write_runtime_state disabled || {
+      echo "❌ Kill Switch 已关闭，但无法发布可信运行状态"
+      exit 1
+    }
     echo "🔓 Kill Switch 已关闭 — 仅已清空 $ANCHOR anchor，未全局关闭 PF"
     echo "⚠️ 现在真实 IP 无 Kill Switch 保护，代理恢复后请重新开启"
     ;;
@@ -598,22 +707,41 @@ case "$ACTION" in
       exit 1
     fi
     if [ ! -r "$PERSIST_MARKER" ]; then
+      "$PFCTL" -a "$ANCHOR" -F rules >/dev/null 2>&1 || true
+      release_owned_reference
+      write_runtime_state disabled || true
       echo "Kill Switch 未设置为开机恢复，保持关闭"
       exit 0
     fi
-    enable_rules
+    if enable_rules; then
+      write_runtime_state enabled || exit 1
+    else
+      write_runtime_state fault restore-failed || true
+      exit 1
+    fi
     ;;
 
   status)
+    if [ "$#" -ne 1 ]; then
+      echo "用法: proxygauge-killswitch status"
+      exit 2
+    fi
     pf_line=$("$PFCTL" -s info 2>/dev/null | /usr/bin/head -1)
     if anchor_enabled; then
       rule_count=$(anchor_rules | /usr/bin/awk 'NF {count++} END {print count+0}')
+      write_runtime_state enabled || true
       echo "✅ Kill Switch: Enabled ($rule_count 条 anchor 规则)"
       echo "  $pf_line"
+    elif [ -r "$PERSIST_MARKER" ]; then
+      write_runtime_state fault runtime-rules-missing || true
+      echo "❌ Kill Switch: Fault (已设置保护，但运行时规则缺失，恢复服务将重试)"
+      [ -n "$pf_line" ] && echo "  $pf_line"
     elif pf_enabled; then
+      write_runtime_state disabled || true
       echo "⚪️ Kill Switch: Disabled (anchor 为空，PF 由其他系统组件保持启用)"
       echo "  $pf_line"
     else
+      write_runtime_state disabled || true
       echo "⚪️ Kill Switch: Disabled (PF 当前未启用)"
       [ -n "$pf_line" ] && echo "  $pf_line"
     fi

@@ -81,7 +81,7 @@
                 </Border>
 
                 <TextBlock Grid.Row="2"
-                           Text="关键链路加权；高级检测与账户状态不计分"
+                           Text="关键链路加权；IP 纯净度复核与账户状态不计分"
                            Foreground="{StaticResource MutedTextBrush}"
                            FontSize="11"
                            Margin="2,10,0,10" />

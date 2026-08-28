@@ -8,6 +8,8 @@ namespace ProxyGauge.Services;
 
 public sealed class ProxyProbeService
 {
+    private static readonly TimeSpan RouteProbeTimeout = TimeSpan.FromSeconds(3);
+
     private static readonly string[] CoreProcessNames =
     [
         "verge-mihomo",
@@ -204,6 +206,8 @@ public sealed class ProxyProbeService
 
         try
         {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(RouteProbeTimeout);
             using var process = new Process
             {
                 StartInfo = new ProcessStartInfo
@@ -217,14 +221,39 @@ public sealed class ProxyProbeService
                 }
             };
             process.Start();
-            var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-            await process.WaitForExitAsync(cancellationToken);
+            var outputTask = process.StandardOutput.ReadToEndAsync();
+            var errorTask = process.StandardError.ReadToEndAsync();
+            try
+            {
+                await process.WaitForExitAsync(timeout.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                TryTerminate(process);
+                return false;
+            }
             var output = await outputTask;
+            await errorTask;
             return process.ExitCode == 0 && output.Contains("198.18.", StringComparison.Ordinal);
         }
         catch
         {
             return false;
+        }
+    }
+
+    private static void TryTerminate(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+        catch
+        {
+            // The process may have exited or become inaccessible after timeout.
         }
     }
 }

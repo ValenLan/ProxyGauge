@@ -48,15 +48,29 @@ jobs:
     runs-on: windows-latest
     strategy:
       matrix:
-        runtime: [win-x64, win-arm64]
+        include:
+          - runtime: win-x64
+            native_platform: x64
+            installer_platform: x64
+          - runtime: win-arm64
+            native_platform: ARM64
+            installer_platform: arm64
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 10.0.x
       - name: Run Windows logic tests
         if: ${{ matrix.runtime == 'win-x64' }}
         run: dotnet run --project Windows.Tests/ProxyGauge.Windows.Tests.csproj --configuration Release
+      - name: Build ProxyGauge Guard Service
+        shell: pwsh
+        run: |
+          cmake -S Windows.Guard `
+            -B "Windows.Guard/out/${{ matrix.runtime }}" `
+            -A "${{ matrix.native_platform }}"
+          cmake --build "Windows.Guard/out/${{ matrix.runtime }}" `
+            --config Release
       - name: Publish ProxyGauge for Windows
         shell: pwsh
         run: |
@@ -65,24 +79,30 @@ jobs:
             --runtime ${{ matrix.runtime }} `
             --self-contained true `
             --output "publish/${{ matrix.runtime }}" `
-            -p:PublishSingleFile=true `
-            -p:IncludeNativeLibrariesForSelfExtract=true `
             -p:PublishTrimmed=false `
             -p:DebugType=None `
             -p:DebugSymbols=false
           Copy-Item Windows/README.md "publish/${{ matrix.runtime }}/README-Windows.md"
           $Project = [xml](Get-Content Windows/ProxyGauge.Windows.csproj -Raw)
           $Version = $Project.Project.PropertyGroup.Version
-          $Archive = "ProxyGauge-$Version-${{ matrix.runtime }}.zip"
-          Compress-Archive `
-            -Path "publish/${{ matrix.runtime }}/*" `
-            -DestinationPath $Archive
-          "archive=$Archive" >> $env:GITHUB_OUTPUT
+          $PublishDir = (Resolve-Path "publish/${{ matrix.runtime }}").Path
+          $GuardExe = (Resolve-Path "Windows.Guard/out/${{ matrix.runtime }}/Release/ProxyGauge.Guard.exe").Path
+          $IconPath = (Resolve-Path "Windows/Assets/ProxyGauge.ico").Path
+          dotnet build Windows.Installer/ProxyGauge.Installer.wixproj `
+            --configuration Release `
+            -p:InstallerPlatform=${{ matrix.installer_platform }} `
+            -p:ProductVersion=$Version `
+            -p:RuntimeLabel=${{ matrix.runtime }} `
+            -p:PublishDir="$PublishDir" `
+            -p:GuardExe="$GuardExe" `
+            -p:IconPath="$IconPath"
+          $Installer = (Resolve-Path "installer-output/${{ matrix.runtime }}/ProxyGauge-$Version-${{ matrix.runtime }}.msi").Path
+          "installer=$Installer" >> $env:GITHUB_OUTPUT
         id: package
-      - name: Upload Windows package
+      - name: Upload Windows installer
         uses: actions/upload-artifact@v7
         with:
-          path: ${{ steps.package.outputs.archive }}
+          path: ${{ steps.package.outputs.installer }}
           archive: false
           if-no-files-found: error
 
@@ -104,26 +124,27 @@ jobs:
       - name: Download release packages
         uses: actions/download-artifact@v8
         with:
-          pattern: ProxyGauge-*.zip
+          pattern: ProxyGauge-*
           path: release-assets
           merge-multiple: true
           skip-decompress: true
       - name: Generate checksums
         run: |
           shopt -s nullglob
-          ASSETS=(release-assets/ProxyGauge-*.zip)
+          ASSETS=(release-assets/ProxyGauge-*.zip release-assets/ProxyGauge-*.msi)
           if [ "${#ASSETS[@]}" -ne 3 ]; then
             echo "Expected 3 release packages, found ${#ASSETS[@]}." >&2
             exit 1
           fi
           cd release-assets
-          sha256sum ProxyGauge-*.zip > SHA256SUMS.txt
+          sha256sum ProxyGauge-*.zip ProxyGauge-*.msi > SHA256SUMS.txt
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" \
             release-assets/ProxyGauge-*.zip \
+            release-assets/ProxyGauge-*.msi \
             release-assets/SHA256SUMS.txt \
             --verify-tag \
             --generate-notes \

@@ -2,62 +2,21 @@
 
 RESOURCE_DIR=$(/usr/bin/dirname "$0")
 
-import_legacy_compat() {
-  local suffix current legacy_prefix legacy
-  for suffix in "$@"; do
-    current="PROXYGAUGE_$suffix"
-    declare -p "$current" >/dev/null 2>&1 && continue
-    for legacy_prefix in CLOUDCHECK CLOUDLINK_GUARD CLOUDROUTE PUFFROUTE; do
-      legacy="${legacy_prefix}_$suffix"
-      if declare -p "$legacy" >/dev/null 2>&1; then
-        printf -v "$current" '%s' "${!legacy}"
-        export "$current"
-        break
-      fi
-    done
-  done
-}
-
-import_legacy_compat \
-  ADMIN_SCRIPT OSASCRIPT KILLSWITCH ADMIN_RESULT KILL_TOKEN CONFIG MIXED \
-  SECONDARY_ENABLED SECONDARY_LABEL SECONDARY_GROUP DEFAULT_GROUP \
-  SECONDARY_MIXED SECONDARY_DOMAINS TUN_ACTIVE SYSTEM_PROXY_ACTIVE \
-  DISCOVERY_PORT_ACTIVE DISCOVERY_SYSTEM_PROXY DISCOVERY_SOCKET \
-  DISCOVERY_SOCKET_JSON DISCOVERY_CLIENT DISCOVERY_CONFIG PF_CONF
-
 CHECK="$RESOURCE_DIR/proxygauge-check.sh"
 [ -x "$CHECK" ] || CHECK="$HOME/.local/bin/proxygauge-check"
 ADMIN_SCRIPT="${PROXYGAUGE_ADMIN_SCRIPT:-$RESOURCE_DIR/proxygauge-admin.applescript}"
 [ -r "$ADMIN_SCRIPT" ] || ADMIN_SCRIPT="$HOME/.local/share/proxygauge/proxygauge-admin.applescript"
-[ -r "$ADMIN_SCRIPT" ] || ADMIN_SCRIPT="$HOME/.local/share/cloudcheck/cloudcheck-admin.applescript"
-[ -r "$ADMIN_SCRIPT" ] || ADMIN_SCRIPT="$HOME/.local/share/cloudlink-guard/cloudlink-guard-admin.applescript"
 OSASCRIPT="${PROXYGAUGE_OSASCRIPT:-/usr/bin/osascript}"
 KILL_HELPER="${PROXYGAUGE_KILLSWITCH:-$RESOURCE_DIR/proxygauge-killswitch}"
 [ -x "$KILL_HELPER" ] || KILL_HELPER="$HOME/.local/bin/proxygauge-killswitch"
-[ -x "$KILL_HELPER" ] || KILL_HELPER="$HOME/.local/bin/cloudcheck-killswitch"
-[ -x "$KILL_HELPER" ] || KILL_HELPER="$HOME/.local/bin/cloudlink-guard-killswitch"
+CURL="${PROXYGAUGE_CURL:-/usr/bin/curl}"
 CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
 ADMIN_RESULT="${PROXYGAUGE_ADMIN_RESULT:-$CACHE_HOME/proxygauge/admin-result}"
 KILL_TOKEN="${PROXYGAUGE_KILL_TOKEN:-/var/run/proxygauge-killswitch.pf-token}"
+DEFAULT_KILL_STATE=/var/run/proxygauge-killswitch.state
+KILL_STATE="${PROXYGAUGE_KILL_STATE:-$DEFAULT_KILL_STATE}"
 PF_CONF="${PROXYGAUGE_PF_CONF:-/etc/pf.conf}"
-if [ -z "${PROXYGAUGE_KILL_TOKEN:-}" ] && [ ! -e "$KILL_TOKEN" ]; then
-  for legacy_token in \
-    /var/run/cloudcheck-killswitch.pf-token \
-    /var/run/cloudlink-guard-killswitch.pf-token \
-    /var/run/cloudroute-killswitch.pf-token \
-    /var/run/puffroute-killswitch.pf-token \
-    /var/run/proxy-tools-killswitch.pf-token; do
-    if [ -e "$legacy_token" ]; then
-      KILL_TOKEN="$legacy_token"
-      break
-    fi
-  done
-fi
 DEFAULT_CONFIG="$HOME/.config/proxygauge/config"
-CLOUDCHECK_CONFIG_PATH="$HOME/.config/cloudcheck/config"
-CLOUDLINK_GUARD_CONFIG_PATH="$HOME/.config/cloudlink-guard/config"
-CLOUDROUTE_CONFIG_PATH="$HOME/.config/cloudroute/config"
-PUFFROUTE_CONFIG_PATH="$HOME/.config/puffroute/config"
 CONFIG_FILE="${PROXYGAUGE_CONFIG:-$DEFAULT_CONFIG}"
 ENV_PROXYGAUGE_MIXED="${PROXYGAUGE_MIXED:-}"
 ENV_SECONDARY_ENABLED="${PROXYGAUGE_SECONDARY_ENABLED:-}"
@@ -66,21 +25,7 @@ ENV_SECONDARY_GROUP="${PROXYGAUGE_SECONDARY_GROUP:-}"
 ENV_DEFAULT_GROUP="${PROXYGAUGE_DEFAULT_GROUP:-}"
 ENV_SECONDARY_MIXED="${PROXYGAUGE_SECONDARY_MIXED:-}"
 ENV_SECONDARY_DOMAINS="${PROXYGAUGE_SECONDARY_DOMAINS:-}"
-if [ -z "${PROXYGAUGE_CONFIG:-}" ] && [ ! -r "$CONFIG_FILE" ]; then
-  if [ -r "$CLOUDCHECK_CONFIG_PATH" ]; then
-    CONFIG_FILE="$CLOUDCHECK_CONFIG_PATH"
-  elif [ -r "$CLOUDLINK_GUARD_CONFIG_PATH" ]; then
-    CONFIG_FILE="$CLOUDLINK_GUARD_CONFIG_PATH"
-  elif [ -r "$CLOUDROUTE_CONFIG_PATH" ]; then
-    CONFIG_FILE="$CLOUDROUTE_CONFIG_PATH"
-  elif [ -r "$PUFFROUTE_CONFIG_PATH" ]; then
-    CONFIG_FILE="$PUFFROUTE_CONFIG_PATH"
-  fi
-fi
 [ -r "$CONFIG_FILE" ] && . "$CONFIG_FILE"
-import_legacy_compat \
-  MIXED SECONDARY_ENABLED SECONDARY_LABEL SECONDARY_GROUP DEFAULT_GROUP \
-  SECONDARY_MIXED SECONDARY_DOMAINS
 if [ -n "$ENV_PROXYGAUGE_MIXED" ]; then
   PROXYGAUGE_MIXED="$ENV_PROXYGAUGE_MIXED"
 fi
@@ -141,6 +86,37 @@ valid_local_endpoint() {
     ''|*[!0-9]*) return 1 ;;
   esac
   [ "$port" -gt 0 ] && [ "$port" -lt 65536 ]
+}
+
+resolve_default_exit_ip() {
+  local api value
+
+  if ! valid_local_endpoint "$MIXED"; then
+    echo "当前本地代理入口无效" >&2
+    return 1
+  fi
+  if [ ! -x "$CURL" ]; then
+    echo "缺少出口 IP 查询组件" >&2
+    return 1
+  fi
+
+  while IFS= read -r api; do
+    value=$("$CURL" -sS --retry 1 --retry-all-errors --retry-delay 1 \
+      --proxy "http://$MIXED" --max-time 6 "$api" 2>/dev/null \
+      | /usr/bin/tr -d '[:space:]')
+    if /usr/bin/printf '%s' "$value" \
+      | /usr/bin/grep -qE '^[0-9]{1,3}(\.[0-9]{1,3}){3}$'; then
+      /usr/bin/printf '%s\n' "$value"
+      return 0
+    fi
+  done <<'EOF'
+https://api.ipify.org
+https://ifconfig.me/ip
+https://ip.sb/ip
+EOF
+
+  echo "无法经当前本地代理获取出口 IP" >&2
+  return 1
 }
 
 system_proxy_endpoint() {
@@ -297,46 +273,61 @@ discover() {
 }
 
 kill_switch_snapshot() {
-  local action_status result_file legacy_result
+  local action_status state_owner state_mode expected_owner state_value state_detail
 
   if [ ! -r "$PF_CONF" ] || ! /usr/bin/grep -qE \
-    '^[[:space:]]*anchor[[:space:]]+"(proxygauge|cloudcheck|cloudlink-guard|cloudroute|puffroute|killswitch)"' \
+    '^[[:space:]]*anchor[[:space:]]+"proxygauge"' \
     "$PF_CONF" 2>/dev/null; then
     /usr/bin/printf '未配置\tidle\n'
     return
   fi
 
-  result_file="$ADMIN_RESULT"
-  if [ ! -r "$result_file" ] && [ -z "${PROXYGAUGE_ADMIN_RESULT:-}" ]; then
-    for legacy_result in \
-      "$CACHE_HOME/cloudcheck/admin-result" \
-      /var/run/cloudcheck/admin-result \
-      "$CACHE_HOME/cloudlink-guard/admin-result" \
-      /var/run/cloudlink-guard/admin-result \
-      /var/run/cloudroute/admin-result \
-      /var/run/puffroute/admin-result; do
-      if [ -r "$legacy_result" ]; then
-        result_file="$legacy_result"
-        break
-      fi
-    done
+  if [ -f "$KILL_STATE" ] && [ ! -L "$KILL_STATE" ]; then
+    state_owner=$(/usr/bin/stat -f '%u' "$KILL_STATE" 2>/dev/null || true)
+    state_mode=$(/usr/bin/stat -f '%Lp' "$KILL_STATE" 2>/dev/null || true)
+    expected_owner=0
+    if [ "$KILL_STATE" != "$DEFAULT_KILL_STATE" ]; then
+      expected_owner=$(/usr/bin/id -u)
+    fi
+    if [ "$state_owner" = "$expected_owner" ] && [ -n "$state_mode" ] \
+      && [ $((8#$state_mode & 022)) -eq 0 ]; then
+      IFS=$'\t' read -r state_value state_detail < "$KILL_STATE"
+      case "$state_value" in
+        enabled)
+          if [ -e "$KILL_TOKEN" ]; then
+            /usr/bin/printf '已开启\tok\n'
+          else
+            /usr/bin/printf '恢复中\twarning\n'
+          fi
+          return
+          ;;
+        disabled)
+          /usr/bin/printf '已关闭\twarning\n'
+          return
+          ;;
+        fault)
+          /usr/bin/printf '需要修复\terror\n'
+          return
+          ;;
+      esac
+    fi
   fi
 
-  if [ -r "$result_file" ]; then
-    action_status=$(/usr/bin/sed -n 's/^__STATUS__=//p' "$result_file" | /usr/bin/tail -1)
+  if [ -r "$ADMIN_RESULT" ]; then
+    action_status=$(/usr/bin/sed -n 's/^__STATUS__=//p' "$ADMIN_RESULT" | /usr/bin/tail -1)
     if [ "$action_status" = "0" ]; then
       # /var/run is boot-scoped. Requiring the current boot's PF reference
       # prevents a successful result cached before reboot from claiming that
       # protection is still active after the runtime anchor was cleared.
       if [ -e "$KILL_TOKEN" ] && /usr/bin/grep -qE \
         'Kill Switch([:：][[:space:]]*|[[:space:]]+)(Enabled|已开启)([[:space:]]|$)' \
-        "$result_file"; then
+        "$ADMIN_RESULT"; then
         /usr/bin/printf '已开启\tok\n'
         return
       fi
       if [ ! -e "$KILL_TOKEN" ] && /usr/bin/grep -qE \
         'Kill Switch([:：][[:space:]]*|[[:space:]]+)(Disabled|已关闭)([[:space:]]|$)' \
-        "$result_file"; then
+        "$ADMIN_RESULT"; then
         /usr/bin/printf '已关闭\twarning\n'
         return
       fi
@@ -532,6 +523,9 @@ case "${1:-}" in
     fi
     exec /bin/bash "$CHECK"
     ;;
+  exit-ip)
+    resolve_default_exit_ip
+    ;;
   kill-status)
     run_admin status
     ;;
@@ -542,7 +536,7 @@ case "${1:-}" in
     run_admin off
     ;;
   *)
-    echo "用法: $0 {discover|probe|health|kill-status|kill-on|kill-off}"
+    echo "用法: $0 {discover|probe|health|exit-ip|kill-status|kill-on|kill-off}"
     exit 2
     ;;
 esac

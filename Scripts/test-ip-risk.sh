@@ -57,9 +57,10 @@ fallback_output=$(/usr/bin/osascript -l JavaScript \
 /usr/bin/grep -Fq 'TUN DNS 返回 Fake-IP' "$PROJECT_ROOT/Scripts/proxygauge-check.sh"
 /usr/bin/grep -Fq '第三方 IP 情报仅供参考' "$PROJECT_ROOT/Scripts/proxygauge-ip-risk.jxa"
 /usr/bin/grep -Fq '额外分流链路 ($SECONDARY_LABEL)' "$PROJECT_ROOT/Scripts/proxygauge-check.sh"
-/usr/bin/grep -Fq 'https://browserleaks.com/ip' "$PROJECT_ROOT/Scripts/proxygauge-private-browser.sh"
-/usr/bin/grep -Fq 'https://iphey.com/' "$PROJECT_ROOT/Scripts/proxygauge-private-browser.sh"
-/usr/bin/grep -Fq 'https://scamalytics.com/ip/$EXIT_IP' "$PROJECT_ROOT/Scripts/proxygauge-private-browser.sh"
+/usr/bin/grep -Fq 'https://browserleaks.com/ip' "$PROJECT_ROOT/Sources/ProxyGaugeApp.swift"
+/usr/bin/grep -Fq 'https://ippure.com/' "$PROJECT_ROOT/Sources/ProxyGaugeApp.swift"
+/usr/bin/grep -Fq 'https://ipcheck.ing/?hl=zh' "$PROJECT_ROOT/Sources/ProxyGaugeApp.swift"
+/usr/bin/grep -Fq 'https://scamalytics.com/ip' "$PROJECT_ROOT/Sources/ProxyGaugeApp.swift"
 
 /usr/bin/grep -q '^prepend-rules:' "$PROJECT_ROOT/Rules/ProxyGauge-Merge.yaml"
 if /usr/bin/grep -qE '^[[:space:]]*(proxies|proxy-providers):' "$PROJECT_ROOT/Rules/ProxyGauge-Merge.yaml"; then

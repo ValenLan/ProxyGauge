@@ -43,7 +43,7 @@
                     <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="0,4,5,4">
                         <Button Style="{StaticResource TitleButtonStyle}" Content="&#xE713;" ToolTip="设置" IsEnabled="{Binding IsNotBusy}" Click="SettingsButton_Click" />
                         <Button Style="{StaticResource TitleButtonStyle}" Content="&#xE921;" ToolTip="最小化" Click="MinimizeButton_Click" />
-                        <Button x:Name="CloseButton" Style="{StaticResource TitleButtonStyle}" Content="&#xE8BB;" ToolTip="关闭" Click="CloseButton_Click" />
+                        <Button x:Name="CloseButton" Style="{StaticResource TitleButtonStyle}" Content="&#xE8BB;" ToolTip="关闭窗口（不会关闭系统保护）" Click="CloseButton_Click" />
                     </StackPanel>
                 </Grid>
             </Border>
@@ -196,16 +196,26 @@
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="*" />
                             </Grid.RowDefinitions>
-                            <StackPanel Orientation="Horizontal">
-                                <Border Width="34" Height="34" CornerRadius="11" Background="#252E3D">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Border Width="34" Height="34" CornerRadius="11" Background="#252E3D">
                                     <TextBlock Text="&#xEA18;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Foreground="{StaticResource MutedTextBrush}" FontSize="13" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                </Border>
-                                <StackPanel Margin="11,-1,0,0">
-                                    <TextBlock Text="系统保护" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
-                                    <TextBlock Text="只读模式" FontSize="17" FontWeight="SemiBold" Margin="0,3,0,0" />
-                                </StackPanel>
+                            </Border>
+                            <StackPanel Grid.Column="1" Margin="11,-1,8,0">
+                                <TextBlock Text="系统保护" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                                <TextBlock Text="{Binding GuardValue}" FontSize="17" FontWeight="SemiBold" Margin="0,3,0,0" />
                             </StackPanel>
-                            <TextBlock Grid.Row="1" Text="不修改 Windows 防火墙" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" VerticalAlignment="Bottom" />
+                            <Button Grid.Column="2"
+                                    Style="{StaticResource QuietButtonStyle}"
+                                    Content="{Binding GuardButtonLabel}"
+                                    IsEnabled="{Binding CanChangeGuard}"
+                                    Click="GuardButton_Click"
+                                    Padding="11,6"
+                                    VerticalAlignment="Center" />
+                            <TextBlock Grid.Row="1" Grid.ColumnSpan="3" Text="{Binding GuardDetail}" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" VerticalAlignment="Bottom" />
                         </Grid>
                     </Border>
                 </Grid>
@@ -286,12 +296,12 @@
                                 <TextBlock Text="&#xEA18;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Foreground="{StaticResource AdvancedBrush}" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center" />
                             </Border>
                             <StackPanel Grid.Column="1" Margin="12,-1,14,0" VerticalAlignment="Center">
-                                <TextBlock Text="高级检测" FontSize="15" FontWeight="SemiBold" />
-                                <TextBlock Text="隔离 Chrome / Edge 复核" Foreground="{StaticResource MutedTextBrush}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
+                                <TextBlock Text="IP 纯净度" FontSize="15" FontWeight="SemiBold" />
+                                <TextBlock Text="在默认浏览器中人工复核 6 个网站" Foreground="{StaticResource MutedTextBrush}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
                             </StackPanel>
                             <Button Grid.Column="2"
                                     Style="{StaticResource QuietButtonStyle}"
-                                    Content="打开"
+                                    Content="浏览器"
                                     IsEnabled="{Binding IsNotBusy}"
                                     Click="AdvancedButton_Click"
                                     VerticalAlignment="Center" />

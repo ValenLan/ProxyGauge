@@ -1,0 +1,83 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="ProxyGauge"
+           Manufacturer="Valen Lan"
+           Version="$(ProductVersion)"
+           UpgradeCode="820C3E68-02BB-43F8-9583-09AB23BE314F"
+           Scope="perMachine"
+           InstallerVersion="500"
+           Compressed="yes">
+    <SummaryInformation Description="ProxyGauge for Windows 11" />
+    <MajorUpgrade DowngradeErrorMessage="已安装更高版本的 ProxyGauge。" />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Launch Condition="VersionNT64 AND MsiNTProductType = 1 AND WindowsBuild &gt;= 22000"
+            Message="ProxyGauge 仅支持 64 位 Windows 11，不支持 Windows 10 或 Windows Server。" />
+
+    <Icon Id="ProxyGaugeIcon" SourceFile="$(IconPath)" />
+    <Property Id="ARPPRODUCTICON" Value="ProxyGaugeIcon" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="ProxyGauge">
+        <Files Include="$(PublishDir)\**">
+          <Exclude Files="$(PublishDir)\ProxyGauge.exe" />
+        </Files>
+
+        <Component Id="ProxyGaugeUiComponent" Bitness="always64">
+          <File Id="ProxyGaugeUiExe" Source="$(PublishDir)\ProxyGauge.exe" KeyPath="yes">
+            <Shortcut Id="ProxyGaugeStartMenuShortcut"
+                      Directory="ProgramMenuFolder"
+                      Name="ProxyGauge"
+                      WorkingDirectory="INSTALLFOLDER"
+                      Icon="ProxyGaugeIcon"
+                      Advertise="yes" />
+          </File>
+        </Component>
+
+        <Component Id="ProxyGaugeGuardComponent" Bitness="always64">
+          <File Id="ProxyGaugeGuardExe" Source="$(GuardExe)" KeyPath="yes" />
+          <ServiceInstall Id="ProxyGaugeGuardServiceInstall"
+                          Name="ProxyGaugeGuard"
+                          DisplayName="ProxyGauge Guard Service"
+                          Description="Keeps ProxyGauge direct-IP leak protection active independently of the desktop UI."
+                          Type="ownProcess"
+                          Start="auto"
+                          ErrorControl="normal"
+                          Account="LocalSystem"
+                          Vital="yes">
+            <ServiceDependency Id="BFE" />
+            <ServiceConfigFailureActions ResetPeriod="86400"
+                                         OnInstall="yes"
+                                         OnReinstall="yes">
+              <Failure Action="restartService" Delay="3000" />
+              <Failure Action="restartService" Delay="10000" />
+              <Failure Action="restartService" Delay="30000" />
+            </ServiceConfigFailureActions>
+          </ServiceInstall>
+          <ServiceControl Id="ProxyGaugeGuardServiceControl"
+                          Name="ProxyGaugeGuard"
+                          Start="install"
+                          Stop="both"
+                          Remove="uninstall"
+                          Wait="yes" />
+          <!-- The service owns these values. MSI upgrades must never reset an enabled Guard. -->
+          <RegistryKey Root="HKLM" Key="SOFTWARE\ProxyGauge\Guard" ForceCreateOnInstall="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <CustomAction Id="CleanupProxyGaugeGuard"
+                  FileRef="ProxyGaugeGuardExe"
+                  ExeCommand="--uninstall-cleanup"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="check" />
+    <InstallExecuteSequence>
+      <Custom Action="CleanupProxyGaugeGuard"
+              After="StopServices"
+              Condition="REMOVE ~= &quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+    </InstallExecuteSequence>
+  </Package>
+</Wix>

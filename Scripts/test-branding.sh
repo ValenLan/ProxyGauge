@@ -16,7 +16,6 @@ for required_path in \
   "$PROJECT_ROOT/Scripts/proxygauge-check.sh" \
   "$PROJECT_ROOT/Scripts/proxygauge-ip-risk.jxa" \
   "$PROJECT_ROOT/Scripts/proxygauge-chain-check.jxa" \
-  "$PROJECT_ROOT/Scripts/proxygauge-private-browser.sh" \
   "$PROJECT_ROOT/Scripts/proxygauge-killswitch" \
   "$PROJECT_ROOT/Windows/ProxyGauge.Windows.csproj" \
   "$PROJECT_ROOT/Windows/Assets/ProxyGauge.ico"; do
@@ -38,14 +37,30 @@ fi
 [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$PROJECT_ROOT/Info.plist")" = "ProxyGauge" ]
 [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$PROJECT_ROOT/Info.plist")" = "ProxyGauge.icns" ]
 [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PROJECT_ROOT/Info.plist")" = "com.valenlan.proxygauge" ]
+[ "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$PROJECT_ROOT/Info.plist")" = "26.0" ]
 
 /usr/bin/grep -Fq 'struct ProxyGaugeApp: App' "$PROJECT_ROOT/Sources/ProxyGaugeApp.swift"
+/usr/bin/grep -Fq -- '-target arm64-apple-macosx26.0' "$PROJECT_ROOT/Scripts/build.sh"
 /usr/bin/grep -Fq '<RootNamespace>ProxyGauge</RootNamespace>' "$PROJECT_ROOT/Windows/ProxyGauge.Windows.csproj"
-/usr/bin/grep -Fq 'CLOUDCHECK_CONFIG_PATH=' "$PROJECT_ROOT/Scripts/proxygauge-check.sh"
-/usr/bin/grep -Fq 'CLOUDLINK_GUARD_CONFIG_PATH=' "$PROJECT_ROOT/Scripts/proxygauge-check.sh"
-/usr/bin/grep -Fq 'Path.Combine(appData, "CloudCheck", "config.json")' \
-  "$PROJECT_ROOT/Windows/Services/ConfigService.cs"
-/usr/bin/grep -Fq 'Path.Combine(appData, "CloudLinkGuard", "config.json")' \
-  "$PROJECT_ROOT/Windows/Services/ConfigService.cs"
 
-echo "ProxyGauge source branding and migration compatibility tests passed."
+if /usr/bin/grep -Eiq \
+  'cloudcheck|cloudlink|cloudroute|puffroute' \
+  "$PROJECT_ROOT/Scripts/proxygauge-check.sh" \
+  "$PROJECT_ROOT/Scripts/proxygauge-backend.sh" \
+  "$PROJECT_ROOT/Scripts/install.sh" \
+  "$PROJECT_ROOT/Windows/Services/ConfigService.cs" \
+  "$PROJECT_ROOT/Sources/ProxyGaugeApp.swift"; then
+  echo 'Current app and config paths must not contain legacy product compatibility.' >&2
+  exit 1
+fi
+
+if /usr/bin/grep -Eiq \
+  'cloudcheck|cloudlink|cloudroute|puffroute|\.NET 8|single-file|单文件' \
+  "$PROJECT_ROOT/README.md" \
+  "$PROJECT_ROOT/Windows/README.md" \
+  "$PROJECT_ROOT/config.example"; then
+  echo 'Current documentation must describe only the latest ProxyGauge platform contract.' >&2
+  exit 1
+fi
+
+echo "ProxyGauge source branding tests passed."

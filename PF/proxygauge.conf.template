@@ -1,12 +1,13 @@
 # ProxyGauge PF Kill Switch anchor.
 # Root-owned proxy cores may use physical interfaces. Regular applications
-# must use the proxy/TUN path, except for LAN and DNS.
+# must use the proxy/TUN path, except for local-network destinations. System
+# DNS is still available through root-owned macOS services; user-owned raw
+# DNS packets are not granted a separate bypass.
 
 table <proxygauge_lan> persist { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 224.0.0.0/4, 255.255.255.255/32, fe80::/10, ff02::/16 }
 phys = "{ __INTERFACES__ }"
 
 pass quick on lo0 all
 pass out quick on $phys from any to <proxygauge_lan>
-pass out quick on $phys proto { tcp udp } from any to any port 53
 pass out quick on $phys all user = 0
 block return out on $phys all

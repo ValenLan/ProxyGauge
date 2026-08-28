@@ -4,32 +4,6 @@
 # 退出码: 0 = 链路检查通过; 1 = 有失败项
 
 DEFAULT_CONFIG="$HOME/.config/proxygauge/config"
-CLOUDCHECK_CONFIG_PATH="$HOME/.config/cloudcheck/config"
-CLOUDLINK_GUARD_CONFIG_PATH="$HOME/.config/cloudlink-guard/config"
-CLOUDROUTE_CONFIG_PATH="$HOME/.config/cloudroute/config"
-PUFFROUTE_CONFIG_PATH="$HOME/.config/puffroute/config"
-
-import_legacy_compat() {
-  local suffix current legacy_prefix legacy
-  for suffix in "$@"; do
-    current="PROXYGAUGE_$suffix"
-    declare -p "$current" >/dev/null 2>&1 && continue
-    for legacy_prefix in CLOUDCHECK CLOUDLINK_GUARD CLOUDROUTE PUFFROUTE; do
-      legacy="${legacy_prefix}_$suffix"
-      if declare -p "$legacy" >/dev/null 2>&1; then
-        printf -v "$current" '%s' "${!legacy}"
-        export "$current"
-        break
-      fi
-    done
-  done
-}
-
-import_legacy_compat \
-  CONFIG MIXED EXPECT_IP TIMEOUT METADATA_TIMEOUT MIHOMO_SOCKET \
-  SECONDARY_ENABLED SECONDARY_LABEL SECONDARY_GROUP DEFAULT_GROUP \
-  SECONDARY_MIXED SECONDARY_DOMAINS EXPECT_SECONDARY_IP ACTIVE_AI_PROBES \
-  RISK_PARSER CHAIN_PARSER GOOGLE_GROUP GOOGLE_MIXED EXPECT_GOOGLE_IP
 
 CONFIG_FILE="${PROXYGAUGE_CONFIG:-$DEFAULT_CONFIG}"
 ENV_PROXYGAUGE_MIXED="${PROXYGAUGE_MIXED:-}"
@@ -39,23 +13,7 @@ ENV_SECONDARY_GROUP="${PROXYGAUGE_SECONDARY_GROUP:-}"
 ENV_DEFAULT_GROUP="${PROXYGAUGE_DEFAULT_GROUP:-}"
 ENV_SECONDARY_MIXED="${PROXYGAUGE_SECONDARY_MIXED:-}"
 ENV_SECONDARY_DOMAINS="${PROXYGAUGE_SECONDARY_DOMAINS:-}"
-if [ -z "${PROXYGAUGE_CONFIG:-}" ] && [ ! -r "$CONFIG_FILE" ]; then
-  if [ -r "$CLOUDCHECK_CONFIG_PATH" ]; then
-    CONFIG_FILE="$CLOUDCHECK_CONFIG_PATH"
-  elif [ -r "$CLOUDLINK_GUARD_CONFIG_PATH" ]; then
-    CONFIG_FILE="$CLOUDLINK_GUARD_CONFIG_PATH"
-  elif [ -r "$CLOUDROUTE_CONFIG_PATH" ]; then
-    CONFIG_FILE="$CLOUDROUTE_CONFIG_PATH"
-  elif [ -r "$PUFFROUTE_CONFIG_PATH" ]; then
-    CONFIG_FILE="$PUFFROUTE_CONFIG_PATH"
-  fi
-fi
 [ -r "$CONFIG_FILE" ] && . "$CONFIG_FILE"
-import_legacy_compat \
-  MIXED EXPECT_IP TIMEOUT METADATA_TIMEOUT MIHOMO_SOCKET SECONDARY_ENABLED \
-  SECONDARY_LABEL SECONDARY_GROUP DEFAULT_GROUP SECONDARY_MIXED \
-  SECONDARY_DOMAINS EXPECT_SECONDARY_IP ACTIVE_AI_PROBES RISK_PARSER \
-  CHAIN_PARSER GOOGLE_GROUP GOOGLE_MIXED EXPECT_GOOGLE_IP
 if [ -n "$ENV_PROXYGAUGE_MIXED" ]; then
   PROXYGAUGE_MIXED="$ENV_PROXYGAUGE_MIXED"
 fi
@@ -69,22 +27,20 @@ if [ -n "$ENV_SECONDARY_DOMAINS" ]; then PROXYGAUGE_SECONDARY_DOMAINS="$ENV_SECO
 EXPECT_IP="${PROXYGAUGE_EXPECT_IP:-}"
 MIXED="${PROXYGAUGE_MIXED:-127.0.0.1:7890}"
 TIMEOUT="${PROXYGAUGE_TIMEOUT:-6}"
-METADATA_TIMEOUT="${PROXYGAUGE_METADATA_TIMEOUT:-12}"
 MIHOMO_SOCKET="${PROXYGAUGE_MIHOMO_SOCKET:-/private/tmp/verge/verge-mihomo.sock}"
 SECONDARY_ENABLED="${PROXYGAUGE_SECONDARY_ENABLED:-auto}"
-SECONDARY_LABEL="${PROXYGAUGE_SECONDARY_LABEL:-Google / Gemini}"
+SECONDARY_LABEL="${PROXYGAUGE_SECONDARY_LABEL:-Google / Gemini / Claude}"
 GOOGLE_GROUP="${PROXYGAUGE_SECONDARY_GROUP:-${PROXYGAUGE_GOOGLE_GROUP:-Google-Chain}}"
 DEFAULT_GROUP="${PROXYGAUGE_DEFAULT_GROUP:-PROXY}"
 GOOGLE_MIXED="${PROXYGAUGE_SECONDARY_MIXED:-${PROXYGAUGE_GOOGLE_MIXED:-127.0.0.1:7891}}"
 EXPECT_GOOGLE_IP="${PROXYGAUGE_EXPECT_SECONDARY_IP:-${PROXYGAUGE_EXPECT_GOOGLE_IP:-}}"
-SECONDARY_DOMAINS="${PROXYGAUGE_SECONDARY_DOMAINS:-gemini.google.com,generativelanguage.googleapis.com,www.google.com}"
+SECONDARY_DOMAINS="${PROXYGAUGE_SECONDARY_DOMAINS:-gemini.google.com,generativelanguage.googleapis.com,www.google.com,claude.ai,api.anthropic.com,platform.claude.com,bridge.claudeusercontent.com}"
 ACTIVE_AI_PROBES="${PROXYGAUGE_ACTIVE_AI_PROBES:-0}"
 MIXED_HOST="${MIXED%:*}"
 MIXED_PORT="${MIXED##*:}"
 GOOGLE_MIXED_HOST="${GOOGLE_MIXED%:*}"
 GOOGLE_MIXED_PORT="${GOOGLE_MIXED##*:}"
 SCRIPT_DIR=$(/usr/bin/dirname "$0")
-RISK_PARSER="${PROXYGAUGE_RISK_PARSER:-$SCRIPT_DIR/proxygauge-ip-risk.jxa}"
 CHAIN_PARSER="${PROXYGAUGE_CHAIN_PARSER:-$SCRIPT_DIR/proxygauge-chain-check.jxa}"
 
 SECONDARY_ACTIVE=""
@@ -119,56 +75,6 @@ has_tun_route() {
     return 0
   fi
   /usr/sbin/netstat -rn -f inet 2>/dev/null | /usr/bin/grep -qE '^198\.18\..*[[:space:]]utun[0-9]+'
-}
-
-render_risk_profile() {
-  risk_proxy="$1"
-  risk_ip="$2"
-  risk_label="$3"
-
-  if [ -z "$risk_ip" ]; then
-    echo "  ℹ️ 未取得$risk_label，暂时无法查询风险画像"
-    return
-  fi
-  if [ ! -r "$RISK_PARSER" ]; then
-    echo "  ℹ️ 风险画像解析器不可用"
-    return
-  fi
-
-  IPAPI_JSON=$(/usr/bin/mktemp -t proxygauge-ipapi)
-  PROXYCHECK_JSON=$(/usr/bin/mktemp -t proxygauge-proxycheck)
-  PEERINGDB_JSON=$(/usr/bin/mktemp -t proxygauge-peeringdb)
-  : > "$IPAPI_JSON"
-  : > "$PROXYCHECK_JSON"
-  : > "$PEERINGDB_JSON"
-
-  /usr/bin/curl -sS --retry 1 --retry-all-errors --retry-delay 1 \
-    --proxy "http://$risk_proxy" --max-time "$TIMEOUT" \
-    "https://api.ipapi.is/?q=$risk_ip" -o "$IPAPI_JSON" 2>/dev/null || true
-  /usr/bin/curl -sS --retry 1 --retry-all-errors --retry-delay 1 \
-    --proxy "http://$risk_proxy" --max-time "$TIMEOUT" \
-    "https://proxycheck.io/v3/$risk_ip" -o "$PROXYCHECK_JSON" 2>/dev/null || true
-
-  ASN_NUMBER=$(/usr/bin/osascript -l JavaScript "$RISK_PARSER" \
-    extract-asn "$IPAPI_JSON" "$PROXYCHECK_JSON" "$risk_ip" 2>/dev/null || true)
-  if printf '%s' "$ASN_NUMBER" | /usr/bin/grep -qE '^[0-9]+$'; then
-    /usr/bin/curl -sS --retry 1 --retry-all-errors --retry-delay 1 \
-      -A "ProxyGauge/1.5.4 (+https://github.com/ValenLan/ProxyGauge)" \
-      --proxy "http://$risk_proxy" --max-time "$METADATA_TIMEOUT" \
-      "https://www.peeringdb.com/api/net?asn=$ASN_NUMBER" \
-      -o "$PEERINGDB_JSON" 2>/dev/null || true
-  fi
-
-  RISK_OUTPUT=$(/usr/bin/osascript -l JavaScript "$RISK_PARSER" \
-    "$IPAPI_JSON" "$PROXYCHECK_JSON" "$PEERINGDB_JSON" "$risk_ip" 2>/dev/null || true)
-  /bin/rm -f "$IPAPI_JSON" "$PROXYCHECK_JSON" "$PEERINGDB_JSON"
-
-  if [ -n "$RISK_OUTPUT" ]; then
-    echo "  ℹ️ $risk_label"
-    /usr/bin/printf '%s\n' "$RISK_OUTPUT"
-  else
-    echo "  ℹ️ $risk_label风险画像暂不可用；不影响代理链路检查结果"
-  fi
 }
 
 check_site() {
@@ -320,11 +226,8 @@ else
   check no "无法经代理获取出口 IP (多个查询源均失败)"
 fi
 
-echo "===== 5. 出口 IP 风险画像 ====="
-render_risk_profile "$MIXED" "$EXT" "默认出口 IP${EXT:+：$EXT}"
-
 run_secondary_checks() {
-echo "===== 6. 额外分流链路 ($SECONDARY_LABEL) ====="
+echo "===== 5. 额外分流链路 ($SECONDARY_LABEL) ====="
 GOOGLE_EXT=""
 CHAIN_CONFIGURED=""
 if [ -S "$MIHOMO_SOCKET" ] && [ -r "$CHAIN_PARSER" ]; then
@@ -415,8 +318,6 @@ EOF
       check ok "出口已分离：默认 $EXT / $SECONDARY_LABEL $GOOGLE_EXT"
     fi
 
-    echo "  ── $SECONDARY_LABEL 出口风险画像 ──"
-    render_risk_profile "$GOOGLE_MIXED" "$GOOGLE_EXT" "$SECONDARY_LABEL 出口 IP：$GOOGLE_EXT"
   else
     check no "无法通过 $GOOGLE_MIXED 获取 $SECONDARY_LABEL 出口 IP"
   fi
@@ -428,7 +329,7 @@ else
   fi
 fi
 
-echo "===== 7. 分流确认 (默认低风险模式) ====="
+echo "===== 6. 分流确认 (不访问账号站点) ====="
 if [ -n "$GOOGLE_EXT" ]; then
   check ok "$SECONDARY_LABEL 已绑定独立出口 ($GOOGLE_EXT)"
 elif [ -n "$CHAIN_CONFIGURED" ]; then
@@ -449,7 +350,7 @@ if [ "$ACTIVE_AI_PROBES" = "1" ]; then
   check_site "Gemini API" "https://generativelanguage.googleapis.com/v1beta/models" "gemini" "$GEMINI_PROBE_PROXY"
 fi
 
-echo "===== 8. 出口结论 (不新增外部请求) ====="
+echo "===== 7. 出口结论 (不新增外部请求) ====="
 if [ -n "$EXT" ]; then
   check ok "默认出口已由多个 IP 查询源确认 ($EXT)"
 fi
@@ -466,7 +367,7 @@ fi
 if [ -n "$SECONDARY_ACTIVE" ]; then
   run_secondary_checks
 elif [ "$ACTIVE_AI_PROBES" = "1" ]; then
-  echo "===== 6. 主动平台探测 (手动启用) ====="
+  echo "===== 5. 主动平台探测 (手动启用) ====="
   echo "  ⚠️ 已手动启用主动 AI API 探测；请求会经默认入口到达对应平台"
   check_site "OpenAI API" "https://api.openai.com/v1/models" "api" "$MIXED"
   check_site "Anthropic API" "https://api.anthropic.com/v1/models" "api" "$MIXED"

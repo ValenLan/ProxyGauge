@@ -8,6 +8,7 @@ trap '/bin/rm -rf "$TEMP_DIR"' EXIT
 TEST_PF_CONF="$TEMP_DIR/pf.conf"
 /usr/bin/printf '%s\n' 'anchor "proxygauge"' > "$TEST_PF_CONF"
 export PROXYGAUGE_PF_CONF="$TEST_PF_CONF"
+export PROXYGAUGE_KILL_STATE="$TEMP_DIR/missing-state"
 
 assert_kill_state() {
   local message expected actual
@@ -33,6 +34,22 @@ assert_kill_state 'Kill Switch 已开启' $'已开启\tok'
 assert_kill_state 'Kill Switch: Enabled' $'已开启\tok'
 assert_kill_state 'Kill Switch 已关闭' $'已关闭\twarning'
 assert_kill_state 'Kill Switch: Disabled' $'已关闭\twarning'
+
+RUNTIME_STATE="$TEMP_DIR/runtime-state"
+/usr/bin/printf '%s\n' enabled > "$RUNTIME_STATE"
+/bin/chmod 644 "$RUNTIME_STATE"
+/usr/bin/printf '%s\n' test-token > "$TEMP_DIR/runtime-token"
+trusted_enabled=$(PROXYGAUGE_KILL_STATE="$RUNTIME_STATE" \
+  PROXYGAUGE_KILL_TOKEN="$TEMP_DIR/runtime-token" \
+  PROXYGAUGE_ADMIN_RESULT="$TEMP_DIR/missing-admin-result" \
+  /bin/bash "$BACKEND" probe | /usr/bin/awk -F '\t' '$1 == "kill" { print $2 "\t" $3 }')
+[ "$trusted_enabled" = $'已开启\tok' ]
+
+/usr/bin/printf '%s\n' fault > "$RUNTIME_STATE"
+trusted_fault=$(PROXYGAUGE_KILL_STATE="$RUNTIME_STATE" \
+  PROXYGAUGE_KILL_TOKEN="$TEMP_DIR/runtime-token" \
+  /bin/bash "$BACKEND" probe | /usr/bin/awk -F '\t' '$1 == "kill" { print $2 "\t" $3 }')
+[ "$trusted_fault" = $'需要修复\terror' ]
 
 unconfigured_kill=$(PROXYGAUGE_PF_CONF="$TEMP_DIR/missing-pf.conf" \
   PROXYGAUGE_ADMIN_RESULT="$TEMP_DIR/missing-admin-result" \
@@ -86,6 +103,35 @@ case "$saved_endpoint_probe" in
   *) echo "App 保存的入口没有覆盖配置文件: $saved_endpoint_probe" >&2; exit 1 ;;
 esac
 
+FAKE_CURL="$TEMP_DIR/fake-curl"
+/usr/bin/printf '%s\n' \
+  '#!/bin/bash' \
+  '/usr/bin/printf "%s\\n" "$*" >> "$PROXYGAUGE_FAKE_CURL_LOG"' \
+  '/usr/bin/printf "%s\\n" "203.0.113.44"' > "$FAKE_CURL"
+/bin/chmod 755 "$FAKE_CURL"
+
+resolved_exit_ip=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_MIXED=127.0.0.1:7898 \
+  PROXYGAUGE_CURL="$FAKE_CURL" \
+  PROXYGAUGE_FAKE_CURL_LOG="$TEMP_DIR/fake-curl.log" \
+  /bin/bash "$BACKEND" exit-ip)
+[ "$resolved_exit_ip" = "203.0.113.44" ]
+/usr/bin/grep -Fq -- '--proxy http://127.0.0.1:7898' "$TEMP_DIR/fake-curl.log"
+
+/usr/bin/printf '%s\n' \
+  '#!/bin/bash' \
+  '/usr/bin/printf "%s\\n" "not-an-ip"' > "$TEMP_DIR/failing-curl"
+/bin/chmod 755 "$TEMP_DIR/failing-curl"
+if failed_exit_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_MIXED=127.0.0.1:7898 \
+  PROXYGAUGE_CURL="$TEMP_DIR/failing-curl" \
+  /bin/bash "$BACKEND" exit-ip 2>&1); then
+  echo '无有效出口 IP 时 exit-ip 应返回失败' >&2
+  exit 1
+fi
+/usr/bin/printf '%s\n' "$failed_exit_output" \
+  | /usr/bin/grep -Fq '无法经当前本地代理获取出口 IP'
+
 assert_discovery() {
   local expected output
   expected="$1"
@@ -134,60 +180,6 @@ missing_discovery=$(PROXYGAUGE_CONFIG=/dev/null \
   /bin/bash "$BACKEND" discover)
 /usr/bin/printf '%s\n' "$missing_discovery" | /usr/bin/grep -Fq $'found\t0'
 /usr/bin/printf '%s\n' "$missing_discovery" | /usr/bin/grep -Fq $'source\t手动设置'
-
-/usr/bin/printf '%s\n__STATUS__=0\n' 'Kill Switch: Enabled' > "$TEMP_DIR/legacy-admin-result"
-/usr/bin/printf '%s\n' test-token > "$TEMP_DIR/cloudlink-token"
-/usr/bin/printf '%s\n' test-token > "$TEMP_DIR/cloudroute-token"
-/usr/bin/printf '%s\n' test-token > "$TEMP_DIR/legacy-token"
-cloudcheck_actual=$(CLOUDCHECK_ADMIN_RESULT="$TEMP_DIR/legacy-admin-result" \
-  CLOUDCHECK_KILL_TOKEN="$TEMP_DIR/cloudlink-token" \
-  /bin/bash "$BACKEND" probe | /usr/bin/awk -F '\t' '$1 == "kill" { print $2 "\t" $3 }')
-[ "$cloudcheck_actual" = $'已开启\tok' ]
-
-cloudlink_actual=$(CLOUDLINK_GUARD_ADMIN_RESULT="$TEMP_DIR/legacy-admin-result" \
-  CLOUDLINK_GUARD_KILL_TOKEN="$TEMP_DIR/cloudlink-token" \
-  /bin/bash "$BACKEND" probe | /usr/bin/awk -F '\t' '$1 == "kill" { print $2 "\t" $3 }')
-[ "$cloudlink_actual" = $'已开启\tok' ]
-
-cloudroute_actual=$(CLOUDROUTE_ADMIN_RESULT="$TEMP_DIR/legacy-admin-result" \
-  CLOUDROUTE_KILL_TOKEN="$TEMP_DIR/cloudroute-token" \
-  /bin/bash "$BACKEND" probe | /usr/bin/awk -F '\t' '$1 == "kill" { print $2 "\t" $3 }')
-[ "$cloudroute_actual" = $'已开启\tok' ]
-
-legacy_actual=$(PUFFROUTE_ADMIN_RESULT="$TEMP_DIR/legacy-admin-result" \
-  PUFFROUTE_KILL_TOKEN="$TEMP_DIR/legacy-token" \
-  /bin/bash "$BACKEND" probe | /usr/bin/awk -F '\t' '$1 == "kill" { print $2 "\t" $3 }')
-[ "$legacy_actual" = $'已开启\tok' ]
-
-cloudcheck_config_probe=$(CLOUDCHECK_CONFIG="$TEMP_DIR/proxygauge-config" \
-  CLOUDCHECK_MIXED=127.0.0.1:7894 \
-  CLOUDCHECK_SYSTEM_PROXY_ACTIVE=0 \
-  CLOUDCHECK_TUN_ACTIVE=0 \
-  /bin/bash "$BACKEND" probe | /usr/bin/awk -F '\t' '$1 == "port" { print $2 }')
-case "$cloudcheck_config_probe" in
-  '7894 监听中'|'7894 未监听') ;;
-  *) echo "CloudCheck 环境变量兼容失败: $cloudcheck_config_probe" >&2; exit 1 ;;
-esac
-
-cloudlink_config_probe=$(CLOUDLINK_GUARD_CONFIG="$TEMP_DIR/proxygauge-config" \
-  CLOUDLINK_GUARD_MIXED=127.0.0.1:7895 \
-  CLOUDLINK_GUARD_SYSTEM_PROXY_ACTIVE=0 \
-  CLOUDLINK_GUARD_TUN_ACTIVE=0 \
-  /bin/bash "$BACKEND" probe | /usr/bin/awk -F '\t' '$1 == "port" { print $2 }')
-case "$cloudlink_config_probe" in
-  '7895 监听中'|'7895 未监听') ;;
-  *) echo "CloudLinkGuard 环境变量兼容失败: $cloudlink_config_probe" >&2; exit 1 ;;
-esac
-
-cloudroute_config_probe=$(CLOUDROUTE_CONFIG="$TEMP_DIR/proxygauge-config" \
-  CLOUDROUTE_MIXED=127.0.0.1:7896 \
-  CLOUDROUTE_SYSTEM_PROXY_ACTIVE=0 \
-  CLOUDROUTE_TUN_ACTIVE=0 \
-  /bin/bash "$BACKEND" probe | /usr/bin/awk -F '\t' '$1 == "port" { print $2 }')
-case "$cloudroute_config_probe" in
-  '7896 监听中'|'7896 未监听') ;;
-  *) echo "CloudRoute 环境变量兼容失败: $cloudroute_config_probe" >&2; exit 1 ;;
-esac
 
 FAKE_OSASCRIPT="$TEMP_DIR/fake-osascript"
 /usr/bin/printf '%s\n' \
@@ -253,6 +245,11 @@ fi
 /usr/bin/printf '%s\n' "$failure_output" | /usr/bin/grep -Fq '❌ 内置规则校验失败'
 if /usr/bin/printf '%s\n' "$failure_output" | /usr/bin/grep -Fq '/Applications/ProxyGauge.app'; then
   echo '用户错误信息不得显示管理员脚本内部路径' >&2
+  exit 1
+fi
+
+if /bin/bash "$BACKEND" kill-pause >/dev/null 2>&1; then
+  echo '管理员桥接只应提供持久开关，不得接受限时暂停' >&2
   exit 1
 fi
 

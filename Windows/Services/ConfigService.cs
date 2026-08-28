@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text;
 using System.Text.Json;
 using ProxyGauge.Models;
 
@@ -12,58 +13,99 @@ public sealed class ConfigService
         PropertyNameCaseInsensitive = true
     };
 
-    public string ConfigPath { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "ProxyGauge",
-        "config.json");
-
-    public bool HasSavedConfig => File.Exists(ConfigPath) || LegacyConfigPaths.Any(File.Exists);
-
-    private IEnumerable<string> LegacyConfigPaths
+    public ConfigService(string? configPath = null)
     {
-        get
-        {
-            var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-            yield return Path.Combine(appData, "CloudCheck", "config.json");
-            yield return Path.Combine(appData, "CloudLinkGuard", "config.json");
-            yield return Path.Combine(appData, "CloudRoute", "config.json");
-            yield return Path.Combine(appData, "PuffRoute", "config.json");
-        }
+        ConfigPath = configPath ?? Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "ProxyGauge",
+            "config.json");
     }
+
+    public string ConfigPath { get; }
+
+    public bool HasValidConfig => TryLoad(out _);
 
     public AppConfig Load()
     {
+        return TryLoad(out var config) ? config : new AppConfig();
+    }
+
+    public bool TryLoad(out AppConfig config)
+    {
+        config = new AppConfig();
         try
         {
-            var sourcePath = File.Exists(ConfigPath)
-                ? ConfigPath
-                : LegacyConfigPaths.FirstOrDefault(File.Exists);
-            if (sourcePath is null)
+            if (!File.Exists(ConfigPath))
             {
-                return new AppConfig();
+                return false;
             }
 
-            var json = File.ReadAllText(sourcePath);
-            var config = Normalize(JsonSerializer.Deserialize<AppConfig>(json) ?? new AppConfig());
-            if (sourcePath != ConfigPath && !File.Exists(ConfigPath))
+            var json = File.ReadAllText(ConfigPath);
+            var loaded = JsonSerializer.Deserialize<AppConfig>(json);
+            if (loaded is null)
             {
-                Save(config);
+                return false;
             }
-            return config;
+
+            config = Normalize(loaded);
+            return true;
         }
         catch
         {
-            return new AppConfig();
+            return false;
         }
     }
 
     public void Save(AppConfig config)
     {
-        var normalized = Normalize(config);
+        var normalized = Normalize(config.Clone());
         var directory = Path.GetDirectoryName(ConfigPath)
             ?? throw new InvalidOperationException("无法确定配置目录。");
         Directory.CreateDirectory(directory);
-        File.WriteAllText(ConfigPath, JsonSerializer.Serialize(normalized, JsonOptions));
+        var temporaryPath = Path.Combine(
+            directory,
+            $".{Path.GetFileName(ConfigPath)}.{Guid.NewGuid():N}.tmp");
+
+        try
+        {
+            var json = JsonSerializer.Serialize(normalized, JsonOptions);
+            using (var stream = new FileStream(
+                       temporaryPath,
+                       FileMode.CreateNew,
+                       FileAccess.Write,
+                       FileShare.None,
+                       bufferSize: 4096,
+                       options: FileOptions.WriteThrough))
+            using (var writer = new StreamWriter(stream, new UTF8Encoding(false)))
+            {
+                writer.Write(json);
+                writer.Flush();
+                stream.Flush(flushToDisk: true);
+            }
+
+            if (File.Exists(ConfigPath))
+            {
+                File.Replace(temporaryPath, ConfigPath, destinationBackupFileName: null);
+            }
+            else
+            {
+                File.Move(temporaryPath, ConfigPath);
+            }
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(temporaryPath))
+                {
+                    File.Delete(temporaryPath);
+                }
+            }
+            catch
+            {
+                // A cleanup failure must not hide the original save result.
+            }
+        }
     }
 
     private static AppConfig Normalize(AppConfig config)

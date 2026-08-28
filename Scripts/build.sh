@@ -33,7 +33,6 @@ fi
 /bin/cp "$PROJECT_ROOT/Scripts/proxygauge-killswitch" "$APP/Contents/Resources/proxygauge-killswitch"
 /bin/cp "$PROJECT_ROOT/Scripts/proxygauge-ip-risk.jxa" "$APP/Contents/Resources/proxygauge-ip-risk.jxa"
 /bin/cp "$PROJECT_ROOT/Scripts/proxygauge-chain-check.jxa" "$APP/Contents/Resources/proxygauge-chain-check.jxa"
-/bin/cp "$PROJECT_ROOT/Scripts/proxygauge-private-browser.sh" "$APP/Contents/Resources/proxygauge-private-browser.sh"
 /bin/cp "$PROJECT_ROOT/PF/proxygauge.conf.template" "$APP/Contents/Resources/proxygauge.conf.template"
 /bin/cp "$PROJECT_ROOT/Rules/ProxyGauge-Merge.yaml" "$APP/Contents/Resources/Rules/ProxyGauge-Merge.yaml"
 /bin/cp "$PROJECT_ROOT/Rules/ProxyGauge-Google-Chain-Probe.yaml" "$APP/Contents/Resources/Rules/ProxyGauge-Google-Chain-Probe.yaml"
@@ -46,15 +45,13 @@ fi
   "$APP/Contents/Resources/proxygauge-check.sh" \
   "$APP/Contents/Resources/proxygauge-killswitch" \
   "$APP/Contents/Resources/proxygauge-ip-risk.jxa" \
-  "$APP/Contents/Resources/proxygauge-chain-check.jxa" \
-  "$APP/Contents/Resources/proxygauge-private-browser.sh"
+  "$APP/Contents/Resources/proxygauge-chain-check.jxa"
 
 for required_path in \
   "$APP/Contents/Resources/proxygauge-check.sh" \
   "$APP/Contents/Resources/proxygauge-killswitch" \
   "$APP/Contents/Resources/proxygauge-ip-risk.jxa" \
   "$APP/Contents/Resources/proxygauge-chain-check.jxa" \
-  "$APP/Contents/Resources/proxygauge-private-browser.sh" \
   "$APP/Contents/Resources/proxygauge.conf.template" \
   "$APP/Contents/Resources/proxygauge-admin.applescript" \
   "$APP/Contents/Resources/Rules/ProxyGauge-Merge.yaml" \

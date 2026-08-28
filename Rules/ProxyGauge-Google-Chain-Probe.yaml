@@ -1,4 +1,4 @@
-# Optional local-only listener for checking the real Google/Gemini exit IP.
+# Optional local-only listener for checking the real Google/Gemini/Claude exit IP.
 #
 # Add this top-level block to the active Mihomo configuration only when a
 # policy group named Google-Chain already exists. It does not contain a node,

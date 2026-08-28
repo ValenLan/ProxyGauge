@@ -20,11 +20,7 @@ WINDOWS_MAIN="$PROJECT_ROOT/Windows/MainWindow.xaml"
 /usr/bin/grep -Fq 'static let defaultWidth: CGFloat = 680' "$APP_SOURCE"
 /usr/bin/grep -Fq 'static let defaultHeight: CGFloat = 500' "$APP_SOURCE"
 /usr/bin/grep -Fq 'Window("ProxyGauge", id: "main")' "$APP_SOURCE"
-/usr/bin/grep -Fq '.appendingPathComponent("com.valenlan.cloudcheck.lock")' "$APP_SOURCE"
-/usr/bin/grep -Fq 'UserDefaults(suiteName: "com.valenlan.cloudcheck")' "$APP_SOURCE"
-/usr/bin/grep -Fq 'UserDefaults(suiteName: "com.valenlan.cloudlinkguard")' "$APP_SOURCE"
-/usr/bin/grep -Fq 'UserDefaults(suiteName: "com.valenlan.cloudroute")' "$APP_SOURCE"
-/usr/bin/grep -Fq 'UserDefaults(suiteName: "com.valenlan.puffroute")' "$APP_SOURCE"
+/usr/bin/grep -Fq '.appendingPathComponent("com.valenlan.proxygauge.lock")' "$APP_SOURCE"
 /usr/bin/grep -Fq '.windowResizability(.contentMinSize)' "$APP_SOURCE"
 /usr/bin/grep -Fq '.frame(maxWidth: .infinity, minHeight: 72)' "$APP_SOURCE"
 /usr/bin/grep -Fq 'static let actionTitle = Font.system(size: 14, weight: .semibold)' "$APP_SOURCE"
@@ -43,8 +39,8 @@ WINDOWS_MAIN="$PROJECT_ROOT/Windows/MainWindow.xaml"
 /usr/bin/grep -Fq 'actionLabel: "管理"' "$APP_SOURCE"
 /usr/bin/grep -Fq 'actionSymbol: CloudSymbols.open' "$APP_SOURCE"
 /usr/bin/grep -Fq 'symbol: CloudSymbols.run' "$APP_SOURCE"
-/usr/bin/grep -Fq 'return ["基础链路", "出口一致", "IP 风险"]' "$APP_SOURCE"
-/usr/bin/grep -Fq 'return ["基础链路", "IP 风险", "\(plan.secondaryLabel) 分流"]' "$APP_SOURCE"
+/usr/bin/grep -Fq 'return ["代理核心", "流量入口", "出口一致"]' "$APP_SOURCE"
+/usr/bin/grep -Fq 'return ["基础链路", "出口一致", "\(plan.secondaryLabel) 分流"]' "$APP_SOURCE"
 /usr/bin/grep -Fq 'scopeLabels.joined(separator: "  ·  ")' "$APP_SOURCE"
 /usr/bin/grep -Fq 'Text(isRunning ? "正在按方案检测…" : "按当前方案检查连接")' "$APP_SOURCE"
 /usr/bin/grep -Fq '.fill(tint.opacity(isHovering ? 0.24 : 0.14))' "$APP_SOURCE"
@@ -76,6 +72,11 @@ if /usr/bin/grep -Fq 'KillSwitchSetupView' "$APP_SOURCE" \
   || /usr/bin/grep -Fq '代理出口服务器 IPv4' "$APP_SOURCE" \
   || /usr/bin/grep -Fq '安装并开启' "$APP_SOURCE"; then
   echo "Kill Switch toggle must not ask for rule-installation parameters." >&2
+  exit 1
+fi
+
+if /usr/bin/grep -Eq 'kill-pause|暂停[[:space:]]*10[[:space:]]*分钟' "$APP_SOURCE"; then
+  echo "Kill Switch must remain a persistent on/off switch without a timed pause." >&2
   exit 1
 fi
 

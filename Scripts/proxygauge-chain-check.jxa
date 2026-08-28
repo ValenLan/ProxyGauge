@@ -37,11 +37,11 @@ function run(argv) {
     const delayDocument = readJSON(argv[2]);
     const groupName = argv[3] || "Google-Chain";
     const defaultGroupName = argv[4] || "PROXY";
-    const targetDomains = String(argv[5] || "gemini.google.com,generativelanguage.googleapis.com,www.google.com")
+    const targetDomains = String(argv[5] || "gemini.google.com,generativelanguage.googleapis.com,www.google.com,claude.ai,api.anthropic.com,platform.claude.com,bridge.claudeusercontent.com")
         .split(",")
         .map(value => value.trim().toLowerCase())
         .filter(value => value.length > 0);
-    const routeLabel = argv[6] || "Google / Gemini";
+    const routeLabel = argv[6] || "Google / Gemini / Claude";
     const proxies = proxyDocument.proxies || {};
     const group = proxies[groupName];
     const lines = [];

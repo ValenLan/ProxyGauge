@@ -60,11 +60,11 @@ struct ProxyDiscovery: Sendable, Equatable {
 
 struct HealthCheckPlan: Sendable, Equatable {
     var secondaryEnabled = false
-    var secondaryLabel = "Google / Gemini"
+    var secondaryLabel = "Google / Gemini / Claude"
     var secondaryGroup = "Google-Chain"
     var defaultGroup = "PROXY"
     var secondaryEndpoint = "127.0.0.1:7891"
-    var secondaryDomains = "gemini.google.com, generativelanguage.googleapis.com, www.google.com"
+    var secondaryDomains = "gemini.google.com, generativelanguage.googleapis.com, www.google.com, claude.ai, api.anthropic.com, platform.claude.com, bridge.claudeusercontent.com"
 
     static let currentTemplate = HealthCheckPlan()
 
@@ -106,88 +106,6 @@ private enum ProxyGaugePreferences {
     static let secondaryEndpointKey = "proxygauge.health.secondaryEndpoint.v1"
     static let secondaryDomainsKey = "proxygauge.health.secondaryDomains.v1"
 
-    private struct MigrationKey {
-        let current: String
-        let legacy: [String]
-    }
-
-    private static let migrationKeys = [
-        MigrationKey(current: setupCompletedKey, legacy: [
-            "cloudcheck.connectionSetupCompleted.v1",
-            "cloudlink-guard.connectionSetupCompleted.v1",
-            "cloudroute.connectionSetupCompleted.v1",
-            "puffroute.connectionSetupCompleted.v1"
-        ]),
-        MigrationKey(current: selectedEndpointKey, legacy: [
-            "cloudcheck.selectedMixedEndpoint",
-            "cloudlink-guard.selectedMixedEndpoint",
-            "cloudroute.selectedMixedEndpoint",
-            "puffroute.selectedMixedEndpoint"
-        ]),
-        MigrationKey(current: secondaryEnabledKey, legacy: [
-            "cloudcheck.health.secondaryEnabled.v1",
-            "cloudlink-guard.health.secondaryEnabled.v1",
-            "cloudroute.health.secondaryEnabled.v1",
-            "puffroute.health.secondaryEnabled.v1"
-        ]),
-        MigrationKey(current: secondaryLabelKey, legacy: [
-            "cloudcheck.health.secondaryLabel.v1",
-            "cloudlink-guard.health.secondaryLabel.v1",
-            "cloudroute.health.secondaryLabel.v1",
-            "puffroute.health.secondaryLabel.v1"
-        ]),
-        MigrationKey(current: secondaryGroupKey, legacy: [
-            "cloudcheck.health.secondaryGroup.v1",
-            "cloudlink-guard.health.secondaryGroup.v1",
-            "cloudroute.health.secondaryGroup.v1",
-            "puffroute.health.secondaryGroup.v1"
-        ]),
-        MigrationKey(current: defaultGroupKey, legacy: [
-            "cloudcheck.health.defaultGroup.v1",
-            "cloudlink-guard.health.defaultGroup.v1",
-            "cloudroute.health.defaultGroup.v1",
-            "puffroute.health.defaultGroup.v1"
-        ]),
-        MigrationKey(current: secondaryEndpointKey, legacy: [
-            "cloudcheck.health.secondaryEndpoint.v1",
-            "cloudlink-guard.health.secondaryEndpoint.v1",
-            "cloudroute.health.secondaryEndpoint.v1",
-            "puffroute.health.secondaryEndpoint.v1"
-        ]),
-        MigrationKey(current: secondaryDomainsKey, legacy: [
-            "cloudcheck.health.secondaryDomains.v1",
-            "cloudlink-guard.health.secondaryDomains.v1",
-            "cloudroute.health.secondaryDomains.v1",
-            "puffroute.health.secondaryDomains.v1"
-        ])
-    ]
-
-    private static func migrateLegacySettingsIfNeeded() {
-        let current = UserDefaults.standard
-        let legacySuites = [
-            UserDefaults(suiteName: "com.valenlan.cloudcheck"),
-            UserDefaults(suiteName: "com.valenlan.cloudlinkguard"),
-            UserDefaults(suiteName: "com.valenlan.cloudroute"),
-            UserDefaults(suiteName: "com.valenlan.puffroute")
-        ].compactMap { $0 }
-
-        for mapping in migrationKeys where current.object(forKey: mapping.current) == nil {
-            var migratedValue: Any?
-            for suite in legacySuites {
-                for legacyKey in mapping.legacy {
-                    if let value = suite.object(forKey: legacyKey) {
-                        migratedValue = value
-                        break
-                    }
-                }
-                if migratedValue != nil { break }
-            }
-            if let migratedValue {
-                current.set(migratedValue, forKey: mapping.current)
-            }
-        }
-    }
-
     static func validLocalEndpoint(_ endpoint: String) -> Bool {
         let parts = endpoint.split(separator: ":", omittingEmptySubsequences: false)
         guard parts.count == 2,
@@ -198,7 +116,6 @@ private enum ProxyGaugePreferences {
     }
 
     static func loadHealthPlan() -> HealthCheckPlan {
-        migrateLegacySettingsIfNeeded()
         let defaults = UserDefaults.standard
         let template = HealthCheckPlan.currentTemplate
         return HealthCheckPlan(
@@ -317,6 +234,17 @@ final class ProxyModel: ObservableObject {
 
     func runHealthCheck() {
         runAction("health", title: "代理链路检测", busy: "正在检测代理链路…")
+    }
+
+    func resolveDefaultExitIP() async -> String? {
+        let result = await execute("exit-ip")
+        let value = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard result.status == 0,
+              value.range(
+                of: #"^[0-9]{1,3}(\.[0-9]{1,3}){3}$"#,
+                options: .regularExpression
+              ) != nil else { return nil }
+        return value
     }
 
     func saveHealthPlan(_ plan: HealthCheckPlan) {
@@ -714,18 +642,6 @@ struct HealthCheckSection: Identifiable {
     }
 }
 
-enum IsolatedBrowserRoute: String {
-    case defaultExit = "default"
-    case googleChain = "google"
-
-    var label: String {
-        switch self {
-        case .defaultExit: return "默认出口"
-        case .googleChain: return "Google 链路"
-        }
-    }
-}
-
 struct HealthReport {
     let checkedAt: String?
     let planName: String
@@ -736,11 +652,10 @@ struct HealthReport {
     let failCount: Int
 
     private static let standardWeights: [String: Double] = [
-        "1": 20,
-        "2": 20,
-        "3": 20,
-        "4": 25,
-        "5": 15
+        "1": 25,
+        "2": 25,
+        "3": 25,
+        "4": 25
     ]
 
     private static let extendedWeights: [String: Double] = [
@@ -748,10 +663,9 @@ struct HealthReport {
         "2": 15,
         "3": 15,
         "4": 20,
-        "5": 10,
-        "6": 10,
-        "7": 5,
-        "8": 10
+        "5": 15,
+        "6": 5,
+        "7": 15
     ]
 
     var score: Int {
@@ -1079,7 +993,7 @@ struct ResultView: View {
             }
 
             HStack(spacing: 8) {
-                Label("\(report.planName) · 高级检测不计分", systemImage: "info.circle")
+                Label("\(report.planName) · IP 纯净度复核不计分", systemImage: "info.circle")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -1379,9 +1293,9 @@ private struct HealthActionCard: View {
 
     private var scopeLabels: [String] {
         if plan.secondaryEnabled {
-            return ["基础链路", "IP 风险", "\(plan.secondaryLabel) 分流"]
+            return ["基础链路", "出口一致", "\(plan.secondaryLabel) 分流"]
         }
-        return ["基础链路", "出口一致", "IP 风险"]
+        return ["代理核心", "流量入口", "出口一致"]
     }
 
     var body: some View {
@@ -1519,185 +1433,22 @@ private struct HealthActionCard: View {
 }
 
 struct AdvancedCheckCard: View {
+    let isPreparing: Bool
     let action: () -> Void
 
     var body: some View {
         DashboardActionCard(
-            title: "高级检测",
-            detail: "浏览器泄漏与 IP 风险",
+            title: "IP 纯净度",
+            detail: isPreparing ? "正在读取当前出口 IP…" : "在默认浏览器中人工复核 6 个网站",
             symbol: CloudSymbols.advanced,
-            actionLabel: "打开",
+            actionLabel: isPreparing ? "准备中" : "浏览器",
             actionSymbol: CloudSymbols.open,
             tint: CloudPalette.reviewCyan,
             action: action
         )
-        .accessibilityLabel("打开高级检测")
-        .help("按需打开隔离浏览器检测；结果不计入链路检测")
-    }
-}
-
-struct AdvancedCheckView: View {
-    let plan: HealthCheckPlan
-    let close: () -> Void
-    @State private var message = ""
-    @State private var browserProcesses: [Process] = []
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
-                CloudIconBadge(
-                    symbol: CloudSymbols.advanced,
-                    tint: CloudPalette.reviewCyan,
-                    containerSize: 44,
-                    cornerRadius: 14,
-                    glyphSize: 20
-                )
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("高级检测")
-                        .font(.system(size: 21, weight: .semibold, design: .rounded))
-                    Text("按需复核浏览器泄漏与 IP 风险")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                Text("不计入链路分")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(CloudPalette.reviewCyan)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(CloudPalette.reviewCyan.opacity(0.11), in: Capsule())
-            }
-
-            HStack(spacing: 12) {
-                routeButton(
-                    title: "默认出口",
-                    detail: "BrowserLeaks · IPhey · IPQS",
-                    note: "使用本地 mixed 入口",
-                    symbol: CloudSymbols.localPort,
-                    tint: CloudPalette.networkBlue,
-                    route: .defaultExit
-                )
-                if plan.secondaryEnabled {
-                    routeButton(
-                        title: plan.secondaryLabel,
-                        detail: "复核额外分流出口",
-                        note: plan.secondaryEndpoint,
-                        symbol: "point.3.connected.trianglepath.dotted",
-                        tint: CloudPalette.googleViolet,
-                        route: .googleChain
-                    )
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 5) {
-                Label("使用临时 Chrome 资料，不加载现有登录、扩展或同步数据。", systemImage: "person.crop.circle.badge.minus")
-                Label("不会改变系统代理；检测网站仍会看到所选出口 IP。", systemImage: "lock.shield")
-                Label("关闭临时窗口后，浏览器资料会自动清理。", systemImage: "trash")
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-            HStack {
-                if !message.isEmpty {
-                    Label(message, systemImage: "checkmark.circle")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-                Spacer()
-                Button("完成", action: close)
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction)
-            }
-        }
-        .padding(18)
-        .frame(width: 540, height: 330)
-    }
-
-    private func routeButton(
-        title: String,
-        detail: String,
-        note: String,
-        symbol: String,
-        tint: Color,
-        route: IsolatedBrowserRoute
-    ) -> some View {
-        Button {
-            launchIsolatedBrowser(route)
-        } label: {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    CloudSymbolGlyph(symbol: symbol, tint: tint, size: 16)
-                    Spacer()
-                    CloudSymbolGlyph(
-                        symbol: CloudSymbols.open,
-                        tint: tint.opacity(0.75),
-                        size: 10,
-                        weight: .semibold,
-                        frameSize: 12
-                    )
-                }
-                Text(title)
-                    .font(.headline)
-                Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(note)
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(tint)
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, minHeight: 92, alignment: .leading)
-            .background(tint.opacity(0.075), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .stroke(tint.opacity(0.18), lineWidth: 1)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help("用\(title)打开独立的临时 Chrome 检测窗口")
-    }
-
-    private func launchIsolatedBrowser(_ route: IsolatedBrowserRoute) {
-        let bundledPath = Bundle.main.path(forResource: "proxygauge-private-browser", ofType: "sh")
-        let fallbackPath = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".local/bin/proxygauge-private-browser").path
-        let scriptPath = bundledPath ?? fallbackPath
-
-        guard FileManager.default.isExecutableFile(atPath: scriptPath) else {
-            message = "高级检测组件不可用，请重新安装 ProxyGauge。"
-            return
-        }
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = [scriptPath, route.rawValue, ""]
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        var environment = ProcessInfo.processInfo.environment
-        if let endpoint = UserDefaults.standard.string(forKey: ProxyGaugePreferences.selectedEndpointKey),
-           ProxyGaugePreferences.validLocalEndpoint(endpoint) {
-            environment["PROXYGAUGE_MIXED"] = endpoint
-        }
-        environment["PROXYGAUGE_SECONDARY_MIXED"] = plan.secondaryEndpoint
-        environment["PROXYGAUGE_SECONDARY_LABEL"] = plan.secondaryLabel
-        process.environment = environment
-
-        do {
-            try process.run()
-            browserProcesses.append(process)
-            let routeName = route == .googleChain ? plan.secondaryLabel : route.label
-            message = "已用\(routeName)打开临时窗口；关闭窗口后会自动清理资料。"
-        } catch {
-            message = "无法打开临时窗口：\(error.localizedDescription)"
-        }
+        .accessibilityLabel("确认后在默认浏览器打开 IP 纯净度复核网站")
+        .help("点击后会先询问并经当前本地代理读取出口 IP，再用默认浏览器打开 6 个网站")
+        .allowsHitTesting(!isPreparing)
     }
 }
 
@@ -1896,7 +1647,7 @@ private struct HealthPlanSetupView: View {
                 planStage(
                     symbol: "network",
                     title: "基础连接",
-                    detail: "核心 · 入口 · 出口 · IP 风险",
+                    detail: "核心 · 入口 · 出口一致",
                     tint: CloudPalette.networkBlue,
                     active: true
                 )
@@ -1935,7 +1686,7 @@ private struct HealthPlanSetupView: View {
 
                 VStack(alignment: .leading, spacing: 13) {
                     HStack(spacing: 12) {
-                        field("方案名称", text: $draft.secondaryLabel, placeholder: "Google / Gemini")
+                        field("方案名称", text: $draft.secondaryLabel, placeholder: "Google / Gemini / Claude")
                         field("目标策略组", text: $draft.secondaryGroup, placeholder: "Google-Chain")
                     }
 
@@ -1947,7 +1698,7 @@ private struct HealthPlanSetupView: View {
                     field(
                         "应命中目标策略组的域名（逗号分隔，最多 8 个）",
                         text: $draft.secondaryDomains,
-                        placeholder: "gemini.google.com, www.google.com"
+                        placeholder: "gemini.google.com, claude.ai, api.anthropic.com"
                     )
                 }
                 .disabled(!draft.secondaryEnabled)
@@ -2243,8 +1994,18 @@ private struct ConnectionSetupView: View {
 }
 
 struct ContentView: View {
+    private static let manualReviewDirectURLs = [
+        "https://ippure.com/",
+        "https://ipcheck.ing/?hl=zh",
+        "https://browserleaks.com/ip",
+        "https://www.ipqualityscore.com/free-ip-lookup-proxy-vpn-test"
+    ]
+
     @StateObject private var model = ProxyModel()
-    @State private var showingAdvanced = false
+    @State private var showingManualReviewConfirmation = false
+    @State private var showingManualReviewFailure = false
+    @State private var isPreparingManualReview = false
+    @State private var manualReviewFailureMessage = ""
     @State private var showingRules = false
 
     var body: some View {
@@ -2260,14 +2021,15 @@ struct ContentView: View {
                 MetricCard(metric: model.entry)
                 KillSwitchCard(
                     metric: model.killSwitch,
-                    isBusy: model.isBusy
-                ) { enabled in
-                    if enabled {
-                        model.enableKillSwitch()
-                    } else {
-                        model.showDisableConfirmation = true
+                    isBusy: model.isBusy,
+                    setEnabled: { enabled in
+                        if enabled {
+                            model.enableKillSwitch()
+                        } else {
+                            model.showDisableConfirmation = true
+                        }
                     }
-                }
+                )
             }
 
             actionArea
@@ -2290,11 +2052,6 @@ struct ContentView: View {
         .sheet(isPresented: $showingRules) {
             RulePackView {
                 showingRules = false
-            }
-        }
-        .sheet(isPresented: $showingAdvanced) {
-            AdvancedCheckView(plan: model.healthPlan) {
-                showingAdvanced = false
             }
         }
         .sheet(isPresented: $model.showConnectionSetup) {
@@ -2322,6 +2079,19 @@ struct ContentView: View {
             }
         } message: {
             Text("关闭后，代理意外中断时，应用可能使用真实 IP 直连外网。")
+        }
+        .alert("打开浏览器人工复核？", isPresented: $showingManualReviewConfirmation) {
+            Button("取消", role: .cancel) {}
+            Button("打开 6 个网站") {
+                Task { await openManualReviewSites() }
+            }
+        } message: {
+            Text("确认后会先经当前本地代理入口读取出口 IP，再使用系统默认浏览器打开 6 个复核网站。Scamalytics 与 AbuseIPDB 会直接进入该 IP 的结果页；部分网站可能要求人机验证，各站结果不会计入链路分。")
+        }
+        .alert("复核网站未完整打开", isPresented: $showingManualReviewFailure) {
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text(manualReviewFailureMessage)
         }
     }
 
@@ -2408,9 +2178,38 @@ struct ContentView: View {
             .help(isHealthCheckRunning ? "正在检测代理链路" : "按当前方案检测代理链路")
 
             HStack(spacing: 10) {
-                AdvancedCheckCard { showingAdvanced = true }
+                AdvancedCheckCard(isPreparing: isPreparingManualReview) {
+                    showingManualReviewConfirmation = true
+                }
                 RulePackCard { showingRules = true }
             }
+        }
+    }
+
+    private func openManualReviewSites() async {
+        guard !isPreparingManualReview else { return }
+        isPreparingManualReview = true
+        let exitIP = await model.resolveDefaultExitIP()
+        var reviewURLs = Self.manualReviewDirectURLs
+        if let exitIP {
+            reviewURLs.append("https://scamalytics.com/ip/\(exitIP)")
+            reviewURLs.append("https://www.abuseipdb.com/check/\(exitIP)")
+        }
+
+        let failedCount = reviewURLs.reduce(into: 0) { count, urlString in
+            guard let url = URL(string: urlString), NSWorkspace.shared.open(url) else {
+                count += 1
+                return
+            }
+        }
+        isPreparingManualReview = false
+
+        if exitIP == nil {
+            manualReviewFailureMessage = "无法经当前本地代理入口确认出口 IP，因此没有打开需要 IP 参数的 Scamalytics 和 AbuseIPDB。其余 4 个网站已按正常方式打开；ProxyGauge 没有改动代理配置。"
+            showingManualReviewFailure = true
+        } else if failedCount > 0 {
+            manualReviewFailureMessage = "有 \(failedCount) 个网站未能打开，请检查系统默认浏览器设置后重试。ProxyGauge 没有改动代理配置。"
+            showingManualReviewFailure = true
         }
     }
 
@@ -2421,38 +2220,24 @@ struct ContentView: View {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var singletonLockFD: Int32 = -1
-    private var legacySingletonLockFD: Int32 = -1
     private var ownsSingletonLock = false
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         let lockPath = (NSTemporaryDirectory() as NSString)
             .appendingPathComponent("com.valenlan.proxygauge.lock")
-        let legacyLockPath = (NSTemporaryDirectory() as NSString)
-            .appendingPathComponent("com.valenlan.cloudcheck.lock")
         singletonLockFD = Darwin.open(lockPath, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
-        legacySingletonLockFD = Darwin.open(
-            legacyLockPath,
-            O_CREAT | O_RDWR,
-            S_IRUSR | S_IWUSR
-        )
 
         guard singletonLockFD >= 0,
-              legacySingletonLockFD >= 0,
-              flock(singletonLockFD, LOCK_EX | LOCK_NB) == 0,
-              flock(legacySingletonLockFD, LOCK_EX | LOCK_NB) == 0 else {
+              flock(singletonLockFD, LOCK_EX | LOCK_NB) == 0 else {
             if singletonLockFD >= 0 {
                 Darwin.close(singletonLockFD)
                 singletonLockFD = -1
             }
-            if legacySingletonLockFD >= 0 {
-                Darwin.close(legacySingletonLockFD)
-                legacySingletonLockFD = -1
-            }
 
             let currentPID = ProcessInfo.processInfo.processIdentifier
-            let existing = ["com.valenlan.proxygauge", "com.valenlan.cloudcheck"]
-                .lazy
-                .flatMap { NSRunningApplication.runningApplications(withBundleIdentifier: $0) }
+            let existing = NSRunningApplication.runningApplications(
+                withBundleIdentifier: "com.valenlan.proxygauge"
+            )
                 .first { $0.processIdentifier != currentPID && !$0.isTerminated }
             existing?.activate(options: [.activateAllWindows])
 
@@ -2488,13 +2273,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        for fileDescriptor in [singletonLockFD, legacySingletonLockFD]
-            where fileDescriptor >= 0 {
-            flock(fileDescriptor, LOCK_UN)
-            Darwin.close(fileDescriptor)
+        if singletonLockFD >= 0 {
+            flock(singletonLockFD, LOCK_UN)
+            Darwin.close(singletonLockFD)
         }
         singletonLockFD = -1
-        legacySingletonLockFD = -1
     }
 }
 

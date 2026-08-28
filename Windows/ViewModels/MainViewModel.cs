@@ -9,6 +9,7 @@ public sealed class MainViewModel : ObservableObject
     private readonly ConfigService _configService;
     private readonly ProxyProbeService _probeService;
     private readonly HealthCheckService _healthCheckService;
+    private readonly GuardClient _guardClient;
     private AppConfig _config;
     private string _headline = "正在读取代理状态";
     private string _detail = "稍等片刻，ProxyGauge 正在检查本地流量入口";
@@ -17,15 +18,19 @@ public sealed class MainViewModel : ObservableObject
     private bool _isHealthCheckRunning;
     private string _healthButtonLabel = "开始检测";
     private string _lastUpdated = "尚未刷新";
+    private GuardStatus _guardStatus = GuardStatus.Unavailable();
+    private bool _isGuardBusy;
 
     public MainViewModel(
         ConfigService configService,
         ProxyProbeService probeService,
-        HealthCheckService healthCheckService)
+        HealthCheckService healthCheckService,
+        GuardClient guardClient)
     {
         _configService = configService;
         _probeService = probeService;
         _healthCheckService = healthCheckService;
+        _guardClient = guardClient;
         _config = _configService.Load();
 
         Core = new MetricViewModel(new MetricSnapshot("代理核心", "检查中", "正在查找 Mihomo", "核", HealthLevel.Idle));
@@ -44,6 +49,33 @@ public sealed class MainViewModel : ObservableObject
     public string PlanSummary => _config.SecondaryEnabled
         ? $"通用检测 + {_config.SecondaryLabel}"
         : "通用检测";
+    public string GuardValue => _guardStatus.Kind switch
+    {
+        GuardStatusKind.Enabled => "已保护",
+        GuardStatusKind.Fault => "需要修复",
+        GuardStatusKind.Disabled => "已关闭",
+        _ => "服务未安装"
+    };
+    public string GuardDetail => _guardStatus.Kind switch
+    {
+        GuardStatusKind.Enabled when !_guardStatus.OwnedByCurrentUser =>
+            "由其他 Windows 用户开启，退出界面后仍然生效",
+        GuardStatusKind.Enabled => "退出 ProxyGauge 后仍持续拦截直连；代理核心停止时会断网而非裸连",
+        GuardStatusKind.Fault => "持久规则不完整，请勿假设真实 IP 已受保护",
+        GuardStatusKind.Disabled => "只有明确开启后才会拦截；关闭界面不改变状态",
+        _ => "请使用 ProxyGauge MSI 安装系统保护服务"
+    };
+    public string GuardButtonLabel => _isGuardBusy
+        ? "处理中…"
+        : _guardStatus.Kind switch
+        {
+            GuardStatusKind.Enabled or GuardStatusKind.Fault => "关闭",
+            _ => "开启"
+        };
+    public bool GuardEnabled => _guardStatus.IsEnabled;
+    public bool CanChangeGuard => !IsBusy && !_isGuardBusy &&
+        _guardStatus.Kind != GuardStatusKind.Unavailable &&
+        _guardStatus.OwnedByCurrentUser;
 
     public HealthLevel OverallLevel
     {
@@ -77,11 +109,24 @@ public sealed class MainViewModel : ObservableObject
             if (SetProperty(ref _isBusy, value))
             {
                 OnPropertyChanged(nameof(IsNotBusy));
+                OnPropertyChanged(nameof(CanChangeGuard));
             }
         }
     }
 
     public bool IsNotBusy => !IsBusy;
+    public bool IsGuardBusy
+    {
+        get => _isGuardBusy;
+        private set
+        {
+            if (SetProperty(ref _isGuardBusy, value))
+            {
+                OnPropertyChanged(nameof(GuardButtonLabel));
+                OnPropertyChanged(nameof(CanChangeGuard));
+            }
+        }
+    }
     public bool IsHealthCheckRunning
     {
         get => _isHealthCheckRunning;
@@ -96,6 +141,7 @@ public sealed class MainViewModel : ObservableObject
         }
 
         IsBusy = true;
+        var guardTask = _guardClient.GetStatusAsync();
         try
         {
             var snapshot = await _probeService.ProbeAsync(_config);
@@ -110,7 +156,53 @@ public sealed class MainViewModel : ObservableObject
         }
         finally
         {
+            ApplyGuard(await guardTask);
             IsBusy = false;
+        }
+    }
+
+    public async Task ToggleGuardAsync()
+    {
+        if (!CanChangeGuard)
+        {
+            return;
+        }
+
+        IsGuardBusy = true;
+        try
+        {
+            if (_guardStatus.IsEnabled)
+            {
+                await _guardClient.DisableAsync();
+            }
+            else
+            {
+                await _guardClient.EnableAsync(_config.MixedPort);
+            }
+            ApplyGuard(await _guardClient.GetStatusAsync());
+        }
+        finally
+        {
+            IsGuardBusy = false;
+        }
+    }
+
+    public async Task ReconfigureGuardAsync()
+    {
+        if (!_guardStatus.IsEnabled || !_guardStatus.OwnedByCurrentUser)
+        {
+            return;
+        }
+
+        IsGuardBusy = true;
+        try
+        {
+            await _guardClient.EnableAsync(_config.MixedPort);
+            ApplyGuard(await _guardClient.GetStatusAsync());
+        }
+        finally
+        {
+            IsGuardBusy = false;
         }
     }
 
@@ -170,5 +262,15 @@ public sealed class MainViewModel : ObservableObject
         Core.Update(snapshot.Core);
         Port.Update(snapshot.Port);
         Route.Update(snapshot.Route);
+    }
+
+    private void ApplyGuard(GuardStatus status)
+    {
+        _guardStatus = status;
+        OnPropertyChanged(nameof(GuardValue));
+        OnPropertyChanged(nameof(GuardDetail));
+        OnPropertyChanged(nameof(GuardButtonLabel));
+        OnPropertyChanged(nameof(GuardEnabled));
+        OnPropertyChanged(nameof(CanChangeGuard));
     }
 }

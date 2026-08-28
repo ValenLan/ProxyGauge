@@ -16,9 +16,9 @@ WINDOWS_MAIN="$PROJECT_ROOT/Windows/MainWindow.xaml"
 /usr/bin/grep -q 'dscacheutil -q host -a name www.cloudflare.com' "$CHECK"
 /usr/bin/grep -Fq 'SECONDARY_ENABLED="${PROXYGAUGE_SECONDARY_ENABLED:-auto}"' "$CHECK"
 /usr/bin/grep -Fq 'run_secondary_checks() {' "$CHECK"
-/usr/bin/grep -Fq '===== 6. 主动平台探测 (手动启用) =====' "$CHECK"
-/usr/bin/grep -Fq '===== 7. 分流确认 (默认低风险模式) =====' "$CHECK"
-/usr/bin/grep -Fq '===== 8. 出口结论 (不新增外部请求) =====' "$CHECK"
+/usr/bin/grep -Fq '===== 5. 主动平台探测 (手动启用) =====' "$CHECK"
+/usr/bin/grep -Fq '===== 6. 分流确认 (不访问账号站点) =====' "$CHECK"
+/usr/bin/grep -Fq '===== 7. 出口结论 (不新增外部请求) =====' "$CHECK"
 /usr/bin/grep -Fq '系统代理与 TUN 同时开启 — 通常只需保留一个流量入口' "$CHECK"
 
 if /usr/bin/grep -q '社区深度复核\|Claude 登录会话验证\|ChatGPT 登录会话验证' "$CHECK"; then
@@ -33,6 +33,11 @@ fi
 
 if /usr/bin/grep -q 'www.google.com/generate_204' "$CHECK"; then
   echo "AI-safe mode must not use a Google connectivity endpoint." >&2
+  exit 1
+fi
+
+if /usr/bin/grep -Eqi 'ipapi\.is|proxycheck\.io|peeringdb' "$CHECK" "$WINDOWS_SERVICE"; then
+  echo "Routine link checks must not submit exit IPs to reputation services." >&2
   exit 1
 fi
 
@@ -51,14 +56,13 @@ score_weights=$(/usr/bin/awk '
 /usr/bin/grep -Fq 'extended=100' <<< "$score_weights"
 /usr/bin/grep -Fq 'value = min(value, 49)' "$APP_SOURCE"
 /usr/bin/grep -Fq 'sectionWeights[$0.number] != nil && $0.hasFailure' "$APP_SOURCE"
-/usr/bin/grep -Fq 'Label("\(report.planName) · 高级检测不计分"' "$APP_SOURCE"
+/usr/bin/grep -Fq 'Label("\(report.planName) · IP 纯净度复核不计分"' "$APP_SOURCE"
 /usr/bin/grep -Fq '.progressViewStyle(.linear)' "$APP_SOURCE"
 
 /usr/bin/grep -Fq 'new HealthCheckSection("本地代理", localItems, 45, IsCritical: true)' "$WINDOWS_SERVICE"
-/usr/bin/grep -Fq 'new HealthCheckSection("代理出口", [exitResult.Item], 30, IsCritical: true)' "$WINDOWS_SERVICE"
-/usr/bin/grep -Fq 'new HealthCheckSection("IP 风险画像", riskItems, 15)' "$WINDOWS_SERVICE"
+/usr/bin/grep -Fq 'new HealthCheckSection("代理出口", [exitResult.Item], 45, IsCritical: true)' "$WINDOWS_SERVICE"
+/usr/bin/grep -Fq 'new HealthCheckSection($"{config.SecondaryLabel} · 策略与规则", planItems, 20, IsCritical: true)' "$WINDOWS_SERVICE"
 /usr/bin/grep -Fq 'CreateBoundarySection(10)' "$WINDOWS_SERVICE"
-/usr/bin/grep -Fq 'CreateBoundarySection(5)' "$WINDOWS_SERVICE"
 /usr/bin/grep -Fq 'new("检测边界（默认低风险模式）"' "$WINDOWS_SERVICE"
 /usr/bin/grep -Fq 'snapshot.SystemProxyEnabled && snapshot.TunDetected' "$WINDOWS_SERVICE"
 /usr/bin/grep -Fq 'value = Math.Min(value, 49)' "$WINDOWS_MODEL"
@@ -71,8 +75,8 @@ generic_output=$(PROXYGAUGE_CONFIG=/dev/null \
   PROXYGAUGE_TIMEOUT=1 \
   /bin/bash "$CHECK" 2>&1 || true)
 /usr/bin/grep -Fq '检测方案: 通用检测' <<< "$generic_output"
-[ "$(/usr/bin/grep -c '^===== [1-8]\.' <<< "$generic_output")" = "5" ]
-if /usr/bin/grep -Fq '===== 6.' <<< "$generic_output"; then
+[ "$(/usr/bin/grep -c '^===== [1-7]\.' <<< "$generic_output")" = "4" ]
+if /usr/bin/grep -Fq '===== 5.' <<< "$generic_output"; then
   echo "The generic plan must not render optional placeholder sections." >&2
   exit 1
 fi
@@ -85,7 +89,7 @@ extended_output=$(PROXYGAUGE_CONFIG=/dev/null \
   PROXYGAUGE_ACTIVE_AI_PROBES=0 \
   PROXYGAUGE_TIMEOUT=1 \
   /bin/bash "$CHECK" 2>&1 || true)
-/usr/bin/grep -Fq '检测方案: 通用检测 + Google / Gemini' <<< "$extended_output"
-[ "$(/usr/bin/grep -c '^===== [1-8]\.' <<< "$extended_output")" = "8" ]
+/usr/bin/grep -Fq '检测方案: 通用检测 + Google / Gemini / Claude' <<< "$extended_output"
+[ "$(/usr/bin/grep -c '^===== [1-7]\.' <<< "$extended_output")" = "7" ]
 
 echo "ProxyGauge low-risk health tests passed."
