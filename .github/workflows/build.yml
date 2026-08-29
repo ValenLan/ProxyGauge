@@ -80,6 +80,21 @@ jobs:
             $ParseErrors | ForEach-Object { Write-Error $_ }
             throw "Windows release installer has PowerShell syntax errors."
           }
+      - name: Verify Windows PowerShell 5.1 compatibility
+        if: ${{ matrix.runtime == 'win-x64' }}
+        shell: powershell
+        run: |
+          $Tokens = $null
+          $ParseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path "Scripts/install-release-windows.ps1"),
+            [ref]$Tokens,
+            [ref]$ParseErrors
+          ) | Out-Null
+          if ($ParseErrors.Count -ne 0) {
+            $ParseErrors | ForEach-Object { Write-Error $_ }
+            throw "Windows release installer is not compatible with Windows PowerShell 5.1."
+          }
       - name: Build ProxyGauge Guard Service
         shell: pwsh
         run: |

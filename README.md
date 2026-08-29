@@ -294,7 +294,7 @@ BFE 在启动时不会装载属于已禁用服务的持久 provider 规则。这
 每次 push 与 pull request 都会构建并测试 macOS、Windows x64 和 Windows ARM64。只有推送与
 应用版本完全一致的 `v<版本>` 标签时，工作流才会把一个 macOS ZIP 和两个 Windows MSI 暂存
 为 Actions artifacts，创建 GitHub Release，并上传这些安装包与 `SHA256SUMS.txt`。临时 artifacts
-只保留 1 天；正式安装包由 Release 长期保存。例如当前版本对应的发布标签应为 `v1.5.6`。
+只保留 1 天；正式安装包由 Release 长期保存。例如当前版本对应的发布标签应为 `v1.5.7`。
 
 创建标签会产生正式发布结果，必须在全部本地测试和普通 push CI 通过后由维护者明确执行；
 构建脚本本身不会自动创建标签。

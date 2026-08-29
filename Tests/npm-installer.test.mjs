@@ -15,6 +15,13 @@ const packageMetadata = JSON.parse(
   readFileSync(resolve(projectRoot, "package.json"), "utf8")
 );
 
+test("Windows installer carries a UTF-8 BOM for Windows PowerShell 5.1", () => {
+  const installer = readFileSync(
+    resolve(projectRoot, "Scripts/install-release-windows.ps1")
+  );
+  assert.deepEqual([...installer.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
+});
+
 test("npm package version matches both native applications", () => {
   const plist = readFileSync(resolve(projectRoot, "Info.plist"), "utf8");
   const macVersion = plist.match(

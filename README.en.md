@@ -315,7 +315,7 @@ Every push and pull request builds and tests macOS, Windows x64, and Windows ARM
 `v<version>` tag exactly matching the app version causes the workflow to stage one macOS ZIP and two
 Windows MSIs as Actions artifacts, create a GitHub Release, and upload those installers together with
 `SHA256SUMS.txt`. Temporary artifacts are retained for one day; Release artifacts are retained by
-GitHub. For the current version, the expected release tag is `v1.5.6`.
+GitHub. For the current version, the expected release tag is `v1.5.7`.
 
 A tag creates a production release and must be pushed explicitly by a maintainer only after all local
 tests and ordinary push CI have passed. Build scripts never create the tag. Releases are neither drafts
