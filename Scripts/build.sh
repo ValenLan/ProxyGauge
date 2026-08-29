@@ -36,6 +36,7 @@ fi
 /bin/cp "$PROJECT_ROOT/PF/proxygauge.conf.template" "$APP/Contents/Resources/proxygauge.conf.template"
 /bin/cp "$PROJECT_ROOT/Rules/ProxyGauge-Merge.yaml" "$APP/Contents/Resources/Rules/ProxyGauge-Merge.yaml"
 /bin/cp "$PROJECT_ROOT/Rules/ProxyGauge-Google-Chain-Probe.yaml" "$APP/Contents/Resources/Rules/ProxyGauge-Google-Chain-Probe.yaml"
+/bin/cp "$PROJECT_ROOT/LICENSE" "$APP/Contents/Resources/LICENSE.txt"
 /bin/cp "$PROJECT_ROOT/Helpers/ProxyGauge Admin.applescript" \
   "$APP/Contents/Resources/proxygauge-admin.applescript"
 
@@ -54,6 +55,7 @@ for required_path in \
   "$APP/Contents/Resources/proxygauge-chain-check.jxa" \
   "$APP/Contents/Resources/proxygauge.conf.template" \
   "$APP/Contents/Resources/proxygauge-admin.applescript" \
+  "$APP/Contents/Resources/LICENSE.txt" \
   "$APP/Contents/Resources/Rules/ProxyGauge-Merge.yaml" \
   "$APP/Contents/Resources/Rules/ProxyGauge-Google-Chain-Probe.yaml"; do
   if [ ! -e "$required_path" ]; then

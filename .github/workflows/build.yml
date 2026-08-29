@@ -26,6 +26,7 @@ jobs:
           Scripts/test-ui-semantics.sh
           Scripts/test-branding.sh
           Scripts/test-windows-parity.sh
+          Scripts/test-release-installers.sh
           Scripts/build.sh
       - name: Verify bundle
         run: codesign --verify --deep --strict --verbose=2 "build/ProxyGauge.app"
@@ -38,11 +39,13 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "archive=$ARCHIVE" >> "$GITHUB_OUTPUT"
       - name: Upload macOS package
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           path: ${{ steps.package.outputs.archive }}
           archive: false
           if-no-files-found: error
+          retention-days: 1
 
   windows:
     runs-on: windows-latest
@@ -62,7 +65,20 @@ jobs:
           dotnet-version: 10.0.x
       - name: Run Windows logic tests
         if: ${{ matrix.runtime == 'win-x64' }}
-        run: dotnet run --project Windows.Tests/ProxyGauge.Windows.Tests.csproj --configuration Release
+        shell: pwsh
+        run: |
+          dotnet run --project Windows.Tests/ProxyGauge.Windows.Tests.csproj --configuration Release
+          $Tokens = $null
+          $ParseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path "Scripts/install-release-windows.ps1"),
+            [ref]$Tokens,
+            [ref]$ParseErrors
+          ) | Out-Null
+          if ($ParseErrors.Count -ne 0) {
+            $ParseErrors | ForEach-Object { Write-Error $_ }
+            throw "Windows release installer has PowerShell syntax errors."
+          }
       - name: Build ProxyGauge Guard Service
         shell: pwsh
         run: |
@@ -83,6 +99,7 @@ jobs:
             -p:DebugType=None `
             -p:DebugSymbols=false
           Copy-Item Windows/README.md "publish/${{ matrix.runtime }}/README-Windows.md"
+          Copy-Item LICENSE "publish/${{ matrix.runtime }}/LICENSE.txt"
           Copy-Item THIRD-PARTY-NOTICES.md "publish/${{ matrix.runtime }}/THIRD-PARTY-NOTICES.md"
           Copy-Item ThirdParty/WiX-6.0.2-LICENSE.txt "publish/${{ matrix.runtime }}/WiX-6.0.2-LICENSE.txt"
           $DotnetRoot = Split-Path (Get-Command dotnet).Source -Parent
@@ -110,11 +127,13 @@ jobs:
           "installer=$Installer" >> $env:GITHUB_OUTPUT
         id: package
       - name: Upload Windows installer
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           path: ${{ steps.package.outputs.installer }}
           archive: false
           if-no-files-found: error
+          retention-days: 1
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -158,4 +177,5 @@ jobs:
             release-assets/SHA256SUMS.txt \
             --verify-tag \
             --generate-notes \
+            --latest \
             --title "ProxyGauge $GITHUB_REF_NAME"

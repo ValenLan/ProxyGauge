@@ -40,6 +40,29 @@ Mihomo/Clash Verge 的核心、混合端口和流量入口状态，并提供结�
 
 支持所有正式发布的 Windows 11；Windows 10 会被明确拒绝启动，也不为其增加兼容分支。
 
+## 一行安装正式版
+
+下面两条命令会从本仓库取得安装器，再从 GitHub 的 **Latest Release** 下载与当前电脑架构
+匹配的正式版，并根据同一 Release 中的 `SHA256SUMS.txt` 校验安装包。它们不会下载源码构建，
+也不会安装代理客户端、订阅或节点。
+
+Apple Silicon Mac：
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/ValenLan/ProxyGauge/main/Scripts/install-release-macos.sh)"
+```
+
+Windows 11（在 PowerShell 中运行，自动选择 x64 或 ARM64，安装 MSI 时会请求管理员权限）：
+
+```powershell
+irm https://raw.githubusercontent.com/ValenLan/ProxyGauge/main/Scripts/install-release-windows.ps1 | iex
+```
+
+一行命令会直接执行本仓库中的安装脚本。谨慎的做法是先在浏览器打开命令里的 URL 阅读脚本，
+确认仓库所有者是 `ValenLan`，再运行。当前正式版尚未购买平台代码签名证书：macOS 使用
+ad-hoc 签名且尚未公证，Windows MSI 也未签名，因此系统可能显示安全提醒；安装器会保留
+Gatekeeper、SmartScreen 和管理员授权检查，不会替用户关闭或绕过这些保护。
+
 ## 规则包与订阅
 
 ProxyGauge 把两者有意分开：
@@ -255,13 +278,16 @@ BFE 在启动时不会装载属于已禁用服务的持久 provider 规则。这
 
 ## 发布
 
-每次 push 与 pull request 都会构建并测试 macOS、Windows x64 和 Windows ARM64，并把
-一个 macOS ZIP 和两个 Windows MSI 原样保存为 Actions artifacts。只有推送与应用版本完全一致的 `v<版本>` 标签时，
-工作流才会创建 GitHub Release，同时上传这些安装包与 `SHA256SUMS.txt`。例如当前版本对应的
-发布标签应为 `v1.5.6`。
+每次 push 与 pull request 都会构建并测试 macOS、Windows x64 和 Windows ARM64。只有推送与
+应用版本完全一致的 `v<版本>` 标签时，工作流才会把一个 macOS ZIP 和两个 Windows MSI 暂存
+为 Actions artifacts，创建 GitHub Release，并上传这些安装包与 `SHA256SUMS.txt`。临时 artifacts
+只保留 1 天；正式安装包由 Release 长期保存。例如当前版本对应的发布标签应为 `v1.5.6`。
 
 创建标签会产生正式发布结果，必须在全部本地测试和普通 push CI 通过后由维护者明确执行；
 构建脚本本身不会自动创建标签。
+
+这里的 GitHub Release 指正式版的发布页和安装包，不是测试版。工作流不会创建草稿或
+Pre-release，并会把新版本标记为 Latest；只有 Latest 正式版才会被上面的一行安装器选中。
 
 ## 参与贡献与安全报告
 
@@ -270,6 +296,12 @@ BFE 在启动时不会装载属于已禁用服务的持久 provider 规则。这
   真实订阅、节点、出口 IP 或个人配置。
 - 构建和发布涉及的第三方组件及随安装包分发的许可文件见
   [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)。
+
+## 许可证
+
+ProxyGauge 采用 [`MIT License`](LICENSE) 开源。MIT 许可证允许他人使用、复制、修改、合并、
+发布和分发，但要求在副本或主要部分中保留版权与许可声明；软件按原样提供，不附带任何保证。
+许可证本身不能替代对代码、图标、文案和第三方依赖授权来源的确认。
 
 ## 隐私与安全
 
