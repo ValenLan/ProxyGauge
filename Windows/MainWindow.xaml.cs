@@ -28,6 +28,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        WindowCornerRounding.Apply(this, 10);
 
         _configService = new ConfigService();
         _needsConnectionSetup = !_configService.HasValidConfig;

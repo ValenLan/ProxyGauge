@@ -13,6 +13,7 @@ public partial class HealthReportWindow : Window
     public HealthReportWindow(HealthReport report)
     {
         InitializeComponent();
+        WindowCornerRounding.Apply(this, 10);
         Report = report;
         DataContext = this;
     }

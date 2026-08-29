@@ -11,6 +11,7 @@ public partial class DetectionPlanWindow : Window
     public DetectionPlanWindow(AppConfig config)
     {
         InitializeComponent();
+        WindowCornerRounding.Apply(this, 10);
         Config = config.Clone();
         EnableCheckBox.IsChecked = Config.SecondaryEnabled;
         LabelTextBox.Text = Config.SecondaryLabel;

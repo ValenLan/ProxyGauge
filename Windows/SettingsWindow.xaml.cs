@@ -18,6 +18,7 @@ public partial class SettingsWindow : Window
         bool runDiscoveryOnLoad = false)
     {
         InitializeComponent();
+        WindowCornerRounding.Apply(this, 10);
         _discoveryService = discoveryService;
         _runDiscoveryOnLoad = runDiscoveryOnLoad;
         Config = config.Clone();
