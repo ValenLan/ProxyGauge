@@ -27,6 +27,7 @@ jobs:
           Scripts/test-branding.sh
           Scripts/test-windows-parity.sh
           Scripts/test-release-installers.sh
+          npm pack --dry-run --json
           Scripts/build.sh
       - name: Verify bundle
         run: codesign --verify --deep --strict --verbose=2 "build/ProxyGauge.app"

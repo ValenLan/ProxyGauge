@@ -1,12 +1,17 @@
 # ProxyGauge
 
 <p align="center">
+  <strong>简体中文</strong> · <a href="README.en.md">English</a>
+</p>
+
+<p align="center">
   <img src="Resources/ProxyGauge.png" width="144" alt="ProxyGauge icon">
 </p>
 
-ProxyGauge 是一个轻量的原生代理状态面板，只面向发布时最新稳定版的
-macOS 与 Windows 11。它用来查看
-Mihomo/Clash Verge 的核心、混合端口和流量入口状态，并提供结构化链路检测。
+ProxyGauge 是一个面向最新稳定版 macOS 与 Windows 11 的开源原生代理状态、链路验证与
+防泄漏面板。它可以识别 Mihomo / Clash Verge Rev 的核心、mixed 入口、系统代理与 TUN
+状态，交叉验证实际代理出口，并通过可选的 macOS PF 或 Windows WFP Kill Switch 防止代理
+失效后回退直连。项目不包含代理订阅或节点，也不收集遥测。
 
 ## 功能
 
@@ -42,9 +47,17 @@ Mihomo/Clash Verge 的核心、混合端口和流量入口状态，并提供结�
 
 ## 一行安装正式版
 
-下面两条命令会从本仓库取得安装器，再从 GitHub 的 **Latest Release** 下载与当前电脑架构
-匹配的正式版，并根据同一 Release 中的 `SHA256SUMS.txt` 校验安装包。它们不会下载源码构建，
-也不会安装代理客户端、订阅或节点。
+开发者可通过 npm 全局安装。需要预先安装 Node.js 18 或更高版本；npm 包会自动识别平台与
+架构，安装和 npm 包版本一致的 GitHub 正式版，并根据同一 Release 中的
+`SHA256SUMS.txt` 校验安装包：
+
+```bash
+npm install -g proxygauge
+```
+
+如果 npm 被配置为不运行生命周期脚本，完成全局安装后可显式运行 `proxygauge install`。
+不使用 npm 时，也可以直接运行下面的平台安装入口。它们会安装 GitHub 的 **Latest Release**，
+不会下载源码构建，也不会安装代理客户端、订阅或节点。
 
 Apple Silicon Mac：
 
@@ -58,8 +71,8 @@ Windows 11（在 PowerShell 中运行，自动选择 x64 或 ARM64，安装 MSI 
 irm https://raw.githubusercontent.com/ValenLan/ProxyGauge/main/Scripts/install-release-windows.ps1 | iex
 ```
 
-一行命令会直接执行本仓库中的安装脚本。谨慎的做法是先在浏览器打开命令里的 URL 阅读脚本，
-确认仓库所有者是 `ValenLan`，再运行。当前正式版尚未购买平台代码签名证书：macOS 使用
+这些入口会执行 npm 包或本仓库中的安装脚本。谨慎的做法是先阅读 npm 包内容或在浏览器打开
+命令里的 URL 阅读脚本，确认仓库所有者是 `ValenLan`，再运行。当前正式版尚未购买平台代码签名证书：macOS 使用
 ad-hoc 签名且尚未公证，Windows MSI 也未签名，因此系统可能显示安全提醒；安装器会保留
 Gatekeeper、SmartScreen 和管理员授权检查，不会替用户关闭或绕过这些保护。
 

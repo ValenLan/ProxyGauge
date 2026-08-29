@@ -34,12 +34,24 @@ $Headers = @{
     "User-Agent" = "ProxyGauge-Release-Installer"
     "X-GitHub-Api-Version" = "2022-11-28"
 }
+$RequestedVersion = $env:PROXYGAUGE_VERSION
+$ReleaseUri = "https://api.github.com/repos/$Repository/releases/latest"
+if (-not [string]::IsNullOrWhiteSpace($RequestedVersion)) {
+    if ($RequestedVersion -notmatch '^\d+\.\d+\.\d+$') {
+        throw "无效的 ProxyGauge 指定版本：$RequestedVersion"
+    }
+    $ReleaseUri = "https://api.github.com/repos/$Repository/releases/tags/v$RequestedVersion"
+}
 $Release = Invoke-RestMethod `
-    -Uri "https://api.github.com/repos/$Repository/releases/latest" `
+    -Uri $ReleaseUri `
     -Headers $Headers
 
 if ($Release.draft -or $Release.prerelease -or $Release.tag_name -notmatch '^v\d+\.\d+\.\d+$') {
     throw "GitHub 返回的版本不是 ProxyGauge 正式版。"
+}
+if (-not [string]::IsNullOrWhiteSpace($RequestedVersion) -and `
+    $Release.tag_name -ne "v$RequestedVersion") {
+    throw "GitHub 返回的版本 $($Release.tag_name) 与指定版本 v$RequestedVersion 不一致。"
 }
 
 $Version = $Release.tag_name.Substring(1)

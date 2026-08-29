@@ -30,25 +30,35 @@ if [ "$(/usr/bin/uname -s)" != "Darwin" ] || [ "$(/usr/bin/uname -m)" != "arm64"
   exit 1
 fi
 
-LATEST_URL=$(/usr/bin/curl \
-  --proto '=https' \
-  --tlsv1.2 \
-  --location \
-  --silent \
-  --show-error \
-  --fail \
-  --retry 3 \
-  --output /dev/null \
-  --write-out '%{url_effective}' \
-  "https://github.com/$REPOSITORY/releases/latest")
-TAG=${LATEST_URL##*/}
+REQUESTED_VERSION=${PROXYGAUGE_VERSION:-}
+if [ -n "$REQUESTED_VERSION" ]; then
+  if [[ ! "$REQUESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "无效的 ProxyGauge 指定版本：$REQUESTED_VERSION" >&2
+    exit 1
+  fi
+  VERSION=$REQUESTED_VERSION
+  TAG="v$VERSION"
+else
+  LATEST_URL=$(/usr/bin/curl \
+    --proto '=https' \
+    --tlsv1.2 \
+    --location \
+    --silent \
+    --show-error \
+    --fail \
+    --retry 3 \
+    --output /dev/null \
+    --write-out '%{url_effective}' \
+    "https://github.com/$REPOSITORY/releases/latest")
+  TAG=${LATEST_URL##*/}
 
-if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "无法从 GitHub 识别最新正式版标签：$TAG" >&2
-  exit 1
+  if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "无法从 GitHub 识别最新正式版标签：$TAG" >&2
+    exit 1
+  fi
+  VERSION=${TAG#v}
 fi
 
-VERSION=${TAG#v}
 ASSET="ProxyGauge-$VERSION-macOS-arm64.zip"
 RELEASE_BASE="https://github.com/$REPOSITORY/releases/download/$TAG"
 ARCHIVE="$TEMP_DIR/$ASSET"
