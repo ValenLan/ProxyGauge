@@ -13,7 +13,7 @@ jobs:
     outputs:
       version: ${{ steps.package.outputs.version }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Build ProxyGauge
         run: |
           chmod +x Scripts/*.sh
@@ -38,7 +38,7 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "archive=$ARCHIVE" >> "$GITHUB_OUTPUT"
       - name: Upload macOS package
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           path: ${{ steps.package.outputs.archive }}
           archive: false
@@ -56,8 +56,8 @@ jobs:
             native_platform: ARM64
             installer_platform: arm64
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: 10.0.x
       - name: Run Windows logic tests
@@ -83,6 +83,16 @@ jobs:
             -p:DebugType=None `
             -p:DebugSymbols=false
           Copy-Item Windows/README.md "publish/${{ matrix.runtime }}/README-Windows.md"
+          Copy-Item THIRD-PARTY-NOTICES.md "publish/${{ matrix.runtime }}/THIRD-PARTY-NOTICES.md"
+          Copy-Item ThirdParty/WiX-6.0.2-LICENSE.txt "publish/${{ matrix.runtime }}/WiX-6.0.2-LICENSE.txt"
+          $DotnetRoot = Split-Path (Get-Command dotnet).Source -Parent
+          $DotnetLicense = Join-Path $DotnetRoot "LICENSE.txt"
+          $DotnetNotices = Join-Path $DotnetRoot "ThirdPartyNotices.txt"
+          if (!(Test-Path $DotnetLicense) -or !(Test-Path $DotnetNotices)) {
+            throw "The installed .NET SDK did not expose its license and third-party notices."
+          }
+          Copy-Item $DotnetLicense "publish/${{ matrix.runtime }}/DOTNET-LICENSE.txt"
+          Copy-Item $DotnetNotices "publish/${{ matrix.runtime }}/DOTNET-THIRD-PARTY-NOTICES.txt"
           $Project = [xml](Get-Content Windows/ProxyGauge.Windows.csproj -Raw)
           $Version = $Project.Project.PropertyGroup.Version
           $PublishDir = (Resolve-Path "publish/${{ matrix.runtime }}").Path
@@ -100,7 +110,7 @@ jobs:
           "installer=$Installer" >> $env:GITHUB_OUTPUT
         id: package
       - name: Upload Windows installer
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           path: ${{ steps.package.outputs.installer }}
           archive: false
@@ -122,7 +132,7 @@ jobs:
             exit 1
           fi
       - name: Download release packages
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: ProxyGauge-*
           path: release-assets

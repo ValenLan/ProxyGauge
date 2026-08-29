@@ -82,13 +82,14 @@ open "build/ProxyGauge.app"
 
 ### 分享预编译版本
 
-推荐从 GitHub Releases 分享三个按版本命名的 ZIP，而不是分享源码或 `Scripts/` 目录：
+推荐从 GitHub Releases 分享一个 macOS ZIP 和两个 Windows MSI，而不是分享源码、App 目录或
+`Scripts/` 目录：
 
 - `ProxyGauge-<版本>-macOS-arm64.zip`
-- `ProxyGauge-<版本>-win-x64.zip`
-- `ProxyGauge-<版本>-win-arm64.zip`
+- `ProxyGauge-<版本>-win-x64.msi`
+- `ProxyGauge-<版本>-win-arm64.msi`
 
-用户可从 GitHub Releases 下载对应 ZIP 与 `SHA256SUMS.txt`，并在运行前核对校验值。
+用户可从 GitHub Releases 下载对应安装包与 `SHA256SUMS.txt`，并在运行前核对校验值。
 
 Mac 用户解压后把 `ProxyGauge.app` 移到“应用程序”即可；正常图形功能所需的检查脚本、规则
 和管理员助手已包含在 App 内，不需要运行 `install.sh`。由于当前版本没有 Apple 公证，首次
@@ -257,10 +258,18 @@ BFE 在启动时不会装载属于已禁用服务的持久 provider 规则。这
 每次 push 与 pull request 都会构建并测试 macOS、Windows x64 和 Windows ARM64，并把
 一个 macOS ZIP 和两个 Windows MSI 原样保存为 Actions artifacts。只有推送与应用版本完全一致的 `v<版本>` 标签时，
 工作流才会创建 GitHub Release，同时上传这些安装包与 `SHA256SUMS.txt`。例如当前版本对应的
-发布标签应为 `v1.5.5`。
+发布标签应为 `v1.5.6`。
 
 创建标签会产生正式发布结果，必须在全部本地测试和普通 push CI 通过后由维护者明确执行；
 构建脚本本身不会自动创建标签。
+
+## 参与贡献与安全报告
+
+- 开发环境、测试要求和 pull request 清单见 [`CONTRIBUTING.md`](CONTRIBUTING.md)。
+- 安全问题请按 [`SECURITY.md`](SECURITY.md) 私下报告，不要在公开 issue 中附带漏洞细节、
+  真实订阅、节点、出口 IP 或个人配置。
+- 构建和发布涉及的第三方组件及随安装包分发的许可文件见
+  [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)。
 
 ## 隐私与安全
 

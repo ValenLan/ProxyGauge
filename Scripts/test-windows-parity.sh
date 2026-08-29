@@ -90,6 +90,14 @@ done
   "$PROJECT_ROOT/Windows.Guard/Guard.cpp"
 /usr/bin/grep -Fq -- '--emergency-off' \
   "$PROJECT_ROOT/Windows.Guard/Guard.cpp"
+/usr/bin/grep -Fq -- '--uninstall-cleanup' \
+  "$PROJECT_ROOT/Windows.Guard/Guard.cpp"
+/usr/bin/grep -Fq 'RegDeleteTreeW(HKEY_LOCAL_MACHINE, RegistryPath)' \
+  "$PROJECT_ROOT/Windows.Guard/Guard.cpp"
+/usr/bin/grep -Fq 'DisableGuard(false)' \
+  "$PROJECT_ROOT/Windows.Guard/Guard.cpp"
+/usr/bin/grep -Fq 'DisableGuard(true)' \
+  "$PROJECT_ROOT/Windows.Guard/Guard.cpp"
 /usr/bin/grep -Fq 'ControlService(service, SERVICE_CONTROL_STOP' \
   "$PROJECT_ROOT/Windows.Guard/Guard.cpp"
 /usr/bin/grep -Fq 'Start="auto"' \
@@ -100,10 +108,36 @@ done
   "$PROJECT_ROOT/Windows.Installer/Package.wxs"
 /usr/bin/grep -Fq 'After="StopServices"' \
   "$PROJECT_ROOT/Windows.Installer/Package.wxs"
+/usr/bin/grep -Fq 'Id="ProxyGaugeStartMenuShortcut"' \
+  "$PROJECT_ROOT/Windows.Installer/Package.wxs"
+/usr/bin/grep -Fq 'Id="ProxyGaugeDesktopShortcut"' \
+  "$PROJECT_ROOT/Windows.Installer/Package.wxs"
+/usr/bin/grep -Fq '<StandardDirectory Id="DesktopFolder" />' \
+  "$PROJECT_ROOT/Windows.Installer/Package.wxs"
+if [ "$(/usr/bin/grep -Fc 'Target="[INSTALLFOLDER]ProxyGauge.exe"' "$PROJECT_ROOT/Windows.Installer/Package.wxs")" -ne 2 ]; then
+  echo 'Each Windows shortcut must target the installed executable so Explorer can resolve its icon.' >&2
+  exit 1
+fi
+/usr/bin/grep -Fq 'Name="ShortcutsInstalled"' \
+  "$PROJECT_ROOT/Windows.Installer/Package.wxs"
+/usr/bin/grep -Fq '<RegistryValue Root="HKLM"' \
+  "$PROJECT_ROOT/Windows.Installer/Package.wxs"
+/usr/bin/grep -Fq '<Icon Id="ProxyGaugeIcon.ico"' \
+  "$PROJECT_ROOT/Windows.Installer/Package.wxs"
 /usr/bin/grep -Fq 'ProxyGauge.Guard.exe' \
   "$PROJECT_ROOT/.github/workflows/build.yml"
 /usr/bin/grep -Fq 'ProxyGauge.Installer.wixproj' \
   "$PROJECT_ROOT/.github/workflows/build.yml"
+/usr/bin/grep -Fq 'DOTNET-THIRD-PARTY-NOTICES.txt' \
+  "$PROJECT_ROOT/.github/workflows/build.yml"
+/usr/bin/grep -Fq 'WiX-6.0.2-LICENSE.txt' \
+  "$PROJECT_ROOT/.github/workflows/build.yml"
+
+if /usr/bin/grep -Eq 'uses:[[:space:]]+[^[:space:]]+@v[0-9]+' \
+  "$PROJECT_ROOT/.github/workflows/build.yml"; then
+  echo 'GitHub Actions must be pinned to immutable commit SHAs.' >&2
+  exit 1
+fi
 
 if /usr/bin/grep -Eq 'GetRawText\(' "$PROJECT_ROOT/Windows/Services/MihomoPlanInspectionService.cs"; then
   echo 'Windows plan inspection must not render raw Mihomo controller data.' >&2

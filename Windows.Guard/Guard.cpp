@@ -1442,7 +1442,17 @@ DWORD StopServiceForRecovery()
     return result;
 }
 
-int EmergencyOff()
+DWORD DeleteSavedState()
+{
+    const DWORD result = RegDeleteTreeW(HKEY_LOCAL_MACHINE, RegistryPath);
+    if (result == ERROR_FILE_NOT_FOUND || result == ERROR_PATH_NOT_FOUND)
+    {
+        return ERROR_SUCCESS;
+    }
+    return result;
+}
+
+int DisableGuard(bool removeSavedState)
 {
     const DWORD stopResult = StopServiceForRecovery();
     if (stopResult != ERROR_SUCCESS)
@@ -1460,24 +1470,30 @@ int EmergencyOff()
         return static_cast<int>(filterResult);
     }
 
-    const DWORD stateResult = SaveState(GuardState{});
+    const DWORD stateResult = removeSavedState ? DeleteSavedState() : SaveState(GuardState{});
     if (stateResult != ERROR_SUCCESS)
     {
-        std::wcerr << L"ProxyGauge Guard removed WFP filters but could not save state: "
+        std::wcerr << L"ProxyGauge Guard removed WFP filters but could not "
+                   << (removeSavedState ? L"delete saved state: " : L"save disabled state: ")
                    << ErrorText(stateResult) << L'\n';
         return static_cast<int>(stateResult);
     }
-    std::wcout << L"ProxyGauge Guard is disabled and all persistent filters were removed.\n";
+    std::wcout << (removeSavedState
+        ? L"ProxyGauge Guard state and all persistent filters were removed.\n"
+        : L"ProxyGauge Guard is disabled and all persistent filters were removed.\n");
     return 0;
 }
 }
 
 int wmain(int argc, wchar_t** argv)
 {
-    if (argc == 2 && (wcscmp(argv[1], L"--emergency-off") == 0 ||
-                      wcscmp(argv[1], L"--uninstall-cleanup") == 0))
+    if (argc == 2 && wcscmp(argv[1], L"--emergency-off") == 0)
     {
-        return EmergencyOff();
+        return DisableGuard(false);
+    }
+    if (argc == 2 && wcscmp(argv[1], L"--uninstall-cleanup") == 0)
+    {
+        return DisableGuard(true);
     }
 
     SERVICE_TABLE_ENTRYW serviceTable[] =

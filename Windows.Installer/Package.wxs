@@ -26,8 +26,8 @@
     <Launch Condition="VersionNT64 AND MsiNTProductType = 1 AND WINDOWS_CURRENT_BUILD &gt;= 22000"
             Message="ProxyGauge 仅支持 64 位 Windows 11，不支持 Windows 10 或 Windows Server。" />
 
-    <Icon Id="ProxyGaugeIcon" SourceFile="$(IconPath)" />
-    <Property Id="ARPPRODUCTICON" Value="ProxyGaugeIcon" />
+    <Icon Id="ProxyGaugeIcon.ico" SourceFile="$(IconPath)" />
+    <Property Id="ARPPRODUCTICON" Value="ProxyGaugeIcon.ico" />
     <Property Id="ARPNOREPAIR" Value="1" />
 
     <StandardDirectory Id="ProgramFiles6432Folder">
@@ -37,13 +37,26 @@
         </Files>
 
         <Component Id="ProxyGaugeUiComponent" Bitness="always64">
-          <File Id="ProxyGaugeUiExe" Source="$(PublishDir)\ProxyGauge.exe" KeyPath="yes">
-            <Shortcut Id="ProxyGaugeStartMenuShortcut"
-                      Directory="ProgramMenuFolder"
-                      Name="ProxyGauge"
-                      WorkingDirectory="INSTALLFOLDER"
-                      Advertise="yes" />
-          </File>
+          <File Id="ProxyGaugeUiExe" Source="$(PublishDir)\ProxyGauge.exe" KeyPath="yes" />
+        </Component>
+
+        <Component Id="ProxyGaugeShortcutComponent" Bitness="always64">
+          <Shortcut Id="ProxyGaugeStartMenuShortcut"
+                    Directory="ProgramMenuFolder"
+                    Name="ProxyGauge"
+                    Target="[INSTALLFOLDER]ProxyGauge.exe"
+                    WorkingDirectory="INSTALLFOLDER" />
+          <Shortcut Id="ProxyGaugeDesktopShortcut"
+                    Directory="DesktopFolder"
+                    Name="ProxyGauge"
+                    Target="[INSTALLFOLDER]ProxyGauge.exe"
+                    WorkingDirectory="INSTALLFOLDER" />
+          <RegistryValue Root="HKLM"
+                         Key="SOFTWARE\ProxyGauge"
+                         Name="ShortcutsInstalled"
+                         Type="integer"
+                         Value="1"
+                         KeyPath="yes" />
         </Component>
 
         <Component Id="ProxyGaugeGuardComponent" Bitness="always64">
@@ -81,6 +94,7 @@
     </StandardDirectory>
 
     <StandardDirectory Id="ProgramMenuFolder" />
+    <StandardDirectory Id="DesktopFolder" />
 
     <CustomAction Id="CleanupProxyGaugeGuard"
                   FileRef="ProxyGaugeGuardExe"
