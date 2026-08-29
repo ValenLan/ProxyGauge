@@ -53,7 +53,7 @@
                     <TextBlock x:Name="IntroText" Text="自动识别 Clash Verge 或 Mihomo 的 mixed 监听地址。" Foreground="{StaticResource MutedTextBrush}" FontSize="12" Margin="0,6,0,0" />
                 </StackPanel>
 
-                <Border Grid.Row="1" Background="#121D2B" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="11" Padding="12" Margin="0,18,0,0">
+                <Border Grid.Row="1" Background="{StaticResource SurfaceSubtleBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="11" Padding="12" Margin="0,18,0,0">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -107,7 +107,7 @@
                     </StackPanel>
                 </Grid>
 
-                <Border Grid.Row="4" Background="#121D2B" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="11" Padding="12" Margin="0,18,0,0" VerticalAlignment="Top">
+                <Border Grid.Row="4" Background="{StaticResource SurfaceSubtleBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="11" Padding="12" Margin="0,18,0,0" VerticalAlignment="Top">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />

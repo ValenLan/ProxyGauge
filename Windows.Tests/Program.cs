@@ -8,6 +8,49 @@ static void Require(bool condition, string message)
 
 static HealthCheckItem Item(HealthLevel level) => new("test", "test", level);
 
+static double ContrastRatio(string first, string second)
+{
+    static double Luminance(string color)
+    {
+        var offset = color.Length == 9 ? 3 : 1;
+        var channels = Enumerable.Range(0, 3)
+            .Select(index => Convert.ToInt32(color.Substring(offset + (index * 2), 2), 16) / 255d)
+            .Select(value => value <= 0.04045
+                ? value / 12.92
+                : Math.Pow((value + 0.055) / 1.055, 2.4))
+            .ToArray();
+        return (0.2126 * channels[0]) + (0.7152 * channels[1]) + (0.0722 * channels[2]);
+    }
+
+    var firstLuminance = Luminance(first);
+    var secondLuminance = Luminance(second);
+    return (Math.Max(firstLuminance, secondLuminance) + 0.05) /
+        (Math.Min(firstLuminance, secondLuminance) + 0.05);
+}
+
+Require(ThemeService.ResolveTheme(false, 0) == AppThemeKind.Dark,
+    "Windows dark appearance must select the dark palette.");
+Require(ThemeService.ResolveTheme(false, 1) == AppThemeKind.Light,
+    "Windows light appearance must select the light palette.");
+Require(ThemeService.ResolveTheme(true, 0) == AppThemeKind.HighContrast,
+    "High contrast must take priority over light or dark appearance.");
+
+var darkPalette = ThemeService.GetPalette(AppThemeKind.Dark);
+var lightPalette = ThemeService.GetPalette(AppThemeKind.Light);
+Require(darkPalette.Keys.ToHashSet().SetEquals(lightPalette.Keys),
+    "Light and dark themes must provide the same color tokens.");
+Require(darkPalette["CanvasColor"] != lightPalette["CanvasColor"],
+    "Light and dark themes must use distinct canvas colors.");
+foreach (var palette in new[] { darkPalette, lightPalette })
+{
+    Require(ContrastRatio(palette["TextColor"], palette["CanvasColor"]) >= 7,
+        "Primary text must retain enhanced contrast against the app canvas.");
+    Require(ContrastRatio(palette["TextColor"], palette["SurfaceColor"]) >= 7,
+        "Primary text must retain enhanced contrast against cards.");
+    Require(ContrastRatio(palette["AccentColor"], palette["SurfaceColor"]) >= 4.5,
+        "Interactive blue must remain legible in both themes.");
+}
+
 Require(LocalEndpointPolicy.IsLoopbackHost("127.0.0.1"), "IPv4 loopback must be accepted.");
 Require(LocalEndpointPolicy.IsLoopbackHost("127.42.0.9"), "The IPv4 loopback range must be accepted.");
 Require(LocalEndpointPolicy.IsLoopbackHost("localhost"), "localhost must be accepted.");

@@ -1,3 +1,4 @@
+using System.Windows;
 using System.Windows.Media;
 using ProxyGauge.Models;
 
@@ -52,16 +53,16 @@ public sealed class MetricViewModel : ObservableObject
 
 public static class Palette
 {
-    public static readonly Brush Accent = Create("#218CFF");
-    public static readonly Brush Success = Create("#33C759");
-    public static readonly Brush Warning = Create("#FF9F0A");
-    public static readonly Brush Error = Create("#FF453A");
-    public static readonly Brush Idle = Create("#8E8E93");
+    public static Brush Accent => Find("AccentBrush", "#218CFF");
+    public static Brush Success => Find("SuccessBrush", "#33C759");
+    public static Brush Warning => Find("WarningBrush", "#FF9F0A");
+    public static Brush Error => Find("ErrorBrush", "#FF453A");
+    public static Brush Idle => Find("IdleBrush", "#8E8E93");
 
-    private static readonly Brush SuccessBackground = Create("#2433C759");
-    private static readonly Brush WarningBackground = Create("#24FF9F0A");
-    private static readonly Brush ErrorBackground = Create("#24FF453A");
-    private static readonly Brush IdleBackground = Create("#248E8E93");
+    private static Brush SuccessBackground => Find("SuccessBackgroundBrush", "#2433C759");
+    private static Brush WarningBackground => Find("WarningBackgroundBrush", "#24FF9F0A");
+    private static Brush ErrorBackground => Find("ErrorBackgroundBrush", "#24FF453A");
+    private static Brush IdleBackground => Find("IdleBackgroundBrush", "#248E8E93");
 
     public static Brush ForLevel(HealthLevel level) => level switch
     {
@@ -79,9 +80,14 @@ public static class Palette
         _ => IdleBackground
     };
 
-    private static Brush Create(string value)
+    private static Brush Find(string key, string fallback)
     {
-        var brush = (SolidColorBrush)new BrushConverter().ConvertFromString(value)!;
+        if (Application.Current?.TryFindResource(key) is Brush brush)
+        {
+            return brush;
+        }
+
+        brush = (SolidColorBrush)new BrushConverter().ConvertFromString(fallback)!;
         brush.Freeze();
         return brush;
     }

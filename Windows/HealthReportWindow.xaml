@@ -72,7 +72,7 @@
                     </Border>
                 </Grid>
 
-                <Border Grid.Row="1" Background="#121D2B" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="11" Padding="13,9" Margin="0,17,0,0">
+                <Border Grid.Row="1" Background="{StaticResource SurfaceSubtleBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="11" Padding="13,9" Margin="0,17,0,0">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -81,9 +81,9 @@
                         <TextBlock Text="{Binding CheckedAtText}" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
                         <StackPanel Grid.Column="1" Orientation="Horizontal">
                             <TextBlock Text="{Binding PassedText}" Foreground="{StaticResource SuccessBrush}" FontSize="11" FontWeight="SemiBold" />
-                            <TextBlock Text="  ·  " Foreground="#53667D" FontSize="11" />
+                            <TextBlock Text="  ·  " Foreground="{StaticResource SubtleTextBrush}" FontSize="11" />
                             <TextBlock Text="{Binding WarningText}" Foreground="{StaticResource WarningBrush}" FontSize="11" FontWeight="SemiBold" />
-                            <TextBlock Text="  ·  " Foreground="#53667D" FontSize="11" />
+                            <TextBlock Text="  ·  " Foreground="{StaticResource SubtleTextBrush}" FontSize="11" />
                             <TextBlock Text="{Binding FailedText}" Foreground="{StaticResource ErrorBrush}" FontSize="11" FontWeight="SemiBold" />
                         </StackPanel>
                     </Grid>
@@ -115,7 +115,7 @@
                                                             <ColumnDefinition Width="26" />
                                                             <ColumnDefinition Width="*" />
                                                         </Grid.ColumnDefinitions>
-                                                        <Border x:Name="ResultDot" Width="20" Height="20" CornerRadius="10" Background="#22FF7D84" VerticalAlignment="Top">
+                                                        <Border x:Name="ResultDot" Width="20" Height="20" CornerRadius="10" Background="{StaticResource ErrorBackgroundBrush}" VerticalAlignment="Top">
                                                             <TextBlock x:Name="ResultMark" Text="{Binding Mark}" Foreground="{StaticResource ErrorBrush}" FontSize="11" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                                         </Border>
                                                         <StackPanel Grid.Column="1" Margin="7,-1,0,0">
@@ -134,15 +134,15 @@
                                                     </Grid>
                                                     <DataTemplate.Triggers>
                                                         <DataTrigger Binding="{Binding Passed}" Value="True">
-                                                            <Setter TargetName="ResultDot" Property="Background" Value="#2250D68A" />
+                                                            <Setter TargetName="ResultDot" Property="Background" Value="{StaticResource SuccessBackgroundBrush}" />
                                                             <Setter TargetName="ResultMark" Property="Foreground" Value="{StaticResource SuccessBrush}" />
                                                         </DataTrigger>
                                                         <DataTrigger Binding="{Binding LevelKey}" Value="Warning">
-                                                            <Setter TargetName="ResultDot" Property="Background" Value="#22F3BC64" />
+                                                            <Setter TargetName="ResultDot" Property="Background" Value="{StaticResource WarningBackgroundBrush}" />
                                                             <Setter TargetName="ResultMark" Property="Foreground" Value="{StaticResource WarningBrush}" />
                                                         </DataTrigger>
                                                         <DataTrigger Binding="{Binding LevelKey}" Value="Idle">
-                                                            <Setter TargetName="ResultDot" Property="Background" Value="#22718096" />
+                                                            <Setter TargetName="ResultDot" Property="Background" Value="{StaticResource IdleBackgroundBrush}" />
                                                             <Setter TargetName="ResultMark" Property="Foreground" Value="{StaticResource IdleBrush}" />
                                                         </DataTrigger>
                                                         <DataTrigger Binding="{Binding IsLink}" Value="True">

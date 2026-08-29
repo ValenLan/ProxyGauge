@@ -53,14 +53,14 @@
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <Border Width="50" Height="50" CornerRadius="15" Background="#223D76AD">
+                    <Border Width="50" Height="50" CornerRadius="15" Background="{StaticResource AccentTintBrush}">
                         <TextBlock Text="&#xE8A5;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Foreground="{StaticResource AccentBrush}" FontSize="21" HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
                     <StackPanel Grid.Column="1" Margin="14,-1,0,0">
                         <TextBlock Text="ProxyGauge 规则包" FontFamily="Segoe UI Variable Display, Segoe UI" FontSize="22" FontWeight="SemiBold" />
                         <TextBlock Text="分流规则与 TUN DNS" Foreground="{StaticResource MutedTextBrush}" FontSize="12" Margin="0,5,0,0" />
                     </StackPanel>
-                    <Border Grid.Column="2" Background="#20375A" CornerRadius="9" Padding="10,5" VerticalAlignment="Top">
+                    <Border Grid.Column="2" Background="{StaticResource AccentSurfaceBrush}" CornerRadius="9" Padding="10,5" VerticalAlignment="Top">
                         <TextBlock Text="不含订阅" Foreground="{StaticResource AccentBrush}" FontSize="10" FontWeight="SemiBold" />
                     </Border>
                 </Grid>
@@ -81,7 +81,7 @@
                     </Grid.RowDefinitions>
                     <Grid>
                         <TextBlock Text="规则预览" Foreground="{StaticResource MutedTextBrush}" FontSize="11" FontWeight="SemiBold" />
-                        <TextBlock Text="12 条域名规则 · 版本 2026.08" Foreground="#62748A" FontSize="10" HorizontalAlignment="Right" />
+                        <TextBlock Text="12 条域名规则 · 版本 2026.08" Foreground="{StaticResource SubtleTextBrush}" FontSize="10" HorizontalAlignment="Right" />
                     </Grid>
                     <TextBox Grid.Row="2"
                              Text="{Binding RuleText}"

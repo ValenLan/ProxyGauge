@@ -8,7 +8,8 @@ for xaml in \
   Windows/MainWindow.xaml \
   Windows/SettingsWindow.xaml \
   Windows/HealthReportWindow.xaml \
-  Windows/DetectionPlanWindow.xaml; do
+  Windows/DetectionPlanWindow.xaml \
+  Windows/RulePackWindow.xaml; do
   /usr/bin/xmllint --noout "$PROJECT_ROOT/$xaml"
 done
 
@@ -35,6 +36,13 @@ done
 /usr/bin/grep -Fq '各站结果不会计入链路分' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
 /usr/bin/grep -Fq 'PlanButton_Click' "$PROJECT_ROOT/Windows/MainWindow.xaml"
 /usr/bin/grep -Fq 'AdvancedButton_Click' "$PROJECT_ROOT/Windows/MainWindow.xaml"
+/usr/bin/grep -Fq 'Source="Assets/ProxyGauge.png"' "$PROJECT_ROOT/Windows/MainWindow.xaml"
+/usr/bin/grep -Fq 'RenderOptions.BitmapScalingMode="HighQuality"' "$PROJECT_ROOT/Windows/MainWindow.xaml"
+/usr/bin/grep -Fq 'Color="{DynamicResource CanvasColor}"' "$PROJECT_ROOT/Windows/App.xaml"
+/usr/bin/grep -Fq 'SystemEvents.UserPreferenceChanged' "$PROJECT_ROOT/Windows/Services/ThemeService.cs"
+/usr/bin/grep -Fq 'AppsUseLightTheme' "$PROJECT_ROOT/Windows/Services/ThemeService.cs"
+/usr/bin/grep -Fq 'AppThemeKind.HighContrast' "$PROJECT_ROOT/Windows/Services/ThemeService.cs"
+/usr/bin/grep -Fq 'Windows dark appearance must select the dark palette.' "$PROJECT_ROOT/Windows.Tests/Program.cs"
 /usr/bin/grep -Fq 'Windows.Tests/ProxyGauge.Windows.Tests.csproj' "$PROJECT_ROOT/.github/workflows/build.yml"
 /usr/bin/grep -Fq 'Remote hostnames must be rejected.' "$PROJECT_ROOT/Windows.Tests/Program.cs"
 /usr/bin/grep -Fq '<TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>' \
@@ -117,6 +125,16 @@ if /usr/bin/grep -Eq 'PAUSED|PauseGuard|暂停[[:space:]]*10[[:space:]]*分钟' 
   "$PROJECT_ROOT/Windows/Services/GuardProtocol.cs" \
   "$PROJECT_ROOT/Windows/MainWindow.xaml"; then
   echo 'Windows Guard must expose a persistent on/off switch, not a timed pause.' >&2
+  exit 1
+fi
+
+if /usr/bin/grep -E '#[0-9A-Fa-f]{6,8}' \
+  "$PROJECT_ROOT/Windows/MainWindow.xaml" \
+  "$PROJECT_ROOT/Windows/SettingsWindow.xaml" \
+  "$PROJECT_ROOT/Windows/HealthReportWindow.xaml" \
+  "$PROJECT_ROOT/Windows/DetectionPlanWindow.xaml" \
+  "$PROJECT_ROOT/Windows/RulePackWindow.xaml" >/dev/null; then
+  echo 'Window colors must come from shared light/dark theme tokens.' >&2
   exit 1
 fi
 

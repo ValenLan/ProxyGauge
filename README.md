@@ -11,6 +11,8 @@ Mihomo/Clash Verge 的核心、混合端口和流量入口状态，并提供结�
 ## 功能
 
 - macOS 使用 SwiftUI，Windows 使用原生 WPF
+- macOS 与 Windows 均跟随系统浅色/深色外观；Windows 还会优先遵循 High Contrast
+- 应用图标由同一 1024 px `ProxyGauge-source.png` 母版生成 macOS `icns`、Windows 多尺寸 `ico` 与 WPF 高清 `png`
 - 检测 Mihomo 核心、mixed 端口、系统代理与 TUN 路由
 - macOS 与 Windows 首次启动均自动识别 Clash Verge Rev / Mihomo 的本地入口与流量模式；检测失败才要求手动填写端口
 - 流量入口卡片按实际状态切换：仅系统代理或仅 TUN 显示绿色，两者同时开启显示橙色提示，两者均未开启显示灰色
@@ -71,6 +73,8 @@ Scripts/build.sh
 Scripts/package-macos.sh
 open "build/ProxyGauge.app"
 ```
+
+仅在修改图标母版后运行 `Scripts/generate-icons.mjs`（需要 Node.js）；它会重建两端全部尺寸的图标资源。
 
 构建结果位于 `build/ProxyGauge.app`，分享包位于
 `dist/ProxyGauge-<版本>-macOS-arm64.zip`。应用采用 ad-hoc 签名，尚未使用 Developer ID
@@ -253,7 +257,7 @@ BFE 在启动时不会装载属于已禁用服务的持久 provider 规则。这
 每次 push 与 pull request 都会构建并测试 macOS、Windows x64 和 Windows ARM64，并把
 一个 macOS ZIP 和两个 Windows MSI 原样保存为 Actions artifacts。只有推送与应用版本完全一致的 `v<版本>` 标签时，
 工作流才会创建 GitHub Release，同时上传这些安装包与 `SHA256SUMS.txt`。例如当前版本对应的
-发布标签应为 `v1.5.4`。
+发布标签应为 `v1.5.5`。
 
 创建标签会产生正式发布结果，必须在全部本地测试和普通 push CI 通过后由维护者明确执行；
 构建脚本本身不会自动创建标签。

@@ -22,6 +22,8 @@ WINDOWS_MAIN="$PROJECT_ROOT/Windows/MainWindow.xaml"
 /usr/bin/grep -Fq 'Window("ProxyGauge", id: "main")' "$APP_SOURCE"
 /usr/bin/grep -Fq '.appendingPathComponent("com.valenlan.proxygauge.lock")' "$APP_SOURCE"
 /usr/bin/grep -Fq '.windowResizability(.contentMinSize)' "$APP_SOURCE"
+/usr/bin/grep -Fq '.background(Color(nsColor: .windowBackgroundColor))' "$APP_SOURCE"
+/usr/bin/grep -Fq '.background(Color(nsColor: .controlBackgroundColor)' "$APP_SOURCE"
 /usr/bin/grep -Fq '.frame(maxWidth: .infinity, minHeight: 72)' "$APP_SOURCE"
 /usr/bin/grep -Fq 'static let actionTitle = Font.system(size: 14, weight: .semibold)' "$APP_SOURCE"
 /usr/bin/grep -Fq 'static let actionDetail = Font.system(size: 10.5)' "$APP_SOURCE"
@@ -117,6 +119,12 @@ fi
 
 if /usr/bin/grep -Fq '.windowResizability(.contentSize)' "$APP_SOURCE"; then
   echo "The main macOS window must remain user-resizable." >&2
+  exit 1
+fi
+
+if /usr/bin/grep -Fq '.preferredColorScheme(' "$APP_SOURCE" \
+  || /usr/bin/grep -Fq 'NSRequiresAquaSystemAppearance' "$PROJECT_ROOT/Info.plist"; then
+  echo "macOS appearance must continue to follow the system light/dark setting." >&2
   exit 1
 fi
 

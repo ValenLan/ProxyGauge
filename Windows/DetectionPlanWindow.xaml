@@ -51,7 +51,7 @@
                     <TextBlock Text="仅在确实配置了独立入口和策略组时启用额外出口。" Foreground="{StaticResource MutedTextBrush}" FontSize="12" Margin="0,6,0,0" />
                 </StackPanel>
 
-                <Border Grid.Row="1" Background="#121D2B" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="12" Padding="14" Margin="0,18,0,0">
+                <Border Grid.Row="1" Background="{StaticResource SurfaceSubtleBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="12" Padding="14" Margin="0,18,0,0">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -121,7 +121,7 @@
                             <TextBox x:Name="ExpectedSecondaryIpTextBox" Style="{StaticResource FieldStyle}" />
                         </StackPanel>
 
-                        <Border Background="#121D2B" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="11" Padding="12" Margin="0,17,0,0">
+                        <Border Background="{StaticResource SurfaceSubtleBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="11" Padding="12" Margin="0,17,0,0">
                             <TextBlock Text="ProxyGauge 只读取 Mihomo 控制接口中的策略状态，不保存节点列表、订阅或原始配置。" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
                         </Border>
                     </StackPanel>

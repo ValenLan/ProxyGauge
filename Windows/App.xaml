@@ -2,40 +2,78 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <Application.Resources>
-        <!-- Palette mirrors the macOS app: neutral dark surfaces, system status colors -->
+        <!--
+          ThemeService replaces these color tokens before the first window opens and
+          whenever Windows changes appearance. Brushes keep DynamicResource bindings
+          so every open window updates without being recreated.
+        -->
         <Color x:Key="CanvasColor">#242424</Color>
         <Color x:Key="SurfaceColor">#1C1C1C</Color>
         <Color x:Key="SurfaceRaisedColor">#2A2A2A</Color>
+        <Color x:Key="SurfaceSubtleColor">#202020</Color>
+        <Color x:Key="ControlColor">#2C2C2E</Color>
+        <Color x:Key="ControlHoverColor">#3A3A3C</Color>
+        <Color x:Key="FieldColor">#141414</Color>
         <Color x:Key="BorderColor">#14FFFFFF</Color>
         <Color x:Key="TextColor">#ECECEC</Color>
         <Color x:Key="MutedTextColor">#9C9CA1</Color>
+        <Color x:Key="SubtleTextColor">#62748A</Color>
         <Color x:Key="AccentColor">#218CFF</Color>
         <Color x:Key="AccentStrongColor">#0A84FF</Color>
+        <Color x:Key="AccentHoverColor">#3D9DFF</Color>
+        <Color x:Key="AccentFocusColor">#D9EBFF</Color>
+        <Color x:Key="OnAccentColor">#FFFFFF</Color>
+        <Color x:Key="AccentSurfaceColor">#20375A</Color>
+        <Color x:Key="AccentTintColor">#223D76AD</Color>
         <Color x:Key="SuccessColor">#33C759</Color>
         <Color x:Key="WarningColor">#FF9F0A</Color>
         <Color x:Key="ErrorColor">#FF453A</Color>
         <Color x:Key="IdleColor">#8E8E93</Color>
+        <Color x:Key="SuccessBackgroundColor">#2433C759</Color>
+        <Color x:Key="WarningBackgroundColor">#24FF9F0A</Color>
+        <Color x:Key="ErrorBackgroundColor">#24FF453A</Color>
+        <Color x:Key="IdleBackgroundColor">#248E8E93</Color>
         <Color x:Key="RulesColor">#8A6BF5</Color>
         <Color x:Key="RulesSurfaceColor">#262040</Color>
         <Color x:Key="AdvancedColor">#33B8D1</Color>
         <Color x:Key="AdvancedSurfaceColor">#1D3038</Color>
+        <Color x:Key="SwitchTrackColor">#3A3A3C</Color>
+        <Color x:Key="SwitchThumbColor">#F5F5F7</Color>
+        <Color x:Key="ProgressTrackColor">#26354A</Color>
 
-        <SolidColorBrush x:Key="CanvasBrush" Color="{StaticResource CanvasColor}" />
-        <SolidColorBrush x:Key="SurfaceBrush" Color="{StaticResource SurfaceColor}" />
-        <SolidColorBrush x:Key="SurfaceRaisedBrush" Color="{StaticResource SurfaceRaisedColor}" />
-        <SolidColorBrush x:Key="BorderBrush" Color="{StaticResource BorderColor}" />
-        <SolidColorBrush x:Key="TextBrush" Color="{StaticResource TextColor}" />
-        <SolidColorBrush x:Key="MutedTextBrush" Color="{StaticResource MutedTextColor}" />
-        <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource AccentColor}" />
-        <SolidColorBrush x:Key="AccentStrongBrush" Color="{StaticResource AccentStrongColor}" />
-        <SolidColorBrush x:Key="SuccessBrush" Color="{StaticResource SuccessColor}" />
-        <SolidColorBrush x:Key="WarningBrush" Color="{StaticResource WarningColor}" />
-        <SolidColorBrush x:Key="ErrorBrush" Color="{StaticResource ErrorColor}" />
-        <SolidColorBrush x:Key="IdleBrush" Color="{StaticResource IdleColor}" />
-        <SolidColorBrush x:Key="RulesBrush" Color="{StaticResource RulesColor}" />
-        <SolidColorBrush x:Key="RulesSurfaceBrush" Color="{StaticResource RulesSurfaceColor}" />
-        <SolidColorBrush x:Key="AdvancedBrush" Color="{StaticResource AdvancedColor}" />
-        <SolidColorBrush x:Key="AdvancedSurfaceBrush" Color="{StaticResource AdvancedSurfaceColor}" />
+        <SolidColorBrush x:Key="CanvasBrush" Color="{DynamicResource CanvasColor}" />
+        <SolidColorBrush x:Key="SurfaceBrush" Color="{DynamicResource SurfaceColor}" />
+        <SolidColorBrush x:Key="SurfaceRaisedBrush" Color="{DynamicResource SurfaceRaisedColor}" />
+        <SolidColorBrush x:Key="SurfaceSubtleBrush" Color="{DynamicResource SurfaceSubtleColor}" />
+        <SolidColorBrush x:Key="ControlBrush" Color="{DynamicResource ControlColor}" />
+        <SolidColorBrush x:Key="ControlHoverBrush" Color="{DynamicResource ControlHoverColor}" />
+        <SolidColorBrush x:Key="FieldBrush" Color="{DynamicResource FieldColor}" />
+        <SolidColorBrush x:Key="BorderBrush" Color="{DynamicResource BorderColor}" />
+        <SolidColorBrush x:Key="TextBrush" Color="{DynamicResource TextColor}" />
+        <SolidColorBrush x:Key="MutedTextBrush" Color="{DynamicResource MutedTextColor}" />
+        <SolidColorBrush x:Key="SubtleTextBrush" Color="{DynamicResource SubtleTextColor}" />
+        <SolidColorBrush x:Key="AccentBrush" Color="{DynamicResource AccentColor}" />
+        <SolidColorBrush x:Key="AccentStrongBrush" Color="{DynamicResource AccentStrongColor}" />
+        <SolidColorBrush x:Key="AccentHoverBrush" Color="{DynamicResource AccentHoverColor}" />
+        <SolidColorBrush x:Key="AccentFocusBrush" Color="{DynamicResource AccentFocusColor}" />
+        <SolidColorBrush x:Key="OnAccentBrush" Color="{DynamicResource OnAccentColor}" />
+        <SolidColorBrush x:Key="AccentSurfaceBrush" Color="{DynamicResource AccentSurfaceColor}" />
+        <SolidColorBrush x:Key="AccentTintBrush" Color="{DynamicResource AccentTintColor}" />
+        <SolidColorBrush x:Key="SuccessBrush" Color="{DynamicResource SuccessColor}" />
+        <SolidColorBrush x:Key="WarningBrush" Color="{DynamicResource WarningColor}" />
+        <SolidColorBrush x:Key="ErrorBrush" Color="{DynamicResource ErrorColor}" />
+        <SolidColorBrush x:Key="IdleBrush" Color="{DynamicResource IdleColor}" />
+        <SolidColorBrush x:Key="SuccessBackgroundBrush" Color="{DynamicResource SuccessBackgroundColor}" />
+        <SolidColorBrush x:Key="WarningBackgroundBrush" Color="{DynamicResource WarningBackgroundColor}" />
+        <SolidColorBrush x:Key="ErrorBackgroundBrush" Color="{DynamicResource ErrorBackgroundColor}" />
+        <SolidColorBrush x:Key="IdleBackgroundBrush" Color="{DynamicResource IdleBackgroundColor}" />
+        <SolidColorBrush x:Key="RulesBrush" Color="{DynamicResource RulesColor}" />
+        <SolidColorBrush x:Key="RulesSurfaceBrush" Color="{DynamicResource RulesSurfaceColor}" />
+        <SolidColorBrush x:Key="AdvancedBrush" Color="{DynamicResource AdvancedColor}" />
+        <SolidColorBrush x:Key="AdvancedSurfaceBrush" Color="{DynamicResource AdvancedSurfaceColor}" />
+        <SolidColorBrush x:Key="SwitchTrackBrush" Color="{DynamicResource SwitchTrackColor}" />
+        <SolidColorBrush x:Key="SwitchThumbBrush" Color="{DynamicResource SwitchThumbColor}" />
+        <SolidColorBrush x:Key="ProgressTrackBrush" Color="{DynamicResource ProgressTrackColor}" />
 
         <!-- Vector glyphs mirroring the SF Symbols used by the macOS app -->
         <StreamGeometry x:Key="IconCore">M4.5,4.5 h7 v7 h-7 Z M6.8,6.8 h2.4 v2.4 h-2.4 Z M6,2 v2.5 M10,2 v2.5 M6,11.5 v2.5 M10,11.5 v2.5 M2,6 h2.5 M2,10 h2.5 M11.5,6 h2.5 M11.5,10 h2.5</StreamGeometry>
@@ -125,8 +163,8 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="CheckBox">
                         <Grid>
-                            <Border x:Name="Track" Width="36" Height="20" CornerRadius="10" Background="#3A3A3C" />
-                            <Ellipse x:Name="Thumb" Width="16" Height="16" Fill="#F5F5F7"
+                            <Border x:Name="Track" Width="36" Height="20" CornerRadius="10" Background="{StaticResource SwitchTrackBrush}" />
+                            <Ellipse x:Name="Thumb" Width="16" Height="16" Fill="{StaticResource SwitchThumbBrush}"
                                      HorizontalAlignment="Left" Margin="2,0,0,0" />
                         </Grid>
                         <ControlTemplate.Triggers>
@@ -146,7 +184,7 @@
 
         <Style x:Key="QuietButtonStyle" TargetType="Button">
             <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
-            <Setter Property="Background" Value="#2C2C2E" />
+            <Setter Property="Background" Value="{StaticResource ControlBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="14,8" />
@@ -167,7 +205,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="ButtonBorder" Property="Background" Value="#3A3A3C" />
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="{StaticResource ControlHoverBrush}" />
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.78" />
@@ -185,7 +223,7 @@
         </Style>
 
         <Style x:Key="PrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource QuietButtonStyle}">
-            <Setter Property="Foreground" Value="#FFFFFF" />
+            <Setter Property="Foreground" Value="{StaticResource OnAccentBrush}" />
             <Setter Property="Background" Value="{StaticResource AccentBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
             <Setter Property="Padding" Value="18,9" />
@@ -202,7 +240,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="PrimaryBorder" Property="Background" Value="#3D9DFF" />
+                                <Setter TargetName="PrimaryBorder" Property="Background" Value="{StaticResource AccentHoverBrush}" />
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter TargetName="PrimaryBorder" Property="Opacity" Value="0.78" />
@@ -211,7 +249,7 @@
                                 <Setter TargetName="PrimaryBorder" Property="Opacity" Value="0.45" />
                             </Trigger>
                             <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="PrimaryBorder" Property="BorderBrush" Value="#D9EBFF" />
+                                <Setter TargetName="PrimaryBorder" Property="BorderBrush" Value="{StaticResource AccentFocusBrush}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -236,7 +274,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="ChromeBorder" Property="Background" Value="#3A3A3C" />
+                                <Setter TargetName="ChromeBorder" Property="Background" Value="{StaticResource ControlHoverBrush}" />
                                 <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -247,7 +285,7 @@
 
         <Style x:Key="FieldStyle" TargetType="TextBox">
             <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
-            <Setter Property="Background" Value="#141414" />
+            <Setter Property="Background" Value="{StaticResource FieldBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="11,8" />
