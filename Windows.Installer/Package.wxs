@@ -39,12 +39,12 @@
         <Component Id="ProxyGaugeUiComponent" Bitness="always64">
           <File Id="ProxyGaugeUiExe" Source="$(PublishDir)\ProxyGauge.exe" KeyPath="yes">
             <Shortcut Id="ProxyGaugeStartMenuShortcut"
-                      Directory="CommonProgramsFolder"
+                      Directory="ProgramMenuFolder"
                       Name="ProxyGauge"
                       Advertise="yes"
                       WorkingDirectory="INSTALLFOLDER" />
             <Shortcut Id="ProxyGaugeDesktopShortcut"
-                      Directory="CommonDesktopFolder"
+                      Directory="DesktopFolder"
                       Name="ProxyGauge"
                       Advertise="yes"
                       WorkingDirectory="INSTALLFOLDER" />
@@ -85,8 +85,8 @@
       </Directory>
     </StandardDirectory>
 
-    <StandardDirectory Id="CommonProgramsFolder" />
-    <StandardDirectory Id="CommonDesktopFolder" />
+    <StandardDirectory Id="ProgramMenuFolder" />
+    <StandardDirectory Id="DesktopFolder" />
 
     <CustomAction Id="CleanupProxyGaugeGuard"
                   FileRef="ProxyGaugeGuardExe"
