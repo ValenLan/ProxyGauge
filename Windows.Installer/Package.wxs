@@ -37,26 +37,18 @@
         </Files>
 
         <Component Id="ProxyGaugeUiComponent" Bitness="always64">
-          <File Id="ProxyGaugeUiExe" Source="$(PublishDir)\ProxyGauge.exe" KeyPath="yes" />
-        </Component>
-
-        <Component Id="ProxyGaugeShortcutComponent" Bitness="always64">
-          <Shortcut Id="ProxyGaugeStartMenuShortcut"
-                    Directory="ProgramMenuFolder"
-                    Name="ProxyGauge"
-                    Target="[INSTALLFOLDER]ProxyGauge.exe"
-                    WorkingDirectory="INSTALLFOLDER" />
-          <Shortcut Id="ProxyGaugeDesktopShortcut"
-                    Directory="DesktopFolder"
-                    Name="ProxyGauge"
-                    Target="[INSTALLFOLDER]ProxyGauge.exe"
-                    WorkingDirectory="INSTALLFOLDER" />
-          <RegistryValue Root="HKLM"
-                         Key="SOFTWARE\ProxyGauge"
-                         Name="ShortcutsInstalled"
-                         Type="integer"
-                         Value="1"
-                         KeyPath="yes" />
+          <File Id="ProxyGaugeUiExe" Source="$(PublishDir)\ProxyGauge.exe" KeyPath="yes">
+            <Shortcut Id="ProxyGaugeStartMenuShortcut"
+                      Directory="CommonProgramsFolder"
+                      Name="ProxyGauge"
+                      Advertise="yes"
+                      WorkingDirectory="INSTALLFOLDER" />
+            <Shortcut Id="ProxyGaugeDesktopShortcut"
+                      Directory="CommonDesktopFolder"
+                      Name="ProxyGauge"
+                      Advertise="yes"
+                      WorkingDirectory="INSTALLFOLDER" />
+          </File>
         </Component>
 
         <Component Id="ProxyGaugeGuardComponent" Bitness="always64">
@@ -93,8 +85,8 @@
       </Directory>
     </StandardDirectory>
 
-    <StandardDirectory Id="ProgramMenuFolder" />
-    <StandardDirectory Id="DesktopFolder" />
+    <StandardDirectory Id="CommonProgramsFolder" />
+    <StandardDirectory Id="CommonDesktopFolder" />
 
     <CustomAction Id="CleanupProxyGaugeGuard"
                   FileRef="ProxyGaugeGuardExe"

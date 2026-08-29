@@ -112,15 +112,13 @@ done
   "$PROJECT_ROOT/Windows.Installer/Package.wxs"
 /usr/bin/grep -Fq 'Id="ProxyGaugeDesktopShortcut"' \
   "$PROJECT_ROOT/Windows.Installer/Package.wxs"
-/usr/bin/grep -Fq '<StandardDirectory Id="DesktopFolder" />' \
+/usr/bin/grep -Fq '<StandardDirectory Id="CommonDesktopFolder" />' \
   "$PROJECT_ROOT/Windows.Installer/Package.wxs"
-if [ "$(/usr/bin/grep -Fc 'Target="[INSTALLFOLDER]ProxyGauge.exe"' "$PROJECT_ROOT/Windows.Installer/Package.wxs")" -ne 2 ]; then
-  echo 'Each Windows shortcut must target the installed executable so Explorer can resolve its icon.' >&2
+if [ "$(/usr/bin/grep -Fc 'Advertise="yes"' "$PROJECT_ROOT/Windows.Installer/Package.wxs")" -ne 2 ]; then
+  echo 'Each Windows shortcut must use the executable component as its advertised target.' >&2
   exit 1
 fi
-/usr/bin/grep -Fq 'Name="ShortcutsInstalled"' \
-  "$PROJECT_ROOT/Windows.Installer/Package.wxs"
-/usr/bin/grep -Fq '<RegistryValue Root="HKLM"' \
+/usr/bin/grep -Fq '<StandardDirectory Id="CommonProgramsFolder" />' \
   "$PROJECT_ROOT/Windows.Installer/Package.wxs"
 /usr/bin/grep -Fq '<Icon Id="ProxyGaugeIcon.ico"' \
   "$PROJECT_ROOT/Windows.Installer/Package.wxs"
