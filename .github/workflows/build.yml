@@ -175,6 +175,7 @@ jobs:
             release-assets/ProxyGauge-*.zip \
             release-assets/ProxyGauge-*.msi \
             release-assets/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --generate-notes \
             --latest \
