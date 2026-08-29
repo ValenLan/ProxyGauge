@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using ProxyGauge.Models;
@@ -235,6 +236,10 @@ public partial class MainWindow : Window
                 MessageBoxResult.No);
             if (answer != MessageBoxResult.Yes)
             {
+                if (sender is CheckBox toggle)
+                {
+                    toggle.IsChecked = true;
+                }
                 return;
             }
         }

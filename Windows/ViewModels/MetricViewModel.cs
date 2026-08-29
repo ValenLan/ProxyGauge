@@ -52,16 +52,16 @@ public sealed class MetricViewModel : ObservableObject
 
 public static class Palette
 {
-    public static readonly Brush Accent = Create("#79B9FF");
-    public static readonly Brush Success = Create("#50D68A");
-    public static readonly Brush Warning = Create("#F3BC64");
-    public static readonly Brush Error = Create("#FF7D84");
-    public static readonly Brush Idle = Create("#718096");
+    public static readonly Brush Accent = Create("#218CFF");
+    public static readonly Brush Success = Create("#33C759");
+    public static readonly Brush Warning = Create("#FF9F0A");
+    public static readonly Brush Error = Create("#FF453A");
+    public static readonly Brush Idle = Create("#8E8E93");
 
-    private static readonly Brush SuccessBackground = Create("#2250D68A");
-    private static readonly Brush WarningBackground = Create("#22F3BC64");
-    private static readonly Brush ErrorBackground = Create("#22FF7D84");
-    private static readonly Brush IdleBackground = Create("#22718096");
+    private static readonly Brush SuccessBackground = Create("#2433C759");
+    private static readonly Brush WarningBackground = Create("#24FF9F0A");
+    private static readonly Brush ErrorBackground = Create("#24FF453A");
+    private static readonly Brush IdleBackground = Create("#248E8E93");
 
     public static Brush ForLevel(HealthLevel level) => level switch
     {

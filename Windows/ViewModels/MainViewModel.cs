@@ -16,7 +16,7 @@ public sealed class MainViewModel : ObservableObject
     private HealthLevel _overallLevel = HealthLevel.Idle;
     private bool _isBusy;
     private bool _isHealthCheckRunning;
-    private string _healthButtonLabel = "开始检测";
+    private string _healthButtonLabel = "检测";
     private string _lastUpdated = "尚未刷新";
     private GuardStatus _guardStatus = GuardStatus.Unavailable();
     private bool _isGuardBusy;
@@ -47,11 +47,18 @@ public sealed class MainViewModel : ObservableObject
     public string LastUpdated { get => _lastUpdated; private set => SetProperty(ref _lastUpdated, value); }
     public string Endpoint => $"{_config.MixedHost}:{_config.MixedPort}";
     public string PlanSummary => _config.SecondaryEnabled
-        ? $"通用检测 + {_config.SecondaryLabel}"
-        : "通用检测";
+        ? $"基础链路 · 出口一致 · {_config.SecondaryLabel} 分流"
+        : "代理核心 · 流量入口 · 出口一致";
+    public string HealthDetail => IsHealthCheckRunning ? "正在按方案检测…" : "按当前方案检查连接";
+    public Brush GuardLevelBrush => _guardStatus.Kind switch
+    {
+        GuardStatusKind.Enabled => Palette.Success,
+        GuardStatusKind.Fault => Palette.Error,
+        _ => Palette.Idle
+    };
     public string GuardValue => _guardStatus.Kind switch
     {
-        GuardStatusKind.Enabled => "已保护",
+        GuardStatusKind.Enabled => "已开启",
         GuardStatusKind.Fault => "需要修复",
         GuardStatusKind.Disabled => "已关闭",
         _ => "服务未安装"
@@ -130,7 +137,13 @@ public sealed class MainViewModel : ObservableObject
     public bool IsHealthCheckRunning
     {
         get => _isHealthCheckRunning;
-        private set => SetProperty(ref _isHealthCheckRunning, value);
+        private set
+        {
+            if (SetProperty(ref _isHealthCheckRunning, value))
+            {
+                OnPropertyChanged(nameof(HealthDetail));
+            }
+        }
     }
 
     public async Task RefreshAsync()
@@ -215,7 +228,7 @@ public sealed class MainViewModel : ObservableObject
 
         IsBusy = true;
         IsHealthCheckRunning = true;
-        HealthButtonLabel = "正在检查…";
+        HealthButtonLabel = "检测中";
         try
         {
             var report = await _healthCheckService.RunAsync(_config);
@@ -224,7 +237,7 @@ public sealed class MainViewModel : ObservableObject
         }
         finally
         {
-            HealthButtonLabel = "开始检测";
+            HealthButtonLabel = "检测";
             IsHealthCheckRunning = false;
             IsBusy = false;
         }
@@ -272,5 +285,6 @@ public sealed class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(GuardButtonLabel));
         OnPropertyChanged(nameof(GuardEnabled));
         OnPropertyChanged(nameof(CanChangeGuard));
+        OnPropertyChanged(nameof(GuardLevelBrush));
     }
 }

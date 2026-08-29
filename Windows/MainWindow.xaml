@@ -3,10 +3,10 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="ProxyGauge"
-        Width="880"
-        Height="700"
-        MinWidth="880"
-        MinHeight="700"
+        Width="680"
+        Height="544"
+        MinWidth="640"
+        MinHeight="492"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
         ResizeMode="CanResize"
@@ -23,7 +23,6 @@
     <Border Background="{StaticResource CanvasBrush}"
             BorderBrush="{StaticResource BorderBrush}"
             BorderThickness="1">
-
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="44" />
@@ -32,33 +31,25 @@
 
             <Border Grid.Row="0" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
                 <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
-                        <Image Source="Assets/ProxyGauge.ico" Width="24" Height="24" />
+                        <Image Source="Assets/ProxyGauge.ico" Width="18" Height="18" />
                         <TextBlock Text="ProxyGauge" FontSize="13" FontWeight="SemiBold" Margin="9,0,0,0" VerticalAlignment="Center" />
-                        <Border Background="#1F3045" CornerRadius="8" Padding="8,3" Margin="9,0,0,0">
-                            <TextBlock Text="WINDOWS" Foreground="{StaticResource AccentBrush}" FontSize="9" FontWeight="Bold" />
-                        </Border>
                     </StackPanel>
 
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="0,4,5,4">
-                        <Button Style="{StaticResource TitleButtonStyle}" ToolTip="设置" IsEnabled="{Binding IsNotBusy}" Click="SettingsButton_Click" shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,4,5,4">
+                        <Button Style="{StaticResource TitleButtonStyle}" AutomationProperties.Name="设置" ToolTip="设置" IsEnabled="{Binding IsNotBusy}" Click="SettingsButton_Click" shell:WindowChrome.IsHitTestVisibleInChrome="True">
                             <Path Width="13" Height="13" Stretch="Uniform" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.3"
                                   Data="M8,6.2 A1.8,1.8 0 1 0 8,9.8 A1.8,1.8 0 1 0 8,6.2 Z M8,1.5 L8,3.5 M8,12.5 L8,14.5 M1.5,8 L3.5,8 M12.5,8 L14.5,8 M3.4,3.4 L4.8,4.8 M11.2,11.2 L12.6,12.6 M12.6,3.4 L11.2,4.8 M4.8,11.2 L3.4,12.6" />
                         </Button>
-                        <Button Style="{StaticResource TitleButtonStyle}" ToolTip="最小化" Click="MinimizeButton_Click" shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                        <Button Style="{StaticResource TitleButtonStyle}" AutomationProperties.Name="最小化" ToolTip="最小化" Click="MinimizeButton_Click" shell:WindowChrome.IsHitTestVisibleInChrome="True">
                             <Path Width="13" Height="13" Stretch="Uniform" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.3"
                                   Data="M1.5,5 L8.5,5" />
                         </Button>
-                        <Button x:Name="MaximizeButton" Style="{StaticResource TitleButtonStyle}" ToolTip="最大化 / 还原" Click="MaximizeButton_Click" shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                        <Button x:Name="MaximizeButton" Style="{StaticResource TitleButtonStyle}" AutomationProperties.Name="最大化" ToolTip="最大化 / 还原" Click="MaximizeButton_Click" shell:WindowChrome.IsHitTestVisibleInChrome="True">
                             <Path x:Name="MaximizeIcon" Width="13" Height="13" Stretch="Uniform" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.3"
                                   Data="M1.8,1.8 L8.2,1.8 L8.2,8.2 L1.8,8.2 Z" />
                         </Button>
-                        <Button x:Name="CloseButton" Style="{StaticResource TitleButtonStyle}" ToolTip="关闭窗口（不会关闭系统保护）" Click="CloseButton_Click" shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                        <Button x:Name="CloseButton" Style="{StaticResource TitleButtonStyle}" AutomationProperties.Name="关闭" ToolTip="关闭窗口（不会关闭系统保护）" Click="CloseButton_Click" shell:WindowChrome.IsHitTestVisibleInChrome="True">
                             <Path Width="13" Height="13" Stretch="Uniform" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.3"
                                   Data="M1.5,1.5 L8.5,8.5 M8.5,1.5 L1.5,8.5" />
                         </Button>
@@ -66,84 +57,53 @@
                 </Grid>
             </Border>
 
-            <Grid Grid.Row="1" Margin="26,22,26,24">
+            <Grid Grid.Row="1" Margin="20,22,20,22">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="88" />
-                    <RowDefinition Height="58" />
+                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="14" />
-                    <RowDefinition Height="192" />
+                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="14" />
-                    <RowDefinition Height="212" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="10" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
+                <!-- header: app icon + status dot/headline/detail + connection/refresh buttons -->
                 <Grid Grid.Row="0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-
-                    <Border Width="68" Height="68" CornerRadius="17" Background="#EAF5FF" VerticalAlignment="Top">
-                        <Image Source="Assets/ProxyGauge.ico" Width="62" Height="62" />
-                    </Border>
-
-                    <StackPanel Grid.Column="1" Margin="17,1,0,0">
-                        <StackPanel Orientation="Horizontal">
-                            <Border Width="25" Height="25" CornerRadius="13" Background="{Binding OverallBackground}" Margin="0,1,9,0">
-                                <TextBlock Text="{Binding OverallMark}" Foreground="{Binding OverallBrush}" FontSize="14" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                            </Border>
-                            <TextBlock Text="{Binding Headline}" FontFamily="Segoe UI Variable Display, Segoe UI" FontSize="27" FontWeight="SemiBold" />
+                    <StackPanel Orientation="Horizontal">
+                        <Image Source="Assets/ProxyGauge.ico" Width="48" Height="48" />
+                        <StackPanel Margin="14,2,0,0" VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse Width="8" Height="8" Fill="{Binding OverallBrush}" VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding Headline}" FontFamily="Segoe UI Variable Display, Segoe UI" FontSize="21" FontWeight="SemiBold" Margin="9,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <TextBlock Text="{Binding Detail}" Foreground="{StaticResource MutedTextBrush}" FontSize="12" Margin="17,4,0,0" />
                         </StackPanel>
-                        <TextBlock Text="{Binding Detail}" Foreground="{StaticResource MutedTextBrush}" FontSize="13" Margin="34,6,0,0" />
-                        <TextBlock Text="{Binding LastUpdated}" Foreground="#62748A" FontSize="10" Margin="34,6,0,0" />
                     </StackPanel>
 
-                    <Button Grid.Column="2"
-                            Style="{StaticResource QuietButtonStyle}"
-                            IsEnabled="{Binding IsNotBusy}"
-                            Click="RefreshButton_Click"
-                            ToolTip="刷新状态"
-                            Padding="12,8"
-                            VerticalAlignment="Top">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE72C;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Foreground="{StaticResource AccentBrush}" FontSize="13" />
-                            <TextBlock Text="刷新" Margin="7,0,0,0" />
-                        </StackPanel>
-                    </Button>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <Button Style="{StaticResource HeaderIconButtonStyle}" Foreground="{StaticResource AccentBrush}"
+                                AutomationProperties.Name="连接设置" ToolTip="连接设置" IsEnabled="{Binding IsNotBusy}" Click="SettingsButton_Click">
+                            <Path Width="15" Height="15" Stretch="Uniform" Data="{StaticResource IconSliders}"
+                                  Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                  StrokeThickness="1.3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                        </Button>
+                        <Button Style="{StaticResource HeaderIconButtonStyle}" Foreground="{StaticResource AccentBrush}" Margin="7,0,0,0"
+                                AutomationProperties.Name="刷新状态" ToolTip="刷新状态" IsEnabled="{Binding IsNotBusy}" Click="RefreshButton_Click">
+                            <Path Width="15" Height="15" Stretch="Uniform" Data="{StaticResource IconRefresh}"
+                                  Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                  StrokeThickness="1.3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                        </Button>
+                    </StackPanel>
                 </Grid>
 
-                <Border Grid.Row="1" Background="#121D2B" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="13" Padding="19,0">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <Ellipse Width="9" Height="9" Fill="{Binding Core.LevelBrush}" />
-                            <TextBlock Text="核心" FontSize="11" FontWeight="SemiBold" Margin="8,0,0,0" />
-                        </StackPanel>
-                        <Border Grid.Column="1" Height="2" Background="{Binding Core.LevelBrush}" Opacity="0.42" Margin="13,0" VerticalAlignment="Center" />
-                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                            <Ellipse Width="9" Height="9" Fill="{Binding Port.LevelBrush}" />
-                            <TextBlock Text="本地端口" FontSize="11" FontWeight="SemiBold" Margin="8,0,0,0" />
-                        </StackPanel>
-                        <Border Grid.Column="3" Height="2" Background="{Binding Route.LevelBrush}" Opacity="0.42" Margin="13,0" VerticalAlignment="Center" />
-                        <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center">
-                            <Ellipse Width="9" Height="9" Fill="{Binding Route.LevelBrush}" />
-                            <TextBlock Text="流量入口" FontSize="11" FontWeight="SemiBold" Margin="8,0,0,0" />
-                        </StackPanel>
-                    </Grid>
-                </Border>
-
-                <Grid Grid.Row="3">
+                <!-- 2x2 metric grid -->
+                <Grid Grid.Row="2">
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="90" />
+                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="12" />
-                        <RowDefinition Height="90" />
+                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
@@ -151,200 +111,217 @@
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
 
-                    <Border Grid.Column="0" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="14" Padding="15">
+                    <!-- 代理核心 -->
+                    <Border Grid.Row="0" Grid.Column="0" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="14" MinHeight="72" Padding="16,0">
                         <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="*" />
-                            </Grid.RowDefinitions>
-                            <StackPanel Orientation="Horizontal">
-                                <Border Width="34" Height="34" CornerRadius="11" Background="{Binding Core.LevelBackground}">
-                                    <TextBlock Text="{Binding Core.Marker}" Foreground="{Binding Core.LevelBrush}" FontSize="13" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                </Border>
-                                <StackPanel Margin="11,-1,0,0">
-                                    <TextBlock Text="{Binding Core.Title}" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
-                                    <TextBlock Text="{Binding Core.Value}" FontSize="17" FontWeight="SemiBold" Margin="0,3,0,0" />
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <Grid Width="38" Height="38">
+                                    <Border CornerRadius="11" Background="{Binding Core.LevelBrush}" Opacity="0.14" />
+                                    <Border CornerRadius="11" BorderBrush="{Binding Core.LevelBrush}" BorderThickness="1" Opacity="0.13" />
+                                    <Path Width="16" Height="16" Stretch="Uniform" Data="{StaticResource IconCore}" Stroke="{Binding Core.LevelBrush}"
+                                          StrokeThickness="1.3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Grid>
+                                <StackPanel Margin="13,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Core.Title}" Foreground="{StaticResource MutedTextBrush}" FontSize="11" FontWeight="Medium" />
+                                    <TextBlock Text="{Binding Core.Value}" FontSize="18" FontWeight="SemiBold" Margin="0,3,0,0" />
                                 </StackPanel>
                             </StackPanel>
-                            <TextBlock Grid.Row="1" Text="{Binding Core.Detail}" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" VerticalAlignment="Bottom" />
+                            <Ellipse Width="7" Height="7" Fill="{Binding Core.LevelBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
                         </Grid>
                     </Border>
 
-                    <Border Grid.Column="2" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="14" Padding="15">
+                    <!-- 本地端口 -->
+                    <Border Grid.Row="0" Grid.Column="2" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="14" MinHeight="72" Padding="16,0">
                         <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="*" />
-                            </Grid.RowDefinitions>
-                            <StackPanel Orientation="Horizontal">
-                                <Border Width="34" Height="34" CornerRadius="11" Background="{Binding Port.LevelBackground}">
-                                    <TextBlock Text="{Binding Port.Marker}" Foreground="{Binding Port.LevelBrush}" FontSize="13" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                </Border>
-                                <StackPanel Margin="11,-1,0,0">
-                                    <TextBlock Text="{Binding Port.Title}" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
-                                    <TextBlock Text="{Binding Port.Value}" FontSize="17" FontWeight="SemiBold" Margin="0,3,0,0" />
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <Grid Width="38" Height="38">
+                                    <Border CornerRadius="11" Background="{Binding Port.LevelBrush}" Opacity="0.14" />
+                                    <Border CornerRadius="11" BorderBrush="{Binding Port.LevelBrush}" BorderThickness="1" Opacity="0.13" />
+                                    <Path Width="16" Height="16" Stretch="Uniform" Data="{StaticResource IconPort}" Stroke="{Binding Port.LevelBrush}"
+                                          StrokeThickness="1.3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Grid>
+                                <StackPanel Margin="13,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Port.Title}" Foreground="{StaticResource MutedTextBrush}" FontSize="11" FontWeight="Medium" />
+                                    <TextBlock Text="{Binding Port.Value}" FontFamily="Cascadia Mono, Consolas" FontSize="18" FontWeight="SemiBold" Margin="0,3,0,0" />
                                 </StackPanel>
                             </StackPanel>
-                            <TextBlock Grid.Row="1" Text="{Binding Port.Detail}" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" VerticalAlignment="Bottom" />
+                            <Ellipse Width="7" Height="7" Fill="{Binding Port.LevelBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
                         </Grid>
                     </Border>
 
-                    <Border Grid.Row="2" Grid.Column="0" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="14" Padding="15">
+                    <!-- 流量入口 -->
+                    <Border Grid.Row="2" Grid.Column="0" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="14" MinHeight="72" Padding="16,0">
                         <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="*" />
-                            </Grid.RowDefinitions>
-                            <StackPanel Orientation="Horizontal">
-                                <Border Width="34" Height="34" CornerRadius="11" Background="{Binding Route.LevelBackground}">
-                                    <TextBlock Text="{Binding Route.Marker}" Foreground="{Binding Route.LevelBrush}" FontSize="13" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                </Border>
-                                <StackPanel Margin="11,-1,0,0">
-                                    <TextBlock Text="{Binding Route.Title}" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
-                                    <TextBlock Text="{Binding Route.Value}" FontSize="17" FontWeight="SemiBold" Margin="0,3,0,0" />
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <Grid Width="38" Height="38">
+                                    <Border CornerRadius="11" Background="{Binding Route.LevelBrush}" Opacity="0.14" />
+                                    <Border CornerRadius="11" BorderBrush="{Binding Route.LevelBrush}" BorderThickness="1" Opacity="0.13" />
+                                    <Path Width="16" Height="16" Stretch="Uniform" Data="{StaticResource IconEntry}" Stroke="{Binding Route.LevelBrush}"
+                                          StrokeThickness="1.3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Grid>
+                                <StackPanel Margin="13,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Route.Title}" Foreground="{StaticResource MutedTextBrush}" FontSize="11" FontWeight="Medium" />
+                                    <TextBlock Text="{Binding Route.Value}" FontSize="18" FontWeight="SemiBold" Margin="0,3,0,0" />
                                 </StackPanel>
                             </StackPanel>
-                            <TextBlock Grid.Row="1" Text="{Binding Route.Detail}" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" VerticalAlignment="Bottom" />
+                            <Ellipse Width="7" Height="7" Fill="{Binding Route.LevelBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
                         </Grid>
                     </Border>
 
-                    <Border Grid.Row="2" Grid.Column="2" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="14" Padding="15">
+                    <!-- Kill Switch（macOS 同款开关） -->
+                    <Border Grid.Row="2" Grid.Column="2" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="14" MinHeight="72" Padding="16,0">
                         <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="*" />
-                            </Grid.RowDefinitions>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <Border Width="34" Height="34" CornerRadius="11" Background="#252E3D">
-                                    <TextBlock Text="&#xEA18;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Foreground="{StaticResource MutedTextBrush}" FontSize="13" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                            </Border>
-                            <StackPanel Grid.Column="1" Margin="11,-1,8,0">
-                                <TextBlock Text="系统保护" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
-                                <TextBlock Text="{Binding GuardValue}" FontSize="17" FontWeight="SemiBold" Margin="0,3,0,0" />
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <Grid Width="38" Height="38">
+                                    <Border CornerRadius="11" Background="{Binding GuardLevelBrush}" Opacity="0.14" />
+                                    <Border CornerRadius="11" BorderBrush="{Binding GuardLevelBrush}" BorderThickness="1" Opacity="0.13" />
+                                    <Path Width="16" Height="16" Stretch="Uniform" Data="{StaticResource IconShield}" Stroke="{Binding GuardLevelBrush}"
+                                          StrokeThickness="1.3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Grid>
+                                <StackPanel Margin="13,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock Text="Kill Switch" Foreground="{StaticResource MutedTextBrush}" FontSize="11" FontWeight="Medium" />
+                                    <TextBlock Text="{Binding GuardValue}" FontSize="18" FontWeight="SemiBold" Margin="0,3,0,0" />
+                                </StackPanel>
                             </StackPanel>
-                            <Button Grid.Column="2"
-                                    Style="{StaticResource QuietButtonStyle}"
-                                    Content="{Binding GuardButtonLabel}"
-                                    IsEnabled="{Binding CanChangeGuard}"
-                                    Click="GuardButton_Click"
-                                    Padding="11,6"
-                                    VerticalAlignment="Center" />
-                            <TextBlock Grid.Row="1" Grid.ColumnSpan="3" Text="{Binding GuardDetail}" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" VerticalAlignment="Bottom" />
+                            <CheckBox Style="{StaticResource SwitchToggleStyle}"
+                                      IsChecked="{Binding GuardEnabled, Mode=OneWay}"
+                                      IsEnabled="{Binding CanChangeGuard}"
+                                      Click="GuardButton_Click"
+                                      ToolTip="开启或关闭防泄漏保护"
+                                      HorizontalAlignment="Right" VerticalAlignment="Center" />
                         </Grid>
                     </Border>
                 </Grid>
 
-                <Grid Grid.Row="5">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="100" />
-                        <RowDefinition Height="12" />
-                        <RowDefinition Height="100" />
-                    </Grid.RowDefinitions>
+                <!-- 链路检测 action card -->
+                <Border Grid.Row="4" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="14" MinHeight="72">
+                    <Grid Margin="12,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,12">
+                            <Grid Width="30" Height="30">
+                                <Border CornerRadius="15" Background="{StaticResource AccentBrush}" Opacity="0.14" />
+                                <Border CornerRadius="15" BorderBrush="{StaticResource AccentBrush}" BorderThickness="1" Opacity="0.13" />
+                                <Path Width="13" Height="13" Stretch="Uniform" Data="{StaticResource IconHealth}" Stroke="{StaticResource AccentBrush}"
+                                      StrokeThickness="1.3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Grid>
+                            <StackPanel Margin="9,0,0,0" VerticalAlignment="Center">
+                                <TextBlock Text="链路检测" FontSize="14" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding HealthDetail}" Foreground="{StaticResource MutedTextBrush}" FontSize="10.5" Margin="0,3,0,0" />
+                            </StackPanel>
+                            <TextBlock Text="{Binding PlanSummary}" Foreground="{StaticResource MutedTextBrush}" FontSize="10.5" Margin="12,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,12">
+                            <Button Style="{StaticResource PillButtonStyle}" Foreground="{StaticResource AccentBrush}" Width="76"
+                                    AutomationProperties.Name="方案" IsEnabled="{Binding IsNotBusy}" Click="PlanButton_Click" ToolTip="调整链路检测方案">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Width="12" Height="12" Stretch="Uniform" Data="{StaticResource IconSliders}"
+                                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                          StrokeThickness="1.3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                          VerticalAlignment="Center" />
+                                    <TextBlock Text="方案" Margin="5,0,0,0" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                            <Button Style="{StaticResource PillButtonStyle}" Foreground="{StaticResource AccentBrush}" Width="76" Margin="6,0,0,0"
+                                    AutomationProperties.Name="检测" IsEnabled="{Binding IsNotBusy}" Click="HealthButton_Click" ToolTip="按当前方案检测代理链路">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Width="12" Height="12" Stretch="Uniform" Data="{StaticResource IconPlayFill}"
+                                          Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                          VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding HealthButtonLabel}" Margin="6,0,0,0" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                        <ProgressBar Grid.Row="1"
+                                     Height="3"
+                                     Margin="0,0,0,10"
+                                     IsIndeterminate="True"
+                                     Foreground="{StaticResource AccentBrush}"
+                                     Background="#26354A">
+                            <ProgressBar.Style>
+                                <Style TargetType="ProgressBar">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsHealthCheckRunning}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ProgressBar.Style>
+                        </ProgressBar>
+                    </Grid>
+                </Border>
+
+                <!-- IP 纯净度 + 规则管理 -->
+                <Grid Grid.Row="6">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="13" />
+                        <ColumnDefinition Width="10" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
 
-                    <Border Grid.Row="0" Grid.ColumnSpan="3" Background="{StaticResource SurfaceRaisedBrush}" BorderBrush="#36516F" BorderThickness="1" CornerRadius="15" Padding="17">
+                    <Border Grid.Column="0" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="14" MinHeight="72" Padding="12,0">
                         <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="*" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <Border Width="40" Height="40" CornerRadius="12" Background="#233F5D">
-                                <TextBlock Text="&#xE9D9;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Foreground="{StaticResource AccentBrush}" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                            </Border>
-                            <StackPanel Grid.Column="1" Margin="12,-1,14,0" VerticalAlignment="Center">
-                                <TextBlock Text="链路检测" FontSize="15" FontWeight="SemiBold" />
-                                <TextBlock Text="{Binding PlanSummary}" Foreground="{StaticResource MutedTextBrush}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <Grid Width="30" Height="30">
+                                    <Border CornerRadius="15" Background="{StaticResource AdvancedBrush}" Opacity="0.14" />
+                                    <Border CornerRadius="15" BorderBrush="{StaticResource AdvancedBrush}" BorderThickness="1" Opacity="0.13" />
+                                    <Path Width="13" Height="13" Stretch="Uniform" Data="{StaticResource IconScope}" Stroke="{StaticResource AdvancedBrush}"
+                                          StrokeThickness="1.3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Grid>
+                                <StackPanel Margin="9,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock Text="IP 纯净度" FontSize="14" FontWeight="SemiBold" />
+                                    <TextBlock Text="在默认浏览器中人工复核 6 个网站" Foreground="{StaticResource MutedTextBrush}" FontSize="10.5" Margin="0,3,0,0" />
+                                </StackPanel>
                             </StackPanel>
-                            <Button Grid.Column="2"
-                                    Style="{StaticResource QuietButtonStyle}"
-                                    Content="方案"
-                                    IsEnabled="{Binding IsNotBusy}"
-                                    Click="PlanButton_Click"
-                                    Margin="0,0,10,0"
-                                    VerticalAlignment="Center" />
-                            <Button Grid.Column="3"
-                                    Style="{StaticResource PrimaryButtonStyle}"
-                                    Content="{Binding HealthButtonLabel}"
-                                    IsEnabled="{Binding IsNotBusy}"
-                                    Click="HealthButton_Click"
-                                    VerticalAlignment="Center" />
-                            <ProgressBar Grid.Row="1"
-                                         Grid.ColumnSpan="4"
-                                         Height="3"
-                                         Margin="0,10,0,0"
-                                         IsIndeterminate="True"
-                                         Foreground="{StaticResource AccentBrush}"
-                                         Background="#26354A">
-                                <ProgressBar.Style>
-                                    <Style TargetType="ProgressBar">
-                                        <Setter Property="Visibility" Value="Collapsed" />
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding IsHealthCheckRunning}" Value="True">
-                                                <Setter Property="Visibility" Value="Visible" />
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </ProgressBar.Style>
-                            </ProgressBar>
+                            <Button Style="{StaticResource PillButtonStyle}" Foreground="{StaticResource AdvancedBrush}"
+                                    AutomationProperties.Name="浏览器" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    IsEnabled="{Binding IsNotBusy}" Click="AdvancedButton_Click" ToolTip="确认后在默认浏览器打开 IP 纯净度复核网站">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Width="11" Height="11" Stretch="Uniform" Data="{StaticResource IconOpen}"
+                                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                          StrokeThickness="1.4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                          VerticalAlignment="Center" />
+                                    <TextBlock Text="浏览器" Margin="5,0,0,0" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
                         </Grid>
                     </Border>
 
-                    <Border Grid.Row="2" Grid.Column="0" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="15" Padding="17">
+                    <Border Grid.Column="2" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="14" MinHeight="72" Padding="12,0">
                         <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <Border Width="40" Height="40" CornerRadius="12" Background="{StaticResource AdvancedSurfaceBrush}">
-                                <TextBlock Text="&#xEA18;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Foreground="{StaticResource AdvancedBrush}" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                            </Border>
-                            <StackPanel Grid.Column="1" Margin="12,-1,14,0" VerticalAlignment="Center">
-                                <TextBlock Text="IP 纯净度" FontSize="15" FontWeight="SemiBold" />
-                                <TextBlock Text="在默认浏览器中人工复核 6 个网站" Foreground="{StaticResource MutedTextBrush}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <Grid Width="30" Height="30">
+                                    <Border CornerRadius="15" Background="{StaticResource RulesBrush}" Opacity="0.14" />
+                                    <Border CornerRadius="15" BorderBrush="{StaticResource RulesBrush}" BorderThickness="1" Opacity="0.13" />
+                                    <Path Width="13" Height="13" Stretch="Uniform" Data="{StaticResource IconRules}" Stroke="{StaticResource RulesBrush}"
+                                          StrokeThickness="1.3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Grid>
+                                <StackPanel Margin="9,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock Text="规则管理" FontSize="14" FontWeight="SemiBold" />
+                                    <TextBlock Text="12 条 · 2026.08" Foreground="{StaticResource MutedTextBrush}" FontSize="10.5" Margin="0,3,0,0" />
+                                </StackPanel>
                             </StackPanel>
-                            <Button Grid.Column="2"
-                                    Style="{StaticResource QuietButtonStyle}"
-                                    Content="浏览器"
-                                    IsEnabled="{Binding IsNotBusy}"
-                                    Click="AdvancedButton_Click"
-                                    VerticalAlignment="Center" />
-                        </Grid>
-                    </Border>
-
-                    <Border Grid.Row="2" Grid.Column="2" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="15" Padding="17">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <Border Width="40" Height="40" CornerRadius="12" Background="{StaticResource RulesSurfaceBrush}">
-                                <TextBlock Text="&#xE8A5;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Foreground="{StaticResource RulesBrush}" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                            </Border>
-                            <StackPanel Grid.Column="1" Margin="12,-1,14,0" VerticalAlignment="Center">
-                                <TextBlock Text="规则管理" FontSize="15" FontWeight="SemiBold" />
-                                <TextBlock Text="12 条规则 · 版本 2026.08" Foreground="{StaticResource MutedTextBrush}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
-                            </StackPanel>
-                            <Button Grid.Column="2"
-                                    Style="{StaticResource QuietButtonStyle}"
-                                    Content="管理"
-                                    Click="RulesButton_Click"
-                                    VerticalAlignment="Center" />
+                            <Button Style="{StaticResource PillButtonStyle}" Foreground="{StaticResource RulesBrush}"
+                                    AutomationProperties.Name="管理" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    Click="RulesButton_Click" ToolTip="管理可分享的 Mihomo / Clash Verge 规则包">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="管理" Foreground="{StaticResource RulesBrush}" VerticalAlignment="Center" />
+                                    <Path Width="11" Height="11" Stretch="Uniform" Data="{StaticResource IconChevron}"
+                                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                          StrokeThickness="1.4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                          Margin="5,0,0,0" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
                         </Grid>
                     </Border>
                 </Grid>
