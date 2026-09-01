@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   macos:
-    runs-on: macos-26
+    runs-on: macos-15
     outputs:
       version: ${{ steps.package.outputs.version }}
     steps:
