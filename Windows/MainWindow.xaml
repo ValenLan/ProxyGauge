@@ -80,7 +80,7 @@
             </Border>
 
             <ScrollViewer x:Name="DashboardScrollViewer" Grid.Row="1"
-                          VerticalScrollBarVisibility="Auto"
+                          VerticalScrollBarVisibility="Hidden"
                           HorizontalScrollBarVisibility="Disabled"
                           HorizontalContentAlignment="Stretch"
                           VerticalContentAlignment="Center">

@@ -170,6 +170,9 @@ var wpfThread = new Thread(() =>
         Console.WriteLine("WPF validation: rendering light dashboard.");
         mainWindow = new MainWindow(themeService);
         var mainRoot = (Border)mainWindow.Content;
+        var dashboardScroller = (ScrollViewer)mainWindow.FindName("DashboardScrollViewer");
+        Require(dashboardScroller.VerticalScrollBarVisibility == ScrollBarVisibility.Hidden,
+            "The dashboard must remain wheel-scrollable without showing a stray side scrollbar.");
         Require(mainWindow.FindName("ProductIntroduction") is TextBlock,
             "The page header must expose the concise product introduction without a second product title.");
         var locationChip = (TextBlock)mainWindow.FindName("ExitLocationChip");

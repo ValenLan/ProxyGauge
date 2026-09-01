@@ -27,6 +27,7 @@ done
 /usr/bin/grep -Fq 'tint: AppThemePalette.secondaryText' "$DASHBOARD_SOURCE"
 /usr/bin/grep -Fq 'ExitChip(model.exitLocation)' "$DASHBOARD_SOURCE"
 /usr/bin/grep -Fq 'x:Name="ExitLocationChip" Text="{Binding ExitLocation}"' "$WINDOWS_MAIN"
+/usr/bin/grep -Fq 'VerticalScrollBarVisibility="Hidden"' "$WINDOWS_MAIN"
 /usr/bin/grep -Fq 'struct CuteDashboardIcon: View' "$DASHBOARD_SOURCE"
 /usr/bin/grep -Fq 'private struct CuteGlyph: View' "$DASHBOARD_SOURCE"
 /usr/bin/grep -Fq 'case .protection:' "$DASHBOARD_SOURCE"
