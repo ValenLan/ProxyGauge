@@ -157,8 +157,6 @@ final class ProxyModel: ObservableObject {
     @Published var healthPlan = ProxyGaugePreferences.loadHealthPlan()
     @Published var exitAddress = "正在读取…"
     @Published var exitLocation = "正在确认代理出口"
-    @Published var exitNetwork = "ASN 未知"
-    @Published var exitNetworkType = "IP 类型未知"
     @Published var availableUpdate: AppUpdateRelease?
     @Published var showUpdatePrompt = false
     @Published var showUpdateResult = false
@@ -269,8 +267,6 @@ final class ProxyModel: ObservableObject {
         } else {
             exitAddress = "暂时无法读取"
             exitLocation = "请检查本地代理连接"
-            exitNetwork = "ASN 未知"
-            exitNetworkType = "IP 类型未知"
         }
 
         guard result.status == 0 else {
@@ -448,8 +444,6 @@ final class ProxyModel: ObservableObject {
         }
         exitAddress = fields["ip"] ?? "暂时无法读取"
         exitLocation = fields["location"] ?? "位置未知"
-        exitNetwork = fields["asn"] ?? "ASN 未知"
-        exitNetworkType = fields["network"] ?? "IP 类型未知"
     }
 
     private func updateMetric(_ metric: inout MetricState, from fields: [String]?) {

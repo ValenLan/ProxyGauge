@@ -70,8 +70,6 @@ public sealed class MainViewModel : ObservableObject
     }
     public string ExitAddress => _exitSummary.Address;
     public string ExitLocation => _exitSummary.Location;
-    public string ExitNetwork => _exitSummary.Network;
-    public string ExitNetworkType => _exitSummary.NetworkType;
     public string PlanSummary => _config.SecondaryEnabled
         ? $"基础链路 · 出口一致 · {_config.SecondaryLabel} 分流"
         : "代理核心 · 流量入口 · 出口一致";
@@ -332,7 +330,5 @@ public sealed class MainViewModel : ObservableObject
         _exitSummary = summary;
         OnPropertyChanged(nameof(ExitAddress));
         OnPropertyChanged(nameof(ExitLocation));
-        OnPropertyChanged(nameof(ExitNetwork));
-        OnPropertyChanged(nameof(ExitNetworkType));
     }
 }

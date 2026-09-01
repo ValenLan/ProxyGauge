@@ -120,31 +120,19 @@ resolved_exit_ip=$(PROXYGAUGE_CONFIG=/dev/null \
 
 exit_summary=$(PROXYGAUGE_CONFIG=/dev/null \
   PROXYGAUGE_MIXED=127.0.0.1:7898 \
-  PROXYGAUGE_EXIT_SUMMARY_JSON="$SCRIPT_DIR/../Tests/Fixtures/ipapi-risk.json" \
+  PROXYGAUGE_EXIT_SUMMARY_JSON="$SCRIPT_DIR/../Tests/Fixtures/ipapi-co-summary.json" \
   /bin/bash "$BACKEND" exit-summary)
 /usr/bin/printf '%s\n' "$exit_summary" | /usr/bin/grep -Fq $'ip\t203.0.113.8'
 /usr/bin/printf '%s\n' "$exit_summary" | /usr/bin/grep -Fq $'location\tUnited States Los Angeles'
-/usr/bin/printf '%s\n' "$exit_summary" | /usr/bin/grep -Fq $'asn\tAS64500 · Example ASN'
-/usr/bin/printf '%s\n' "$exit_summary" | /usr/bin/grep -Fq $'network\t数据中心'
-
-flat_exit_summary=$(PROXYGAUGE_CONFIG=/dev/null \
-  PROXYGAUGE_MIXED=127.0.0.1:7898 \
-  PROXYGAUGE_EXIT_SUMMARY_JSON="$SCRIPT_DIR/../Tests/Fixtures/ipapi-summary-flat.json" \
-  PROXYGAUGE_EXIT_GEO_JSON="$SCRIPT_DIR/../Tests/Fixtures/ipapi-co-summary.json" \
-  /bin/bash "$BACKEND" exit-summary)
-/usr/bin/printf '%s\n' "$flat_exit_summary" | /usr/bin/grep -Fq $'ip\t203.0.113.8'
-/usr/bin/printf '%s\n' "$flat_exit_summary" | /usr/bin/grep -Fq $'location\tUnited States Los Angeles'
-/usr/bin/printf '%s\n' "$flat_exit_summary" | /usr/bin/grep -Fq $'asn\tAS64500 · Example ASN'
-/usr/bin/printf '%s\n' "$flat_exit_summary" | /usr/bin/grep -Fq $'network\tIP 类型未知'
-
-detailed_exit_summary=$(PROXYGAUGE_CONFIG=/dev/null \
-  PROXYGAUGE_MIXED=127.0.0.1:7898 \
-  PROXYGAUGE_EXIT_SUMMARY_JSON="$SCRIPT_DIR/../Tests/Fixtures/ipapi-summary-flat.json" \
-  PROXYGAUGE_EXIT_DETAIL_JSON="$SCRIPT_DIR/../Tests/Fixtures/ipapi-summary-isp.json" \
-  /bin/bash "$BACKEND" exit-summary)
-/usr/bin/printf '%s\n' "$detailed_exit_summary" | /usr/bin/grep -Fq $'location\tUnited States Los Angeles'
-/usr/bin/printf '%s\n' "$detailed_exit_summary" | /usr/bin/grep -Fq $'asn\tAS64500 · Example ASN'
-/usr/bin/printf '%s\n' "$detailed_exit_summary" | /usr/bin/grep -Fq $'network\tISP 网络'
+if /usr/bin/printf '%s\n' "$exit_summary" | /usr/bin/grep -Eq $'^(asn|network)\t'; then
+  echo '出口摘要只能输出 IP 与城市/地区' >&2
+  exit 1
+fi
+/usr/bin/grep -Fq 'https://ipapi.co/json/' "$BACKEND"
+if /usr/bin/grep -Eq 'api\.ipapi\.is/\?q=|PROXYGAUGE_EXIT_DETAIL_JSON|printf .network\\t' "$BACKEND"; then
+  echo '出口摘要不得再查询或输出 IP 类型' >&2
+  exit 1
+fi
 
 /usr/bin/printf '%s\n' \
   '#!/bin/bash' \

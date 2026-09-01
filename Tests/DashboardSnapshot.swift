@@ -46,8 +46,6 @@ struct DashboardSnapshot {
         )
         model.exitAddress = "198.51.100.24"
         model.exitLocation = "美国 · 洛杉矶"
-        model.exitNetwork = "AS7922 · Comcast Cable"
-        model.exitNetworkType = "ISP 网络"
         model.showConnectionSetup = snapshotState.hasPrefix("connection-setup")
 
         let dashboard = ContentView(model: model)

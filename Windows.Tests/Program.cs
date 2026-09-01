@@ -100,34 +100,23 @@ Require(ThemeService.ResolveTheme(false, null) == AppThemeKind.Light,
 Require(ThemeService.ResolveTheme(true, "dark") == AppThemeKind.HighContrast,
     "High contrast must take priority over the manual appearance choice.");
 
-Require(UpdateService.CompareVersions("1.6.0", "1.5.7") > 0,
+Require(UpdateService.CompareVersions("1.6.1", "1.6.0") > 0,
     "A newer semantic version must be detected.");
 Require(UpdateService.CompareVersions("1.5.7", "1.5.7") == 0,
     "Equal semantic versions must not trigger an update.");
 var checksum = new string('a', 64);
-Require(UpdateService.FindChecksum($"{checksum}  ProxyGauge-1.6.0-win-x64.msi\n", "ProxyGauge-1.6.0-win-x64.msi") == checksum,
+Require(UpdateService.FindChecksum($"{checksum}  ProxyGauge-1.6.1-win-x64.msi\n", "ProxyGauge-1.6.1-win-x64.msi") == checksum,
     "The updater must select the exact MSI checksum.");
 
 var flatExitSummary = ExitSummaryService.ParseResponse(
-    """{"ip":"203.0.113.8","is_datacenter":false,"is_proxy":false,"is_vpn":false,"company_name":"Example Network","asn_num":64500,"asn_org":"Example ASN","cc":"US"}""",
-    """{"ip":"203.0.113.8","city":"Los Angeles","country":"US","country_name":"United States","asn":"AS64500","org":"Example ASN"}""");
-Require(flatExitSummary is not null, "The current flat ipapi.is payload must produce an exit summary.");
+    """{"ip":"203.0.113.8","city":"Los Angeles","region":"California","country":"US","country_name":"United States","asn":"AS64500","org":"Example ASN"}""");
+Require(flatExitSummary is not null, "The city lookup response must produce an exit summary.");
 Require(flatExitSummary!.Location == "United States · Los Angeles",
-    "The secondary location response must enrich the flat anonymous payload.");
-Require(flatExitSummary.Network == "AS64500 · Example ASN",
-    "The current flat ASN fields must remain visible.");
-Require(flatExitSummary.NetworkType == "IP 类型未知",
-    "Negative risk flags alone must not be presented as an IP type.");
-
-var ispExitSummary = ExitSummaryService.ParseResponse(
-    """{"ip":"203.0.113.8","is_datacenter":false,"is_proxy":false,"is_vpn":false,"company":{"name":"Example Network","type":"isp"},"asn":{"asn":64500,"org":"Example ASN","type":"isp"},"location":{"country":"United States","city":"Los Angeles"}}""");
-Require(ispExitSummary?.NetworkType == "ISP 网络",
-    "An explicit ISP classification must be shown as the IP type.");
-
-var vpnExitSummary = ExitSummaryService.ParseResponse(
-    """{"ip":"203.0.113.8","is_vpn":true,"company":{"type":"isp"},"asn":{"type":"isp"}}""");
-Require(vpnExitSummary?.NetworkType == "VPN 出口",
-    "A positive VPN signal must take priority over the network owner's ISP category.");
+    "The exit summary must display country and city.");
+var regionalExitSummary = ExitSummaryService.ParseResponse(
+    """{"ip":"203.0.113.9","region":"California","country_name":"United States"}""");
+Require(regionalExitSummary?.Location == "United States · California",
+    "The region must be shown when a city is unavailable.");
 
 var darkPalette = ThemeService.GetPalette(AppThemeKind.Dark);
 var lightPalette = ThemeService.GetPalette(AppThemeKind.Light);
@@ -181,12 +170,13 @@ var wpfThread = new Thread(() =>
         Console.WriteLine("WPF validation: rendering light dashboard.");
         mainWindow = new MainWindow(themeService);
         var mainRoot = (Border)mainWindow.Content;
+        Require(mainWindow.FindName("ProductIntroduction") is TextBlock,
+            "The page header must expose the concise product introduction without a second product title.");
         var locationChip = (TextBlock)mainWindow.FindName("ExitLocationChip");
-        var typeChip = (TextBlock)mainWindow.FindName("ExitNetworkTypeChip");
         Require(locationChip.GetBindingExpression(TextBlock.TextProperty)?.ParentBinding.Path.Path == "ExitLocation",
-            "The first exit chip must display the country/region value.");
-        Require(typeChip.GetBindingExpression(TextBlock.TextProperty)?.ParentBinding.Path.Path == "ExitNetworkType",
-            "The second exit chip must display the verified IP type.");
+            "The exit chip must display the city/region value.");
+        Require(mainWindow.FindName("ExitNetworkTypeChip") is null,
+            "The dashboard must not contain an IP type chip.");
         var lightPixels = RenderPixels(mainRoot, 820, 550, Artifact("main-light.png"));
         Require(RequireSolidColor(mainRoot.Background,
                     "The main window root must use a solid canvas brush in light mode.") == Colors.White,

@@ -31,9 +31,16 @@ done
 /usr/bin/grep -Fq 'https://speed.cloudflare.com/' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
 /usr/bin/grep -Fq 'ResolveDefaultExitIpAsync' "$PROJECT_ROOT/Windows/Services/HealthCheckService.cs"
 /usr/bin/grep -Fq 'ExitSummaryService.ResolveAsync' "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
-/usr/bin/grep -Fq 'ReadString(root, "asn_num")' "$PROJECT_ROOT/Windows/Services/ExitSummaryService.cs"
-/usr/bin/grep -Fq 'https://ipapi.co/{Uri.EscapeDataString(address)}/json/' "$PROJECT_ROOT/Windows/Services/ExitSummaryService.cs"
-/usr/bin/grep -Fq 'The current flat ipapi.is payload must produce an exit summary.' "$PROJECT_ROOT/Windows.Tests/Program.cs"
+/usr/bin/grep -Fq 'https://ipapi.co/json/' "$PROJECT_ROOT/Windows/Services/ExitSummaryService.cs"
+/usr/bin/grep -Fq 'The city lookup response must produce an exit summary.' "$PROJECT_ROOT/Windows.Tests/Program.cs"
+if /usr/bin/grep -Eq 'api\.ipapi\.is/\?q=|Network(Type)?|ExitNetwork(Type)?|ASN 未知' \
+  "$PROJECT_ROOT/Windows/Services/ExitSummaryService.cs" \
+  "$PROJECT_ROOT/Windows/Models/ExitSummary.cs" \
+  "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs" \
+  "$PROJECT_ROOT/Windows/MainWindow.xaml"; then
+  echo 'The Windows exit card must contain only the IP and city/region.' >&2
+  exit 1
+fi
 /usr/bin/grep -Fq 'UseShellExecute = true' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
 /usr/bin/grep -Fq 'BubbleDialogWindow.Show' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
 /usr/bin/grep -Fq 'BubbleDialogKind.Browser' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"

@@ -98,10 +98,7 @@
                     <Grid Grid.Row="0">
                         <StackPanel Orientation="Horizontal">
                             <Image Source="Assets/ProxyGauge.png" Width="50" Height="50" RenderOptions.BitmapScalingMode="HighQuality" />
-                            <StackPanel Margin="14,1,0,0" VerticalAlignment="Center">
-                                <TextBlock Text="ProxyGauge" FontFamily="Segoe UI Variable Display, Segoe UI" FontSize="21" FontWeight="SemiBold" />
-                                <TextBlock Text="监控代理连接、出口 IP 与浏览器隐私" Foreground="{DynamicResource MutedTextBrush}" FontSize="12" Margin="0,5,0,0" />
-                            </StackPanel>
+                            <TextBlock x:Name="ProductIntroduction" Text="快速查看代理连接、出口 IP、城市/地区与浏览器隐私状态。" Foreground="{DynamicResource MutedTextBrush}" FontSize="12" Margin="14,0,0,0" VerticalAlignment="Center" />
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                             <Button Style="{StaticResource HeaderIconButtonStyle}" Foreground="{DynamicResource AccentBrush}" AutomationProperties.Name="切换明暗外观" ToolTip="切换浅色 / 深色" Click="ThemeButton_Click">
@@ -216,13 +213,9 @@
                                 </Button>
                                 <TextBlock Grid.Row="1" Text="{Binding ExitAddress}" FontFamily="Cascadia Mono, Consolas" FontSize="18" FontWeight="SemiBold" Margin="0,8,0,0" />
                                 <StackPanel Grid.Row="2" Margin="0,8,0,0">
-                                    <TextBlock Text="{Binding ExitNetwork}" Foreground="{DynamicResource MutedTextBrush}" FontSize="10.5" />
-                                    <StackPanel Orientation="Horizontal" Margin="0,7,0,0">
+                                    <StackPanel Orientation="Horizontal">
                                         <Border Background="{DynamicResource AccentSurfaceBrush}" CornerRadius="8" Padding="9,4">
                                             <TextBlock x:Name="ExitLocationChip" Text="{Binding ExitLocation}" Foreground="{DynamicResource AccentBrush}" FontSize="10.5" FontWeight="SemiBold" />
-                                        </Border>
-                                        <Border Background="{DynamicResource AccentSurfaceBrush}" CornerRadius="8" Padding="9,4" Margin="7,0,0,0">
-                                            <TextBlock x:Name="ExitNetworkTypeChip" Text="{Binding ExitNetworkType}" Foreground="{DynamicResource AccentBrush}" FontSize="10.5" FontWeight="SemiBold" />
                                         </Border>
                                     </StackPanel>
                                 </StackPanel>

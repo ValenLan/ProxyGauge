@@ -7,7 +7,7 @@ APP_SOURCE="$PROJECT_ROOT/Sources/ProxyGaugeApp.swift"
 DASHBOARD_SOURCE="$PROJECT_ROOT/Sources/DashboardView.swift"
 WINDOWS_MAIN="$PROJECT_ROOT/Windows/MainWindow.xaml"
 
-for label in '监控代理连接、出口 IP 与浏览器隐私' '代理状态' '断网保护' '当前出口' 'IP 纯净度' '隐私泄露' '浏览器测速'; do
+for label in '快速查看代理连接、出口 IP、城市/地区与浏览器隐私状态。' '代理状态' '断网保护' '当前出口' 'IP 纯净度' '隐私泄露' '浏览器测速'; do
   /usr/bin/grep -Fq "$label" "$DASHBOARD_SOURCE"
   /usr/bin/grep -Fq "$label" "$WINDOWS_MAIN"
 done
@@ -26,9 +26,7 @@ done
 /usr/bin/grep -Fq 'copiedExitAddress ? "checkmark" : "doc.on.doc"' "$DASHBOARD_SOURCE"
 /usr/bin/grep -Fq 'tint: AppThemePalette.secondaryText' "$DASHBOARD_SOURCE"
 /usr/bin/grep -Fq 'ExitChip(model.exitLocation)' "$DASHBOARD_SOURCE"
-/usr/bin/grep -Fq 'ExitChip(model.exitNetworkType)' "$DASHBOARD_SOURCE"
 /usr/bin/grep -Fq 'x:Name="ExitLocationChip" Text="{Binding ExitLocation}"' "$WINDOWS_MAIN"
-/usr/bin/grep -Fq 'x:Name="ExitNetworkTypeChip" Text="{Binding ExitNetworkType}"' "$WINDOWS_MAIN"
 /usr/bin/grep -Fq 'struct CuteDashboardIcon: View' "$DASHBOARD_SOURCE"
 /usr/bin/grep -Fq 'private struct CuteGlyph: View' "$DASHBOARD_SOURCE"
 /usr/bin/grep -Fq 'case .protection:' "$DASHBOARD_SOURCE"
@@ -37,7 +35,6 @@ done
 /usr/bin/grep -Fq 'dismissOnBackdrop?()' "$DASHBOARD_SOURCE"
 /usr/bin/grep -Fq 'primaryTitle: "继续打开"' "$DASHBOARD_SOURCE"
 /usr/bin/grep -Fq 'ProxyGauge 不会读取或保存页面内容。' "$DASHBOARD_SOURCE"
-/usr/bin/grep -Fq '.font(CloudTypography.headline)' "$DASHBOARD_SOURCE"
 /usr/bin/grep -Fq '.font(CloudTypography.metricLabel)' "$DASHBOARD_SOURCE"
 /usr/bin/grep -Fq '.font(CloudTypography.metricValue(monospaced: true))' "$DASHBOARD_SOURCE"
 /usr/bin/grep -Fq '.font(CloudTypography.actionTitle)' "$DASHBOARD_SOURCE"
@@ -66,6 +63,16 @@ done
 /usr/bin/grep -Fq 'Style="{StaticResource DashboardCardButtonStyle}" Click="SpeedButton_Click"' "$WINDOWS_MAIN"
 /usr/bin/grep -Fq 'https://speed.cloudflare.com/' "$DASHBOARD_SOURCE"
 /usr/bin/grep -Fq 'async let exitResult = execute("exit-summary")' "$APP_SOURCE"
+
+if /usr/bin/grep -Eq 'exitNetwork(Type)?|ExitNetwork(Type)?|IP 类型未知|ASN 未知' "$APP_SOURCE" "$DASHBOARD_SOURCE" "$WINDOWS_MAIN"; then
+  echo 'The exit card must contain only the IP and city/region.' >&2
+  exit 1
+fi
+if /usr/bin/grep -Fq 'Text("ProxyGauge")' "$DASHBOARD_SOURCE" \
+  || /usr/bin/grep -Fq '<TextBlock Text="ProxyGauge" FontFamily=' "$WINDOWS_MAIN"; then
+  echo 'The in-page product title must be replaced by the concise introduction.' >&2
+  exit 1
+fi
 
 if /usr/bin/grep -Fq 'Text("链路检测")' "$DASHBOARD_SOURCE" \
   || /usr/bin/grep -Fq 'Text("规则管理")' "$DASHBOARD_SOURCE" \

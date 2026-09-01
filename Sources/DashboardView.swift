@@ -62,13 +62,9 @@ struct ContentView: View {
                 .interpolation(.high)
                 .frame(width: 50, height: 50)
 
-            VStack(alignment: .leading, spacing: 5) {
-                Text("ProxyGauge")
-                    .font(CloudTypography.headline)
-                Text("监控代理连接、出口 IP 与浏览器隐私")
-                    .font(CloudTypography.headerDetail)
-                    .foregroundStyle(AppThemePalette.secondaryText)
-            }
+            Text("快速查看代理连接、出口 IP、城市/地区与浏览器隐私状态。")
+                .font(CloudTypography.headerDetail)
+                .foregroundStyle(AppThemePalette.secondaryText)
 
             Spacer()
 
@@ -158,14 +154,7 @@ struct ContentView: View {
                 Text(model.exitAddress)
                     .font(CloudTypography.metricValue(monospaced: true))
                     .textSelection(.enabled)
-                Text(model.exitNetwork)
-                    .font(CloudTypography.actionDetail)
-                    .foregroundStyle(AppThemePalette.secondaryText)
-                    .lineLimit(1)
-                HStack(spacing: 8) {
-                    ExitChip(model.exitLocation)
-                    ExitChip(model.exitNetworkType)
-                }
+                ExitChip(model.exitLocation)
             }
             Spacer(minLength: 8)
         }
