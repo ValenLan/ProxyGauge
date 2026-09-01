@@ -21,12 +21,13 @@ cd "$PROJECT_ROOT"
   Sources/ProxyGaugeApp.swift \
   Sources/DashboardView.swift \
   Sources/ExitClipboard.swift \
+  Sources/IPAddressVersion.swift \
   Sources/WindowCapability.swift \
   Sources/UpdateService.swift \
   Tests/DashboardSnapshot.swift \
   -o "$TEMP_ROOT/dashboard-renderer"
 case "$STATE" in
-  browser-prompt|browser-prompt-dark|connection-setup|connection-setup-dark|dashboard-dark|dashboard-compact|dashboard-compact-dark|dashboard-wide|dashboard-wide-dark|dashboard-fullscreen|dashboard-fullscreen-dark)
+  browser-prompt|browser-prompt-dark|connection-setup|connection-setup-dark|dashboard-dark|dashboard-ipv6|dashboard-ipv6-dark|dashboard-compact|dashboard-compact-dark|dashboard-wide|dashboard-wide-dark|dashboard-fullscreen|dashboard-fullscreen-dark)
     "$TEMP_ROOT/dashboard-renderer" "$OUTPUT" "$STATE"
     ;;
   *)

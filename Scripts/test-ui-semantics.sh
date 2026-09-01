@@ -6,6 +6,13 @@ PROJECT_ROOT=$(cd "$SCRIPT_DIR/.." && /bin/pwd)
 APP_SOURCE="$PROJECT_ROOT/Sources/ProxyGaugeApp.swift"
 DASHBOARD_SOURCE="$PROJECT_ROOT/Sources/DashboardView.swift"
 WINDOWS_MAIN="$PROJECT_ROOT/Windows/MainWindow.xaml"
+BACKEND="$PROJECT_ROOT/Scripts/proxygauge-backend.sh"
+TEMP_ROOT=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/proxygauge-ip-version-test.XXXXXX")
+/bin/mkdir -p "$TEMP_ROOT/module-cache"
+cleanup() {
+  /bin/rm -rf "$TEMP_ROOT"
+}
+trap cleanup EXIT
 
 for label in '快速查看代理连接、出口 IP、城市/地区与浏览器隐私状态。' '代理状态' '断网保护' '当前出口' 'IP 纯净度' '隐私泄露' '浏览器测速'; do
   /usr/bin/grep -Fq "$label" "$DASHBOARD_SOURCE"
@@ -25,7 +32,10 @@ done
 /usr/bin/grep -Fq 'ExitClipboard.copy(model.exitAddress)' "$DASHBOARD_SOURCE"
 /usr/bin/grep -Fq 'copiedExitAddress ? "checkmark" : "doc.on.doc"' "$DASHBOARD_SOURCE"
 /usr/bin/grep -Fq 'tint: AppThemePalette.secondaryText' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq 'HStack(spacing: 6)' "$DASHBOARD_SOURCE"
 /usr/bin/grep -Fq 'ExitChip(model.exitLocation)' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq 'IPAddressVersion.parse(model.exitAddress)' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq 'ExitChip(ipVersion.rawValue)' "$DASHBOARD_SOURCE"
 /usr/bin/grep -Fq 'x:Name="ExitLocationChip" Text="{Binding ExitLocation}"' "$WINDOWS_MAIN"
 /usr/bin/grep -Fq 'VerticalScrollBarVisibility="Hidden"' "$WINDOWS_MAIN"
 /usr/bin/grep -Fq 'struct CuteDashboardIcon: View' "$DASHBOARD_SOURCE"
@@ -66,7 +76,7 @@ done
 /usr/bin/grep -Fq 'async let exitResult = execute("exit-summary")' "$APP_SOURCE"
 
 if /usr/bin/grep -Eq 'exitNetwork(Type)?|ExitNetwork(Type)?|IP 类型未知|ASN 未知' "$APP_SOURCE" "$DASHBOARD_SOURCE" "$WINDOWS_MAIN"; then
-  echo 'The exit card must contain only the IP and city/region.' >&2
+  echo 'The exit card must not restore ASN or IP network-type fields.' >&2
   exit 1
 fi
 if /usr/bin/grep -Fq 'Text("ProxyGauge")' "$DASHBOARD_SOURCE" \
@@ -104,12 +114,26 @@ if /usr/bin/grep -Fq 'Button("稍后", action: deferSetup)' "$APP_SOURCE"; then
   exit 1
 fi
 
-if /usr/bin/grep -Eq 'exitProtocol|ExitProtocol|普通公网' \
+if /usr/bin/grep -Fq '普通公网' \
   "$APP_SOURCE" "$DASHBOARD_SOURCE" "$WINDOWS_MAIN" \
   "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs" \
   "$PROJECT_ROOT/Windows/Services/ExitSummaryService.cs"; then
-  echo 'The exit card must show country/region plus a verified IP type, never protocol or generic public network.' >&2
+  echo 'The exit card must never infer a generic public network type.' >&2
   exit 1
 fi
+
+if /usr/bin/grep -Eq 'api\.ipapi\.is/\?q=|PROXYGAUGE_EXIT_DETAIL_JSON|printf .network\\t' "$BACKEND"; then
+  echo 'The local IPv4/IPv6 label must not add an IP network-type request.' >&2
+  exit 1
+fi
+
+/usr/bin/xcrun swiftc \
+  -target arm64-apple-macosx26.0 \
+  -module-cache-path "$TEMP_ROOT/module-cache" \
+  -parse-as-library \
+  "$PROJECT_ROOT/Sources/IPAddressVersion.swift" \
+  "$PROJECT_ROOT/Tests/IPAddressVersionCheck.swift" \
+  -o "$TEMP_ROOT/ip-address-version-check"
+"$TEMP_ROOT/ip-address-version-check"
 
 echo 'ProxyGauge dashboard semantics tests passed.'

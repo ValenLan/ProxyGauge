@@ -118,12 +118,31 @@ resolved_exit_ip=$(PROXYGAUGE_CONFIG=/dev/null \
 [ "$resolved_exit_ip" = "203.0.113.44" ]
 /usr/bin/grep -Fq -- '--proxy http://127.0.0.1:7898' "$TEMP_DIR/fake-curl.log"
 
+/usr/bin/printf '%s\n' \
+  '#!/bin/bash' \
+  '/usr/bin/printf "%s\\n" "2001:db8:85a3::8a2e:370:7334"' > "$TEMP_DIR/fake-curl-ipv6"
+/bin/chmod 755 "$TEMP_DIR/fake-curl-ipv6"
+resolved_ipv6=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_MIXED=127.0.0.1:7898 \
+  PROXYGAUGE_CURL="$TEMP_DIR/fake-curl-ipv6" \
+  /bin/bash "$BACKEND" exit-ip)
+[ "$resolved_ipv6" = "2001:db8:85a3::8a2e:370:7334" ]
+
 exit_summary=$(PROXYGAUGE_CONFIG=/dev/null \
   PROXYGAUGE_MIXED=127.0.0.1:7898 \
   PROXYGAUGE_EXIT_SUMMARY_JSON="$SCRIPT_DIR/../Tests/Fixtures/ipapi-co-summary.json" \
   /bin/bash "$BACKEND" exit-summary)
 /usr/bin/printf '%s\n' "$exit_summary" | /usr/bin/grep -Fq $'ip\t203.0.113.8'
 /usr/bin/printf '%s\n' "$exit_summary" | /usr/bin/grep -Fq $'location\tUnited States Los Angeles'
+
+ipv6_exit_summary=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_MIXED=127.0.0.1:7898 \
+  PROXYGAUGE_EXIT_SUMMARY_JSON="$SCRIPT_DIR/../Tests/Fixtures/ipapi-co-summary-ipv6.json" \
+  /bin/bash "$BACKEND" exit-summary)
+/usr/bin/printf '%s\n' "$ipv6_exit_summary" \
+  | /usr/bin/grep -Fq $'ip\t2001:db8:85a3::8a2e:370:7334'
+/usr/bin/printf '%s\n' "$ipv6_exit_summary" \
+  | /usr/bin/grep -Fq $'location\tUnited States Seattle'
 if /usr/bin/printf '%s\n' "$exit_summary" | /usr/bin/grep -Eq $'^(asn|network)\t'; then
   echo '出口摘要只能输出 IP 与城市/地区' >&2
   exit 1
@@ -136,17 +155,24 @@ fi
 
 /usr/bin/printf '%s\n' \
   '#!/bin/bash' \
-  '/usr/bin/printf "%s\\n" "not-an-ip"' > "$TEMP_DIR/failing-curl"
+  '/usr/bin/printf "%s\\n" "$PROXYGAUGE_INVALID_IP"' > "$TEMP_DIR/failing-curl"
 /bin/chmod 755 "$TEMP_DIR/failing-curl"
-if failed_exit_output=$(PROXYGAUGE_CONFIG=/dev/null \
-  PROXYGAUGE_MIXED=127.0.0.1:7898 \
-  PROXYGAUGE_CURL="$TEMP_DIR/failing-curl" \
-  /bin/bash "$BACKEND" exit-ip 2>&1); then
-  echo '无有效出口 IP 时 exit-ip 应返回失败' >&2
-  exit 1
-fi
-/usr/bin/printf '%s\n' "$failed_exit_output" \
-  | /usr/bin/grep -Fq '无法经当前本地代理获取出口 IP'
+for invalid_exit_ip in \
+  not-an-ip \
+  203.0.113.999 \
+  2001:db8::1::2 \
+  1:2:3:4:5:6:7:8:9; do
+  if failed_exit_output=$(PROXYGAUGE_CONFIG=/dev/null \
+    PROXYGAUGE_MIXED=127.0.0.1:7898 \
+    PROXYGAUGE_CURL="$TEMP_DIR/failing-curl" \
+    PROXYGAUGE_INVALID_IP="$invalid_exit_ip" \
+    /bin/bash "$BACKEND" exit-ip 2>&1); then
+    echo "无效出口 IP $invalid_exit_ip 不得通过校验" >&2
+    exit 1
+  fi
+  /usr/bin/printf '%s\n' "$failed_exit_output" \
+    | /usr/bin/grep -Fq '无法经当前本地代理获取出口 IP'
+done
 
 assert_discovery() {
   local expected output

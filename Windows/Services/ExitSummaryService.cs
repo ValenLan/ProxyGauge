@@ -36,7 +36,7 @@ public static class ExitSummaryService
 
     public static ExitSummary? ParseResponse(string? summaryJson, string? fallbackAddress = null)
     {
-        var address = IPAddress.TryParse(fallbackAddress, out _) ? fallbackAddress : null;
+        var address = ExitSummary.IsSupportedAddress(fallbackAddress) ? fallbackAddress : null;
         string? country = null;
         string? cityOrRegion = null;
 
@@ -47,7 +47,7 @@ public static class ExitSummaryService
                 using var document = JsonDocument.Parse(summaryJson);
                 var root = document.RootElement;
                 var responseAddress = ReadString(root, "ip");
-                if (IPAddress.TryParse(responseAddress, out _))
+                if (ExitSummary.IsSupportedAddress(responseAddress))
                 {
                     address = responseAddress;
                     country = ReadString(root, "country_name")

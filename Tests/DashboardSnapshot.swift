@@ -44,7 +44,9 @@ struct DashboardSnapshot {
             value: "已开启",
             level: .ok
         )
-        model.exitAddress = "198.51.100.24"
+        model.exitAddress = snapshotState.hasPrefix("dashboard-ipv6")
+            ? "2001:db8:85a3::8a2e:370:7334"
+            : "198.51.100.24"
         model.exitLocation = "美国 · 洛杉矶"
         model.showConnectionSetup = snapshotState.hasPrefix("connection-setup")
 

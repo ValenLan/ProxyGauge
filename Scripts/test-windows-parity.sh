@@ -32,13 +32,29 @@ done
 /usr/bin/grep -Fq 'ResolveDefaultExitIpAsync' "$PROJECT_ROOT/Windows/Services/HealthCheckService.cs"
 /usr/bin/grep -Fq 'ExitSummaryService.ResolveAsync' "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
 /usr/bin/grep -Fq 'https://ipapi.co/json/' "$PROJECT_ROOT/Windows/Services/ExitSummaryService.cs"
+if [[ $(/usr/bin/grep -c 'https://' "$PROJECT_ROOT/Windows/Services/ExitSummaryService.cs") -ne 1 ]]; then
+  echo 'The Windows exit summary must not add another upstream request.' >&2
+  exit 1
+fi
 /usr/bin/grep -Fq 'The city lookup response must produce an exit summary.' "$PROJECT_ROOT/Windows.Tests/Program.cs"
-if /usr/bin/grep -Eq 'api\.ipapi\.is/\?q=|Network(Type)?|ExitNetwork(Type)?|ASN 未知' \
+/usr/bin/grep -Fq 'public static bool IsSupportedAddress(string? address)' "$PROJECT_ROOT/Windows/Models/ExitSummary.cs"
+/usr/bin/grep -Fq 'IPAddress.TryParse(address, out var parsed)' "$PROJECT_ROOT/Windows/Models/ExitSummary.cs"
+/usr/bin/grep -Fq 'return "IPv4";' "$PROJECT_ROOT/Windows/Models/ExitSummary.cs"
+/usr/bin/grep -Fq 'parsed.AddressFamily == AddressFamily.InterNetworkV6' "$PROJECT_ROOT/Windows/Models/ExitSummary.cs"
+/usr/bin/grep -Fq 'x:Name="ExitIpVersionChip" Text="{Binding ExitIpVersion}"' "$PROJECT_ROOT/Windows/MainWindow.xaml"
+/usr/bin/grep -Fq 'Visibility="{Binding HasExitIpVersion, Converter={StaticResource BooleanToVisibilityConverter}}"' "$PROJECT_ROOT/Windows/MainWindow.xaml"
+/usr/bin/grep -Fq 'An invalid local address must never be inferred as IPv4 or IPv6.' "$PROJECT_ROOT/Windows.Tests/Program.cs"
+if /usr/bin/grep -Eq 'api\.ipapi\.is/\?q=|(^|[^[:alnum:]_])(Network(Type)?|ExitNetwork(Type)?)([^[:alnum:]_]|$)|ASN 未知' \
   "$PROJECT_ROOT/Windows/Services/ExitSummaryService.cs" \
   "$PROJECT_ROOT/Windows/Models/ExitSummary.cs" \
   "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs" \
   "$PROJECT_ROOT/Windows/MainWindow.xaml"; then
-  echo 'The Windows exit card must contain only the IP and city/region.' >&2
+  echo 'The Windows exit card must not restore upstream network type or ASN data.' >&2
+  exit 1
+fi
+if /usr/bin/grep -Eq 'Read(String|NestedString).*"(version|type|asn|org)"' \
+  "$PROJECT_ROOT/Windows/Services/ExitSummaryService.cs"; then
+  echo 'The Windows exit summary must derive the IP version locally instead of reading upstream metadata.' >&2
   exit 1
 fi
 /usr/bin/grep -Fq 'UseShellExecute = true' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"

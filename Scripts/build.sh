@@ -26,6 +26,7 @@ fi
   "$PROJECT_ROOT/Sources/ProxyGaugeApp.swift" \
   "$PROJECT_ROOT/Sources/DashboardView.swift" \
   "$PROJECT_ROOT/Sources/ExitClipboard.swift" \
+  "$PROJECT_ROOT/Sources/IPAddressVersion.swift" \
   "$PROJECT_ROOT/Sources/WindowCapability.swift" \
   "$PROJECT_ROOT/Sources/UpdateService.swift" \
   -o "$APP/Contents/MacOS/ProxyGauge"

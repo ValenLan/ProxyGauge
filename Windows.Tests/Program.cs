@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Reflection;
 using ProxyGauge;
 using ProxyGauge.Models;
 using ProxyGauge.Services;
@@ -100,23 +101,38 @@ Require(ThemeService.ResolveTheme(false, null) == AppThemeKind.Light,
 Require(ThemeService.ResolveTheme(true, "dark") == AppThemeKind.HighContrast,
     "High contrast must take priority over the manual appearance choice.");
 
-Require(UpdateService.CompareVersions("1.6.1", "1.6.0") > 0,
+Require(UpdateService.CompareVersions("1.6.2", "1.6.1") > 0,
     "A newer semantic version must be detected.");
 Require(UpdateService.CompareVersions("1.5.7", "1.5.7") == 0,
     "Equal semantic versions must not trigger an update.");
 var checksum = new string('a', 64);
-Require(UpdateService.FindChecksum($"{checksum}  ProxyGauge-1.6.1-win-x64.msi\n", "ProxyGauge-1.6.1-win-x64.msi") == checksum,
+Require(UpdateService.FindChecksum($"{checksum}  ProxyGauge-1.6.2-win-x64.msi\n", "ProxyGauge-1.6.2-win-x64.msi") == checksum,
     "The updater must select the exact MSI checksum.");
 
 var flatExitSummary = ExitSummaryService.ParseResponse(
-    """{"ip":"203.0.113.8","city":"Los Angeles","region":"California","country":"US","country_name":"United States","asn":"AS64500","org":"Example ASN"}""");
+    """{"ip":"203.0.113.8","city":"Los Angeles","region":"California","country":"US","country_name":"United States","version":"IPv6","type":"hosting","asn":"AS64500","org":"Example ASN"}""");
 Require(flatExitSummary is not null, "The city lookup response must produce an exit summary.");
 Require(flatExitSummary!.Location == "United States · Los Angeles",
     "The exit summary must display country and city.");
+Require(flatExitSummary.IpVersion == "IPv4",
+    "A parsed IPv4 exit address must produce the local IPv4 label and ignore conflicting upstream metadata.");
 var regionalExitSummary = ExitSummaryService.ParseResponse(
     """{"ip":"203.0.113.9","region":"California","country_name":"United States"}""");
 Require(regionalExitSummary?.Location == "United States · California",
     "The region must be shown when a city is unavailable.");
+var ipv6ExitSummary = ExitSummaryService.ParseResponse(
+    """{"ip":"2001:db8::24","city":"Seattle","country_name":"United States"}""");
+Require(ipv6ExitSummary?.IpVersion == "IPv6",
+    "A parsed IPv6 exit address must produce the local IPv6 label.");
+Require(ExitSummaryService.ParseResponse(
+        """{"ip":"not-an-ip","city":"Seattle","country_name":"United States"}""") is null,
+    "An invalid upstream address must not produce an exit summary or protocol label.");
+Require(new ExitSummary("not-an-ip", "位置未知").IpVersion is null,
+    "An invalid local address must never be inferred as IPv4 or IPv6.");
+Require(new ExitSummary("127.1", "位置未知").IpVersion is null &&
+        new ExitSummary("198.51.100.024", "位置未知").IpVersion is null &&
+        new ExitSummary("fe80::1%12", "位置未知").IpVersion is null,
+    "Non-canonical, zero-padded, or scoped addresses must not receive a protocol label.");
 
 var darkPalette = ThemeService.GetPalette(AppThemeKind.Dark);
 var lightPalette = ThemeService.GetPalette(AppThemeKind.Light);
@@ -178,14 +194,44 @@ var wpfThread = new Thread(() =>
         var locationChip = (TextBlock)mainWindow.FindName("ExitLocationChip");
         Require(locationChip.GetBindingExpression(TextBlock.TextProperty)?.ParentBinding.Path.Path == "ExitLocation",
             "The exit chip must display the city/region value.");
+        var ipVersionChip = (TextBlock)mainWindow.FindName("ExitIpVersionChip");
+        Require(ipVersionChip.GetBindingExpression(TextBlock.TextProperty)?.ParentBinding.Path.Path == "ExitIpVersion",
+            "The protocol chip must display the IP version derived locally from the exit address.");
+        Require(locationChip.Parent is Border locationBorder &&
+                ipVersionChip.Parent is Border groupedIpVersionBorder &&
+                ReferenceEquals(locationBorder.Parent, groupedIpVersionBorder.Parent) &&
+                locationBorder.Parent is StackPanel { Orientation: Orientation.Horizontal },
+            "The city/region and IP version chips must remain visually grouped side by side.");
+        var ipVersionBorder = (Border)mainWindow.FindName("ExitIpVersionBorder");
+        Require(ipVersionBorder.GetBindingExpression(UIElement.VisibilityProperty)?.ParentBinding.Path.Path == "HasExitIpVersion",
+            "The protocol chip must be hidden while no valid exit address is available.");
+        mainRoot.Measure(new Size(820, 550));
+        mainRoot.Arrange(new Rect(0, 0, 820, 550));
+        mainRoot.UpdateLayout();
+        Require(ipVersionBorder.Visibility == Visibility.Collapsed,
+            "The unavailable dashboard must not render a placeholder protocol chip.");
         Require(mainWindow.FindName("ExitNetworkTypeChip") is null,
             "The dashboard must not contain an IP type chip.");
+
+        var mainViewModel = (ProxyGauge.ViewModels.MainViewModel)mainWindow.DataContext;
+        var applyExit = typeof(ProxyGauge.ViewModels.MainViewModel).GetMethod(
+            "ApplyExit", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("The deterministic WPF test could not locate ApplyExit.");
+        applyExit.Invoke(mainViewModel, [new ExitSummary("198.51.100.24", "美国 · 洛杉矶")]);
+        Require(ipVersionChip.Text == "IPv4" && ipVersionBorder.Visibility == Visibility.Visible,
+            "A valid IPv4 exit must render the local protocol chip.");
         var lightPixels = RenderPixels(mainRoot, 820, 550, Artifact("main-light.png"));
         Require(RequireSolidColor(mainRoot.Background,
                     "The main window root must use a solid canvas brush in light mode.") == Colors.White,
             "The already-created main window must resolve the light canvas to white.");
         Require(CountExactColor(lightPixels, Colors.White) > 200_000,
             "The Windows-rendered light dashboard must contain its white canvas and surfaces.");
+
+        applyExit.Invoke(mainViewModel, [new ExitSummary("2001:db8:85a3::8a2e:370:7334", "美国 · 洛杉矶")]);
+        RenderPixels(mainRoot, 820, 550, Artifact("main-ipv6.png"));
+        Require(ipVersionChip.Text == "IPv6" && ipVersionBorder.Visibility == Visibility.Visible,
+            "A valid IPv6 exit must render the local protocol chip without changing the network request.");
+        applyExit.Invoke(mainViewModel, [new ExitSummary("198.51.100.24", "美国 · 洛杉矶")]);
 
         var chevronGeometry = app.Resources["IconChevron"];
         var chevrons = VisualDescendants(mainRoot)

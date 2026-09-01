@@ -88,6 +88,57 @@ valid_local_endpoint() {
   [ "$port" -gt 0 ] && [ "$port" -lt 65536 ]
 }
 
+valid_ipv4_address() {
+  local address="$1" octet
+  [[ "$address" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || return 1
+
+  local IFS=.
+  set -- $address
+  [ "$#" -eq 4 ] || return 1
+  for octet in "$@"; do
+    case "$octet" in
+      0) ;;
+      0*) return 1 ;;
+    esac
+    [ "$octet" -le 255 ] || return 1
+  done
+}
+
+valid_ipv6_address() {
+  local address="$1" remainder group compressed=0 segments=0
+  [ -n "$address" ] && [ "${#address}" -le 39 ] || return 1
+  case "$address" in
+    *[!0-9A-Fa-f:]*|*:::*) return 1 ;;
+    :*) [[ "$address" == ::* ]] || return 1 ;;
+  esac
+  case "$address" in
+    *:) [[ "$address" == *:: ]] || return 1 ;;
+  esac
+
+  if [[ "$address" == *::* ]]; then
+    remainder=${address#*::}
+    [[ "$remainder" != *::* ]] || return 1
+    compressed=1
+  fi
+
+  local IFS=:
+  for group in $address; do
+    [ -n "$group" ] || continue
+    [ "${#group}" -le 4 ] || return 1
+    segments=$((segments + 1))
+  done
+
+  if [ "$compressed" -eq 1 ]; then
+    [ "$segments" -lt 8 ]
+  else
+    [ "$segments" -eq 8 ]
+  fi
+}
+
+valid_ip_address() {
+  valid_ipv4_address "$1" || valid_ipv6_address "$1"
+}
+
 resolve_default_exit_ip() {
   local api value
 
@@ -104,8 +155,7 @@ resolve_default_exit_ip() {
     value=$("$CURL" -sS --retry 1 --retry-all-errors --retry-delay 1 \
       --proxy "http://$MIXED" --max-time 6 "$api" 2>/dev/null \
       | /usr/bin/tr -d '[:space:]')
-    if /usr/bin/printf '%s' "$value" \
-      | /usr/bin/grep -qE '^[0-9]{1,3}(\.[0-9]{1,3}){3}$'; then
+    if valid_ip_address "$value"; then
       /usr/bin/printf '%s\n' "$value"
       return 0
     fi
@@ -146,8 +196,7 @@ exit_summary() {
 
   summary_ip=$(json_value ip || true)
   ip="$summary_ip"
-  if ! /usr/bin/printf '%s' "$summary_ip" \
-    | /usr/bin/grep -qE '^[0-9]{1,3}(\.[0-9]{1,3}){3}$'; then
+  if ! valid_ip_address "$summary_ip"; then
     json=""
     ip=$(resolve_default_exit_ip 2>/dev/null || true)
   fi

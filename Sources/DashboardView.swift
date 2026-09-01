@@ -154,7 +154,12 @@ struct ContentView: View {
                 Text(model.exitAddress)
                     .font(CloudTypography.metricValue(monospaced: true))
                     .textSelection(.enabled)
-                ExitChip(model.exitLocation)
+                HStack(spacing: 6) {
+                    ExitChip(model.exitLocation)
+                    if let ipVersion = IPAddressVersion.parse(model.exitAddress) {
+                        ExitChip(ipVersion.rawValue)
+                    }
+                }
             }
             Spacer(minLength: 8)
         }

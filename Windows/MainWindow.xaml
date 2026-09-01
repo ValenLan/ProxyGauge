@@ -12,6 +12,7 @@
     </shell:WindowChrome.WindowChrome>
 
     <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
         <Style x:Key="DashboardCardButtonStyle" TargetType="Button">
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
             <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
@@ -216,6 +217,10 @@
                                     <StackPanel Orientation="Horizontal">
                                         <Border Background="{DynamicResource AccentSurfaceBrush}" CornerRadius="8" Padding="9,4">
                                             <TextBlock x:Name="ExitLocationChip" Text="{Binding ExitLocation}" Foreground="{DynamicResource AccentBrush}" FontSize="10.5" FontWeight="SemiBold" />
+                                        </Border>
+                                        <Border x:Name="ExitIpVersionBorder" Background="{DynamicResource AccentSurfaceBrush}" CornerRadius="8" Padding="9,4" Margin="8,0,0,0"
+                                                Visibility="{Binding HasExitIpVersion, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <TextBlock x:Name="ExitIpVersionChip" Text="{Binding ExitIpVersion}" Foreground="{DynamicResource AccentBrush}" FontSize="10.5" FontWeight="SemiBold" />
                                         </Border>
                                     </StackPanel>
                                 </StackPanel>
