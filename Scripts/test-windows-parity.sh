@@ -6,6 +6,7 @@ PROJECT_ROOT=$(/usr/bin/cd "$([ -n "${BASH_SOURCE[0]:-}" ] && /usr/bin/dirname "
 for xaml in \
   Windows/App.xaml \
   Windows/MainWindow.xaml \
+  Windows/BubbleDialogWindow.xaml \
   Windows/SettingsWindow.xaml \
   Windows/HealthReportWindow.xaml \
   Windows/DetectionPlanWindow.xaml \
@@ -25,24 +26,52 @@ done
 /usr/bin/grep -Fq 'https://ipcheck.ing/?hl=zh' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
 /usr/bin/grep -Fq 'https://browserleaks.com/ip' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
 /usr/bin/grep -Fq 'https://www.ipqualityscore.com/free-ip-lookup-proxy-vpn-test' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
-/usr/bin/grep -Fq 'https://scamalytics.com/ip' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
-/usr/bin/grep -Fq 'https://www.abuseipdb.com/check/' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'https://browserleaks.com/webrtc' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'https://www.dnsleaktest.com/' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'https://speed.cloudflare.com/' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
 /usr/bin/grep -Fq 'ResolveDefaultExitIpAsync' "$PROJECT_ROOT/Windows/Services/HealthCheckService.cs"
-/usr/bin/grep -Fq 'https://scamalytics.com/ip/{escapedIp}' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
-/usr/bin/grep -Fq 'https://www.abuseipdb.com/check/{escapedIp}' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'ExitSummaryService.ResolveAsync' "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
+/usr/bin/grep -Fq 'ReadString(root, "asn_num")' "$PROJECT_ROOT/Windows/Services/ExitSummaryService.cs"
+/usr/bin/grep -Fq 'https://ipapi.co/{Uri.EscapeDataString(address)}/json/' "$PROJECT_ROOT/Windows/Services/ExitSummaryService.cs"
+/usr/bin/grep -Fq 'The current flat ipapi.is payload must produce an exit summary.' "$PROJECT_ROOT/Windows.Tests/Program.cs"
 /usr/bin/grep -Fq 'UseShellExecute = true' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
-/usr/bin/grep -Fq 'MessageBoxButton.YesNo' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
-/usr/bin/grep -Fq '部分网站可能要求人机验证' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
-/usr/bin/grep -Fq '各站结果不会计入链路分' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
-/usr/bin/grep -Fq 'PlanButton_Click' "$PROJECT_ROOT/Windows/MainWindow.xaml"
-/usr/bin/grep -Fq 'AdvancedButton_Click' "$PROJECT_ROOT/Windows/MainWindow.xaml"
+/usr/bin/grep -Fq 'BubbleDialogWindow.Show' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'BubbleDialogKind.Browser' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'CornerRadius="22"' "$PROJECT_ROOT/Windows/BubbleDialogWindow.xaml"
+/usr/bin/grep -Fq 'Click="IpPurityButton_Click"' "$PROJECT_ROOT/Windows/MainWindow.xaml"
+/usr/bin/grep -Fq 'Click="PrivacyButton_Click"' "$PROJECT_ROOT/Windows/MainWindow.xaml"
+/usr/bin/grep -Fq 'Click="SpeedButton_Click"' "$PROJECT_ROOT/Windows/MainWindow.xaml"
 /usr/bin/grep -Fq 'Source="Assets/ProxyGauge.png"' "$PROJECT_ROOT/Windows/MainWindow.xaml"
 /usr/bin/grep -Fq 'RenderOptions.BitmapScalingMode="HighQuality"' "$PROJECT_ROOT/Windows/MainWindow.xaml"
+/usr/bin/grep -Fq 'MinWidth="760" MinHeight="550"' "$PROJECT_ROOT/Windows/MainWindow.xaml"
+/usr/bin/grep -Fq 'VerticalContentAlignment="Center"' "$PROJECT_ROOT/Windows/MainWindow.xaml"
+/usr/bin/grep -Fq 'Margin="22,20,22,20" MaxWidth="920" HorizontalAlignment="Stretch"' "$PROJECT_ROOT/Windows/MainWindow.xaml"
+/usr/bin/grep -Fq '<ColumnDefinition Width="12" />' "$PROJECT_ROOT/Windows/MainWindow.xaml"
+/usr/bin/grep -Fq '<ColumnDefinition Width="248" />' "$PROJECT_ROOT/Windows/MainWindow.xaml"
+/usr/bin/grep -Fq '<Grid Width="52" Height="52" VerticalAlignment="Center">' "$PROJECT_ROOT/Windows/MainWindow.xaml"
+/usr/bin/grep -Fq '<RowDefinition Height="112" />' "$PROJECT_ROOT/Windows/MainWindow.xaml"
 /usr/bin/grep -Fq 'Color="{DynamicResource CanvasColor}"' "$PROJECT_ROOT/Windows/App.xaml"
-/usr/bin/grep -Fq 'SystemEvents.UserPreferenceChanged' "$PROJECT_ROOT/Windows/Services/ThemeService.cs"
-/usr/bin/grep -Fq 'AppsUseLightTheme' "$PROJECT_ROOT/Windows/Services/ThemeService.cs"
+/usr/bin/grep -Fq '<Color x:Key="CanvasColor">#181A1C</Color>' "$PROJECT_ROOT/Windows/App.xaml"
+/usr/bin/grep -Fq '<Color x:Key="SurfaceColor">#202324</Color>' "$PROJECT_ROOT/Windows/App.xaml"
+/usr/bin/grep -Fq '<Color x:Key="TextColor">#E7EAE9</Color>' "$PROJECT_ROOT/Windows/App.xaml"
+/usr/bin/grep -Fq '<Color x:Key="AccentColor">#36EC8F</Color>' "$PROJECT_ROOT/Windows/App.xaml"
+/usr/bin/grep -Fq 'ThemeValueName = "Theme"' "$PROJECT_ROOT/Windows/Services/ThemeService.cs"
+/usr/bin/grep -Fq '["CanvasColor"] = "#FF181A1C"' "$PROJECT_ROOT/Windows/Services/ThemeService.cs"
+/usr/bin/grep -Fq '["SurfaceColor"] = "#FF202324"' "$PROJECT_ROOT/Windows/Services/ThemeService.cs"
+/usr/bin/grep -Fq '["TextColor"] = "#FFE7EAE9"' "$PROJECT_ROOT/Windows/Services/ThemeService.cs"
+/usr/bin/grep -Fq '["AccentColor"] = "#FF36EC8F"' "$PROJECT_ROOT/Windows/Services/ThemeService.cs"
+/usr/bin/grep -Fq '["CanvasColor"] = "#FFFFFFFF"' "$PROJECT_ROOT/Windows/Services/ThemeService.cs"
+/usr/bin/grep -Fq 'ApplyPalette(application.Resources, GetPalette(CurrentTheme));' "$PROJECT_ROOT/Windows/Services/ThemeService.cs"
+/usr/bin/grep -Fq 'resources[brushKey] = new SolidColorBrush(color);' "$PROJECT_ROOT/Windows/Services/ThemeService.cs"
+/usr/bin/grep -Fq 'public AppThemeKind ToggleTheme()' "$PROJECT_ROOT/Windows/Services/ThemeService.cs"
 /usr/bin/grep -Fq 'AppThemeKind.HighContrast' "$PROJECT_ROOT/Windows/Services/ThemeService.cs"
-/usr/bin/grep -Fq 'Windows dark appearance must select the dark palette.' "$PROJECT_ROOT/Windows.Tests/Program.cs"
+/usr/bin/grep -Fq 'A saved dark choice must select the dark palette.' "$PROJECT_ROOT/Windows.Tests/Program.cs"
+/usr/bin/grep -Fq 'UpdateService.CompareVersions' "$PROJECT_ROOT/Windows.Tests/Program.cs"
+/usr/bin/grep -Fq 'SHA256.HashDataAsync' "$PROJECT_ROOT/Windows/Services/UpdateService.cs"
+/usr/bin/grep -Fq 'using System.Net.Http;' "$PROJECT_ROOT/Windows/Services/UpdateService.cs"
+/usr/bin/grep -Fq 'using System.IO;' "$PROJECT_ROOT/Windows/Services/UpdateService.cs"
+/usr/bin/grep -Fq 'msiexec.exe' "$PROJECT_ROOT/Windows/Services/UpdateService.cs"
+/usr/bin/grep -Fq 'Content="检查更新"' "$PROJECT_ROOT/Windows/SettingsWindow.xaml"
 /usr/bin/grep -Fq 'Windows.Tests/ProxyGauge.Windows.Tests.csproj' "$PROJECT_ROOT/.github/workflows/build.yml"
 /usr/bin/grep -Fq 'Remote hostnames must be rejected.' "$PROJECT_ROOT/Windows.Tests/Program.cs"
 /usr/bin/grep -Fq '<TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>' \
@@ -118,6 +147,11 @@ if [ "$(/usr/bin/grep -Fc 'Advertise="yes"' "$PROJECT_ROOT/Windows.Installer/Pac
   echo 'Each Windows shortcut must use the executable component as its advertised target.' >&2
   exit 1
 fi
+if [ "$(/usr/bin/grep -Fc 'Icon="ProxyGaugeIcon.ico"' "$PROJECT_ROOT/Windows.Installer/Package.wxs")" -ne 2 ] \
+  || [ "$(/usr/bin/grep -Fc 'IconIndex="0"' "$PROJECT_ROOT/Windows.Installer/Package.wxs")" -ne 2 ]; then
+  echo 'Each Windows shortcut must explicitly reference the packaged ProxyGauge icon.' >&2
+  exit 1
+fi
 /usr/bin/grep -Fq '<StandardDirectory Id="ProgramMenuFolder" />' \
   "$PROJECT_ROOT/Windows.Installer/Package.wxs"
 /usr/bin/grep -Fq '<Icon Id="ProxyGaugeIcon.ico"' \
@@ -147,6 +181,11 @@ if /usr/bin/grep -Eq 'ProxyGauge-.*win-(x64|arm64)\.zip' "$PROJECT_ROOT/.github/
   exit 1
 fi
 
+if /usr/bin/grep -Eq 'MaxWidth="1000"|MaxHeight="550"' "$PROJECT_ROOT/Windows/MainWindow.xaml"; then
+  echo 'The Windows dashboard must remain maximizable.' >&2
+  exit 1
+fi
+
 if /usr/bin/grep -Fq '(A;;GRGW;;;AU)' "$PROJECT_ROOT/Windows.Guard/Guard.cpp"; then
   echo 'Authenticated users must not receive FILE_GENERIC_WRITE on the Guard pipe.' >&2
   exit 1
@@ -162,11 +201,30 @@ fi
 
 if /usr/bin/grep -E '#[0-9A-Fa-f]{6,8}' \
   "$PROJECT_ROOT/Windows/MainWindow.xaml" \
+  "$PROJECT_ROOT/Windows/BubbleDialogWindow.xaml" \
   "$PROJECT_ROOT/Windows/SettingsWindow.xaml" \
   "$PROJECT_ROOT/Windows/HealthReportWindow.xaml" \
   "$PROJECT_ROOT/Windows/DetectionPlanWindow.xaml" \
   "$PROJECT_ROOT/Windows/RulePackWindow.xaml" >/dev/null; then
   echo 'Window colors must come from shared light/dark theme tokens.' >&2
+  exit 1
+fi
+
+if [ "$(/usr/bin/grep -Fc 'Stretch="Fill" Data="{StaticResource IconChevron}"' \
+  "$PROJECT_ROOT/Windows/MainWindow.xaml")" -ne 4 ]; then
+  echo 'Every dashboard chevron must scale its shared geometry into the declared viewport.' >&2
+  exit 1
+fi
+
+if /usr/bin/grep -R -E '\{StaticResource [A-Za-z][A-Za-z0-9]*Brush\}' \
+  "$PROJECT_ROOT/Windows" --include='*.xaml' >/dev/null; then
+  echo 'Theme brushes must use DynamicResource so open windows update at runtime.' >&2
+  exit 1
+fi
+
+if /usr/bin/grep -R -n 'MessageBox' \
+  "$PROJECT_ROOT/Windows" --include='*.cs' --include='*.xaml' >/dev/null; then
+  echo 'Windows in-app prompts must use the shared bubble dialog.' >&2
   exit 1
 fi
 

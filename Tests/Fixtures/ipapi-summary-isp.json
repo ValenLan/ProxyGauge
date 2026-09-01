@@ -1,0 +1,23 @@
+{
+  "ip": "203.0.113.8",
+  "is_bogon": false,
+  "is_datacenter": false,
+  "is_tor": false,
+  "is_proxy": false,
+  "is_vpn": false,
+  "is_mobile": false,
+  "is_satellite": false,
+  "company": {
+    "name": "Example Network",
+    "type": "isp"
+  },
+  "asn": {
+    "asn": 64500,
+    "org": "Example ASN",
+    "type": "isp"
+  },
+  "location": {
+    "country": "United States",
+    "city": "Los Angeles"
+  }
+}

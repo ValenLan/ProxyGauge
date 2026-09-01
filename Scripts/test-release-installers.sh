@@ -6,8 +6,10 @@ PROJECT_ROOT=$(cd "$SCRIPT_DIR/.." && /bin/pwd)
 MAC_INSTALLER="$PROJECT_ROOT/Scripts/install-release-macos.sh"
 WINDOWS_INSTALLER="$PROJECT_ROOT/Scripts/install-release-windows.ps1"
 NPM_INSTALLER="$PROJECT_ROOT/Scripts/proxygauge-npm-lib.mjs"
+APP_UPDATER="$PROJECT_ROOT/Scripts/proxygauge-updater.sh"
 
 /bin/bash -n "$MAC_INSTALLER"
+/bin/bash -n "$APP_UPDATER"
 
 /usr/bin/grep -Fq 'ValenLan/ProxyGauge' "$MAC_INSTALLER"
 /usr/bin/grep -Fq 'SHA256SUMS.txt' "$MAC_INSTALLER"
@@ -20,6 +22,14 @@ NPM_INSTALLER="$PROJECT_ROOT/Scripts/proxygauge-npm-lib.mjs"
 /usr/bin/grep -Fq 'msiexec.exe' "$WINDOWS_INSTALLER"
 /usr/bin/grep -Fq -- '-Verb RunAs' "$WINDOWS_INSTALLER"
 /usr/bin/grep -Fq 'PROXYGAUGE_VERSION' "$WINDOWS_INSTALLER"
+/usr/bin/grep -Fq '/usr/bin/shasum -a 256' "$APP_UPDATER"
+/usr/bin/grep -Fq 'codesign --verify --deep --strict' "$APP_UPDATER"
+/usr/bin/grep -Fq 'CFBundleIdentifier' "$APP_UPDATER"
+/usr/bin/grep -Fq 'ProxyGauge.previous.app' "$APP_UPDATER"
+/usr/bin/grep -Fq 'SHA256.HashDataAsync' "$PROJECT_ROOT/Windows/Services/UpdateService.cs"
+/usr/bin/grep -Fq 'msiexec.exe' "$PROJECT_ROOT/Windows/Services/UpdateService.cs"
+/usr/bin/grep -Fq 'SHA256.hash' "$PROJECT_ROOT/Sources/UpdateService.swift"
+/usr/bin/grep -Fq 'releases/latest' "$PROJECT_ROOT/Sources/UpdateService.swift"
 
 if /usr/bin/grep -Eiq \
   'xattr.+(quarantine|com\.apple\.quarantine)|spctl.+disable|Set-MpPreference|ExecutionPolicy.+Bypass' \

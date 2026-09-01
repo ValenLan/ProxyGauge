@@ -20,6 +20,7 @@ public sealed class MainViewModel : ObservableObject
     private string _lastUpdated = "尚未刷新";
     private GuardStatus _guardStatus = GuardStatus.Unavailable();
     private bool _isGuardBusy;
+    private ExitSummary _exitSummary = ExitSummary.Unavailable();
 
     public MainViewModel(
         ConfigService configService,
@@ -46,6 +47,31 @@ public sealed class MainViewModel : ObservableObject
     public string HealthButtonLabel { get => _healthButtonLabel; private set => SetProperty(ref _healthButtonLabel, value); }
     public string LastUpdated { get => _lastUpdated; private set => SetProperty(ref _lastUpdated, value); }
     public string Endpoint => $"{_config.MixedHost}:{_config.MixedPort}";
+    public string ConnectionValue => OverallLevel switch
+    {
+        HealthLevel.Ok => "已连接",
+        HealthLevel.Warning => Headline,
+        HealthLevel.Error => "未连接",
+        _ => "检查中"
+    };
+    public string ConnectionDetail
+    {
+        get
+        {
+            var mode = Route.Title switch
+            {
+                "TUN 路由" => "TUN",
+                "系统代理" => "系统代理",
+                "双重入口" => "系统代理 + TUN",
+                _ => Route.Title
+            };
+            return $"Mihomo · {mode} · {Endpoint}";
+        }
+    }
+    public string ExitAddress => _exitSummary.Address;
+    public string ExitLocation => _exitSummary.Location;
+    public string ExitNetwork => _exitSummary.Network;
+    public string ExitNetworkType => _exitSummary.NetworkType;
     public string PlanSummary => _config.SecondaryEnabled
         ? $"基础链路 · 出口一致 · {_config.SecondaryLabel} 分流"
         : "代理核心 · 流量入口 · 出口一致";
@@ -94,6 +120,7 @@ public sealed class MainViewModel : ObservableObject
                 OnPropertyChanged(nameof(OverallBrush));
                 OnPropertyChanged(nameof(OverallBackground));
                 OnPropertyChanged(nameof(OverallMark));
+                OnPropertyChanged(nameof(ConnectionValue));
             }
         }
     }
@@ -155,6 +182,7 @@ public sealed class MainViewModel : ObservableObject
 
         IsBusy = true;
         var guardTask = _guardClient.GetStatusAsync();
+        var exitTask = ExitSummaryService.ResolveAsync(_config);
         try
         {
             var snapshot = await _probeService.ProbeAsync(_config);
@@ -169,6 +197,14 @@ public sealed class MainViewModel : ObservableObject
         }
         finally
         {
+            try
+            {
+                ApplyExit(await exitTask);
+            }
+            catch
+            {
+                ApplyExit(ExitSummary.Unavailable());
+            }
             ApplyGuard(await guardTask);
             IsBusy = false;
         }
@@ -251,6 +287,7 @@ public sealed class MainViewModel : ObservableObject
         _config = _configService.Load();
         OnPropertyChanged(nameof(Endpoint));
         OnPropertyChanged(nameof(PlanSummary));
+        OnPropertyChanged(nameof(ConnectionDetail));
     }
 
     private async Task RefreshAfterHealthCheckAsync()
@@ -275,6 +312,8 @@ public sealed class MainViewModel : ObservableObject
         Core.Update(snapshot.Core);
         Port.Update(snapshot.Port);
         Route.Update(snapshot.Route);
+        OnPropertyChanged(nameof(ConnectionValue));
+        OnPropertyChanged(nameof(ConnectionDetail));
     }
 
     private void ApplyGuard(GuardStatus status)
@@ -286,5 +325,14 @@ public sealed class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(GuardEnabled));
         OnPropertyChanged(nameof(CanChangeGuard));
         OnPropertyChanged(nameof(GuardLevelBrush));
+    }
+
+    private void ApplyExit(ExitSummary summary)
+    {
+        _exitSummary = summary;
+        OnPropertyChanged(nameof(ExitAddress));
+        OnPropertyChanged(nameof(ExitLocation));
+        OnPropertyChanged(nameof(ExitNetwork));
+        OnPropertyChanged(nameof(ExitNetworkType));
     }
 }

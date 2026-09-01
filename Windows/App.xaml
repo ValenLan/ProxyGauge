@@ -4,42 +4,42 @@
     <Application.Resources>
         <!--
           ThemeService replaces these color tokens before the first window opens and
-          whenever Windows changes appearance. Brushes keep DynamicResource bindings
+          whenever the user switches appearance. Brushes keep DynamicResource bindings
           so every open window updates without being recreated.
         -->
-        <Color x:Key="CanvasColor">#242424</Color>
-        <Color x:Key="SurfaceColor">#1C1C1C</Color>
-        <Color x:Key="SurfaceRaisedColor">#2A2A2A</Color>
-        <Color x:Key="SurfaceSubtleColor">#202020</Color>
-        <Color x:Key="ControlColor">#2C2C2E</Color>
-        <Color x:Key="ControlHoverColor">#3A3A3C</Color>
-        <Color x:Key="FieldColor">#141414</Color>
-        <Color x:Key="BorderColor">#14FFFFFF</Color>
-        <Color x:Key="TextColor">#ECECEC</Color>
-        <Color x:Key="MutedTextColor">#9C9CA1</Color>
-        <Color x:Key="SubtleTextColor">#62748A</Color>
-        <Color x:Key="AccentColor">#218CFF</Color>
-        <Color x:Key="AccentStrongColor">#0A84FF</Color>
-        <Color x:Key="AccentHoverColor">#3D9DFF</Color>
-        <Color x:Key="AccentFocusColor">#D9EBFF</Color>
-        <Color x:Key="OnAccentColor">#FFFFFF</Color>
-        <Color x:Key="AccentSurfaceColor">#20375A</Color>
-        <Color x:Key="AccentTintColor">#223D76AD</Color>
-        <Color x:Key="SuccessColor">#33C759</Color>
+        <Color x:Key="CanvasColor">#181A1C</Color>
+        <Color x:Key="SurfaceColor">#202324</Color>
+        <Color x:Key="SurfaceRaisedColor">#25292A</Color>
+        <Color x:Key="SurfaceSubtleColor">#1D2022</Color>
+        <Color x:Key="ControlColor">#25292A</Color>
+        <Color x:Key="ControlHoverColor">#2C3130</Color>
+        <Color x:Key="FieldColor">#151719</Color>
+        <Color x:Key="BorderColor">#343A38</Color>
+        <Color x:Key="TextColor">#E7EAE9</Color>
+        <Color x:Key="MutedTextColor">#989E9B</Color>
+        <Color x:Key="SubtleTextColor">#626866</Color>
+        <Color x:Key="AccentColor">#36EC8F</Color>
+        <Color x:Key="AccentStrongColor">#25D87B</Color>
+        <Color x:Key="AccentHoverColor">#57F3A2</Color>
+        <Color x:Key="AccentFocusColor">#C5FFE0</Color>
+        <Color x:Key="OnAccentColor">#0D1712</Color>
+        <Color x:Key="AccentSurfaceColor">#1E352A</Color>
+        <Color x:Key="AccentTintColor">#2236EC8F</Color>
+        <Color x:Key="SuccessColor">#36EC8F</Color>
         <Color x:Key="WarningColor">#FF9F0A</Color>
         <Color x:Key="ErrorColor">#FF453A</Color>
         <Color x:Key="IdleColor">#8E8E93</Color>
-        <Color x:Key="SuccessBackgroundColor">#2433C759</Color>
+        <Color x:Key="SuccessBackgroundColor">#2436EC8F</Color>
         <Color x:Key="WarningBackgroundColor">#24FF9F0A</Color>
         <Color x:Key="ErrorBackgroundColor">#24FF453A</Color>
         <Color x:Key="IdleBackgroundColor">#248E8E93</Color>
-        <Color x:Key="RulesColor">#8A6BF5</Color>
-        <Color x:Key="RulesSurfaceColor">#262040</Color>
-        <Color x:Key="AdvancedColor">#33B8D1</Color>
-        <Color x:Key="AdvancedSurfaceColor">#1D3038</Color>
-        <Color x:Key="SwitchTrackColor">#3A3A3C</Color>
-        <Color x:Key="SwitchThumbColor">#F5F5F7</Color>
-        <Color x:Key="ProgressTrackColor">#26354A</Color>
+        <Color x:Key="RulesColor">#36EC8F</Color>
+        <Color x:Key="RulesSurfaceColor">#1E352A</Color>
+        <Color x:Key="AdvancedColor">#36EC8F</Color>
+        <Color x:Key="AdvancedSurfaceColor">#1E352A</Color>
+        <Color x:Key="SwitchTrackColor">#343A38</Color>
+        <Color x:Key="SwitchThumbColor">#E7EAE9</Color>
+        <Color x:Key="ProgressTrackColor">#25312C</Color>
 
         <SolidColorBrush x:Key="CanvasBrush" Color="{DynamicResource CanvasColor}" />
         <SolidColorBrush x:Key="SurfaceBrush" Color="{DynamicResource SurfaceColor}" />
@@ -91,7 +91,7 @@
 
         <Style TargetType="TextBlock">
             <Setter Property="FontFamily" Value="Segoe UI Variable Text, Segoe UI" />
-            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
         </Style>
 
         <!-- 34x34 rounded-square ghost button tinted by its own Foreground (macOS header buttons) -->
@@ -163,13 +163,13 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="CheckBox">
                         <Grid>
-                            <Border x:Name="Track" Width="36" Height="20" CornerRadius="10" Background="{StaticResource SwitchTrackBrush}" />
-                            <Ellipse x:Name="Thumb" Width="16" Height="16" Fill="{StaticResource SwitchThumbBrush}"
+                            <Border x:Name="Track" Width="36" Height="20" CornerRadius="10" Background="{DynamicResource SwitchTrackBrush}" />
+                            <Ellipse x:Name="Thumb" Width="16" Height="16" Fill="{DynamicResource SwitchThumbBrush}"
                                      HorizontalAlignment="Left" Margin="2,0,0,0" />
                         </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Track" Property="Background" Value="{StaticResource SuccessBrush}" />
+                                <Setter TargetName="Track" Property="Background" Value="{DynamicResource SuccessBrush}" />
                                 <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right" />
                                 <Setter TargetName="Thumb" Property="Margin" Value="0,0,2,0" />
                             </Trigger>
@@ -183,9 +183,9 @@
         </Style>
 
         <Style x:Key="QuietButtonStyle" TargetType="Button">
-            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
-            <Setter Property="Background" Value="{StaticResource ControlBrush}" />
-            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="Background" Value="{DynamicResource ControlBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="14,8" />
             <Setter Property="FontFamily" Value="Segoe UI Variable Text, Segoe UI" />
@@ -205,7 +205,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="ButtonBorder" Property="Background" Value="{StaticResource ControlHoverBrush}" />
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="{DynamicResource ControlHoverBrush}" />
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.78" />
@@ -214,7 +214,7 @@
                                 <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.45" />
                             </Trigger>
                             <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="ButtonBorder" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                                <Setter TargetName="ButtonBorder" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -223,9 +223,9 @@
         </Style>
 
         <Style x:Key="PrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource QuietButtonStyle}">
-            <Setter Property="Foreground" Value="{StaticResource OnAccentBrush}" />
-            <Setter Property="Background" Value="{StaticResource AccentBrush}" />
-            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource OnAccentBrush}" />
+            <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
             <Setter Property="Padding" Value="18,9" />
             <Setter Property="Template">
                 <Setter.Value>
@@ -240,7 +240,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="PrimaryBorder" Property="Background" Value="{StaticResource AccentHoverBrush}" />
+                                <Setter TargetName="PrimaryBorder" Property="Background" Value="{DynamicResource AccentHoverBrush}" />
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter TargetName="PrimaryBorder" Property="Opacity" Value="0.78" />
@@ -249,7 +249,7 @@
                                 <Setter TargetName="PrimaryBorder" Property="Opacity" Value="0.45" />
                             </Trigger>
                             <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="PrimaryBorder" Property="BorderBrush" Value="{StaticResource AccentFocusBrush}" />
+                                <Setter TargetName="PrimaryBorder" Property="BorderBrush" Value="{DynamicResource AccentFocusBrush}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -258,7 +258,7 @@
         </Style>
 
         <Style x:Key="TitleButtonStyle" TargetType="Button">
-            <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}" />
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Width" Value="42" />
@@ -274,8 +274,8 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="ChromeBorder" Property="Background" Value="{StaticResource ControlHoverBrush}" />
-                                <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+                                <Setter TargetName="ChromeBorder" Property="Background" Value="{DynamicResource ControlHoverBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -284,14 +284,14 @@
         </Style>
 
         <Style x:Key="FieldStyle" TargetType="TextBox">
-            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
-            <Setter Property="Background" Value="{StaticResource FieldBrush}" />
-            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="Background" Value="{DynamicResource FieldBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="11,8" />
             <Setter Property="FontFamily" Value="Segoe UI Variable Text, Segoe UI" />
             <Setter Property="FontSize" Value="13" />
-            <Setter Property="CaretBrush" Value="{StaticResource AccentBrush}" />
+            <Setter Property="CaretBrush" Value="{DynamicResource AccentBrush}" />
         </Style>
     </Application.Resources>
 </Application>

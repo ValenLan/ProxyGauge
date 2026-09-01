@@ -119,6 +119,158 @@ EOF
   return 1
 }
 
+exit_summary() {
+  local json detail_json geo_json ip detail_ip geo_ip country city location asn_number asn_org asn_text
+  local network_type is_datacenter is_vpn is_proxy is_tor is_mobile is_satellite needs_geo
+
+  if [ -n "${PROXYGAUGE_EXIT_SUMMARY_JSON:-}" ]; then
+    [ -r "$PROXYGAUGE_EXIT_SUMMARY_JSON" ] || return 1
+    json=$(/bin/cat "$PROXYGAUGE_EXIT_SUMMARY_JSON")
+  else
+    json=$(
+      "$CURL" -sS --retry 1 --retry-all-errors --retry-delay 1 \
+        --proxy "http://$MIXED" --max-time 8 \
+        "https://api.ipapi.is" 2>/dev/null
+    ) || json=""
+  fi
+
+  json_value_from() {
+    /usr/bin/printf '%s' "$1" \
+      | /usr/bin/plutil -extract "$2" raw -o - -- - 2>/dev/null \
+      | /usr/bin/tr '\t\r\n' '   ' \
+      | /usr/bin/sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//'
+  }
+
+  json_value() {
+    json_value_from "$json" "$1"
+  }
+
+  geo_value() {
+    /usr/bin/printf '%s' "$geo_json" \
+      | /usr/bin/plutil -extract "$1" raw -o - -- - 2>/dev/null \
+      | /usr/bin/tr '\t\r\n' '   ' \
+      | /usr/bin/sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//'
+  }
+
+  ip=$(json_value ip || true)
+  if ! /usr/bin/printf '%s' "$ip" \
+    | /usr/bin/grep -qE '^[0-9]{1,3}(\.[0-9]{1,3}){3}$'; then
+    ip=$(resolve_default_exit_ip 2>/dev/null || true)
+  fi
+  [ -n "$ip" ] || return 1
+
+  network_type=$(json_value company.type || true)
+  [ -n "$network_type" ] || network_type=$(json_value asn.type || true)
+  detail_json=""
+  if [ -z "$network_type" ]; then
+    if [ -n "${PROXYGAUGE_EXIT_DETAIL_JSON:-}" ]; then
+      [ -r "$PROXYGAUGE_EXIT_DETAIL_JSON" ] || return 1
+      detail_json=$(/bin/cat "$PROXYGAUGE_EXIT_DETAIL_JSON")
+    elif [ -z "${PROXYGAUGE_EXIT_SUMMARY_JSON:-}" ]; then
+      detail_json=$(
+        "$CURL" -sS --retry 1 --retry-all-errors --retry-delay 1 \
+          --proxy "http://$MIXED" --max-time 8 \
+          "https://api.ipapi.is/?q=$ip" 2>/dev/null
+      ) || detail_json=""
+    fi
+    detail_ip=$(json_value_from "$detail_json" ip || true)
+    if [ "$detail_ip" = "$ip" ]; then
+      json=$detail_json
+    fi
+  fi
+
+  country=$(json_value location.country || true)
+  [ -n "$country" ] || country=$(json_value country_name || true)
+  [ -n "$country" ] || country=$(json_value cc || true)
+  city=$(json_value location.city || true)
+  [ -n "$city" ] || city=$(json_value city || true)
+  asn_number=$(json_value asn.asn || true)
+  [ -n "$asn_number" ] || asn_number=$(json_value asn_num || true)
+  asn_org=$(json_value asn.org || true)
+  [ -n "$asn_org" ] || asn_org=$(json_value asn_org || true)
+  [ -n "$asn_org" ] || asn_org=$(json_value company_name || true)
+
+  needs_geo=0
+  [ -n "$city" ] || needs_geo=1
+  [ -n "$country" ] || needs_geo=1
+  [ ${#country} -gt 2 ] || needs_geo=1
+  [ -n "$asn_number" ] || needs_geo=1
+  [ -n "$asn_org" ] || needs_geo=1
+  geo_json=""
+  if [ "$needs_geo" -eq 1 ]; then
+    if [ -n "${PROXYGAUGE_EXIT_GEO_JSON:-}" ]; then
+      [ -r "$PROXYGAUGE_EXIT_GEO_JSON" ] || return 1
+      geo_json=$(/bin/cat "$PROXYGAUGE_EXIT_GEO_JSON")
+    else
+      geo_json=$(
+        "$CURL" -sS --retry 1 --retry-all-errors --retry-delay 1 \
+          --proxy "http://$MIXED" --max-time 8 \
+          "https://ipapi.co/$ip/json/" 2>/dev/null
+      ) || geo_json=""
+    fi
+    geo_ip=$(geo_value ip || true)
+    if [ "$geo_ip" = "$ip" ]; then
+      local geo_country geo_city geo_asn geo_org
+      geo_country=$(geo_value country_name || true)
+      [ -n "$geo_country" ] || geo_country=$(geo_value country || true)
+      geo_city=$(geo_value city || true)
+      geo_asn=$(geo_value asn || true)
+      geo_org=$(geo_value org || true)
+      [ -z "$geo_country" ] || country=$geo_country
+      [ -z "$geo_city" ] || city=$geo_city
+      [ -n "$asn_number" ] || asn_number=$geo_asn
+      [ -n "$asn_org" ] || asn_org=$geo_org
+    fi
+  fi
+
+  location=$(/usr/bin/printf '%s %s' "$country" "$city" | /usr/bin/xargs)
+  if [ -n "$asn_number" ] && ! [[ "$asn_number" =~ ^AS ]]; then
+    asn_number="AS$asn_number"
+  fi
+  asn_text=$(/usr/bin/printf '%s · %s' "$asn_number" "$asn_org" \
+    | /usr/bin/sed -E 's/^[[:space:]·]+//; s/[[:space:]·]+$//; s/[[:space:]]+/ /g')
+  network_type=$(json_value company.type || true)
+  [ -n "$network_type" ] || network_type=$(json_value asn.type || true)
+  is_datacenter=$(json_value is_datacenter || true)
+  is_vpn=$(json_value is_vpn || true)
+  is_proxy=$(json_value is_proxy || true)
+  is_tor=$(json_value is_tor || true)
+  is_mobile=$(json_value is_mobile || true)
+  is_satellite=$(json_value is_satellite || true)
+  if [ "$is_tor" = "true" ]; then
+    network_type="tor"
+  elif [ "$is_vpn" = "true" ]; then
+    network_type="vpn"
+  elif [ "$is_proxy" = "true" ]; then
+    network_type="proxy"
+  elif [ "$is_datacenter" = "true" ]; then
+    network_type="hosting"
+  elif [ "$is_mobile" = "true" ]; then
+    network_type="mobile"
+  elif [ "$is_satellite" = "true" ]; then
+    network_type="satellite"
+  fi
+  case "$network_type" in
+    isp) network_type="ISP 网络" ;;
+    hosting) network_type="数据中心" ;;
+    vpn) network_type="VPN 出口" ;;
+    proxy) network_type="代理出口" ;;
+    tor) network_type="Tor 出口" ;;
+    mobile) network_type="移动网络" ;;
+    satellite) network_type="卫星网络" ;;
+    education) network_type="教育网络" ;;
+    government) network_type="政府网络" ;;
+    banking) network_type="金融网络" ;;
+    business) network_type="商业网络" ;;
+    '') network_type="IP 类型未知" ;;
+  esac
+
+  /usr/bin/printf 'ip\t%s\n' "$ip"
+  /usr/bin/printf 'location\t%s\n' "${location:-位置未知}"
+  /usr/bin/printf 'asn\t%s\n' "${asn_text:-ASN 未知}"
+  /usr/bin/printf 'network\t%s\n' "$network_type"
+}
+
 system_proxy_endpoint() {
   if [ -n "${PROXYGAUGE_DISCOVERY_SYSTEM_PROXY:-}" ]; then
     /usr/bin/printf '%s\n' "$PROXYGAUGE_DISCOVERY_SYSTEM_PROXY"
@@ -526,6 +678,9 @@ case "${1:-}" in
   exit-ip)
     resolve_default_exit_ip
     ;;
+  exit-summary)
+    exit_summary
+    ;;
   kill-status)
     run_admin status
     ;;
@@ -536,7 +691,7 @@ case "${1:-}" in
     run_admin off
     ;;
   *)
-    echo "用法: $0 {discover|probe|health|exit-ip|kill-status|kill-on|kill-off}"
+    echo "用法: $0 {discover|probe|health|exit-ip|exit-summary|kill-status|kill-on|kill-off}"
     exit 2
     ;;
 esac

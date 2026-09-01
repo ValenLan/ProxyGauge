@@ -24,6 +24,10 @@ fi
   -module-cache-path "$MODULE_CACHE" \
   -parse-as-library \
   "$PROJECT_ROOT/Sources/ProxyGaugeApp.swift" \
+  "$PROJECT_ROOT/Sources/DashboardView.swift" \
+  "$PROJECT_ROOT/Sources/ExitClipboard.swift" \
+  "$PROJECT_ROOT/Sources/WindowCapability.swift" \
+  "$PROJECT_ROOT/Sources/UpdateService.swift" \
   -o "$APP/Contents/MacOS/ProxyGauge"
 
 /bin/cp "$PROJECT_ROOT/Info.plist" "$APP/Contents/Info.plist"
@@ -33,6 +37,7 @@ fi
 /bin/cp "$PROJECT_ROOT/Scripts/proxygauge-killswitch" "$APP/Contents/Resources/proxygauge-killswitch"
 /bin/cp "$PROJECT_ROOT/Scripts/proxygauge-ip-risk.jxa" "$APP/Contents/Resources/proxygauge-ip-risk.jxa"
 /bin/cp "$PROJECT_ROOT/Scripts/proxygauge-chain-check.jxa" "$APP/Contents/Resources/proxygauge-chain-check.jxa"
+/bin/cp "$PROJECT_ROOT/Scripts/proxygauge-updater.sh" "$APP/Contents/Resources/proxygauge-updater.sh"
 /bin/cp "$PROJECT_ROOT/PF/proxygauge.conf.template" "$APP/Contents/Resources/proxygauge.conf.template"
 /bin/cp "$PROJECT_ROOT/Rules/ProxyGauge-Merge.yaml" "$APP/Contents/Resources/Rules/ProxyGauge-Merge.yaml"
 /bin/cp "$PROJECT_ROOT/Rules/ProxyGauge-Google-Chain-Probe.yaml" "$APP/Contents/Resources/Rules/ProxyGauge-Google-Chain-Probe.yaml"
@@ -46,13 +51,15 @@ fi
   "$APP/Contents/Resources/proxygauge-check.sh" \
   "$APP/Contents/Resources/proxygauge-killswitch" \
   "$APP/Contents/Resources/proxygauge-ip-risk.jxa" \
-  "$APP/Contents/Resources/proxygauge-chain-check.jxa"
+  "$APP/Contents/Resources/proxygauge-chain-check.jxa" \
+  "$APP/Contents/Resources/proxygauge-updater.sh"
 
 for required_path in \
   "$APP/Contents/Resources/proxygauge-check.sh" \
   "$APP/Contents/Resources/proxygauge-killswitch" \
   "$APP/Contents/Resources/proxygauge-ip-risk.jxa" \
   "$APP/Contents/Resources/proxygauge-chain-check.jxa" \
+  "$APP/Contents/Resources/proxygauge-updater.sh" \
   "$APP/Contents/Resources/proxygauge.conf.template" \
   "$APP/Contents/Resources/proxygauge-admin.applescript" \
   "$APP/Contents/Resources/LICENSE.txt" \

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -12,9 +13,10 @@ namespace ProxyGauge;
 public partial class MainWindow : Window
 {
     private readonly MainViewModel _viewModel;
-    private readonly RulePackService _rulePackService;
     private readonly ConfigService _configService;
     private readonly ConnectionDiscoveryService _discoveryService;
+    private readonly ThemeService _themeService;
+    private readonly UpdateService _updateService;
     private readonly bool _needsConnectionSetup;
 
     private static readonly string[] ManualReviewDirectUrls =
@@ -25,11 +27,21 @@ public partial class MainWindow : Window
         "https://www.ipqualityscore.com/free-ip-lookup-proxy-vpn-test"
     ];
 
-    public MainWindow()
+    private static readonly string[] PrivacyReviewUrls =
+    [
+        "https://browserleaks.com/ip",
+        "https://browserleaks.com/webrtc",
+        "https://www.dnsleaktest.com/",
+        "https://test-ipv6.com/"
+    ];
+
+    public MainWindow(ThemeService themeService)
     {
         InitializeComponent();
         WindowCornerRounding.Apply(this, 10);
 
+        _themeService = themeService;
+        _updateService = new UpdateService();
         _configService = new ConfigService();
         _needsConnectionSetup = !_configService.HasValidConfig;
         var probeService = new ProxyProbeService();
@@ -38,11 +50,11 @@ public partial class MainWindow : Window
         var planInspectionService = new MihomoPlanInspectionService(controllerService);
         var healthCheckService = new HealthCheckService(probeService, planInspectionService);
         var guardClient = new GuardClient();
-        _rulePackService = new RulePackService();
         _viewModel = new MainViewModel(_configService, probeService, healthCheckService, guardClient);
         DataContext = _viewModel;
 
         Loaded += MainWindow_Loaded;
+        Closed += (_, _) => _updateService.Dispose();
         StateChanged += (_, _) => UpdateMaxRestoreIcon();
         // Guard is intentionally not contacted on close. Closing the UI must never disable protection.
     }
@@ -66,6 +78,7 @@ public partial class MainWindow : Window
             var setup = new SettingsWindow(
                 _viewModel.GetEditableConfig(),
                 _discoveryService,
+                _updateService,
                 runDiscoveryOnLoad: true) { Owner = this };
             if (setup.ShowDialog() == true)
             {
@@ -74,37 +87,19 @@ public partial class MainWindow : Window
         }
 
         await _viewModel.RefreshAsync();
+        UpdateThemeIcon();
+        await CheckForUpdatesAsync(silent: true);
     }
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e) =>
         await _viewModel.RefreshAsync();
 
-    private async void HealthButton_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            var report = await _viewModel.RunHealthCheckAsync();
-            if (report is not null)
-            {
-                new HealthReportWindow(report) { Owner = this }.ShowDialog();
-            }
-        }
-        catch (Exception exception)
-        {
-            MessageBox.Show(
-                this,
-                $"链路检测没有完成。\n\n{exception.Message}",
-                "ProxyGauge",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
-        }
-    }
-
     private async void SettingsButton_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new SettingsWindow(
             _viewModel.GetEditableConfig(),
-            _discoveryService) { Owner = this };
+            _discoveryService,
+            _updateService) { Owner = this };
         if (dialog.ShowDialog() != true)
         {
             return;
@@ -118,109 +113,187 @@ public partial class MainWindow : Window
             }
             catch (GuardCommandException exception)
             {
-                MessageBox.Show(
+                BubbleDialogWindow.Show(
                     this,
-                    $"设置已保存，但系统保护仍保持原来的代理核心规则并继续阻止直连。\n\n{exception.Message}",
                     "ProxyGauge 系统保护",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
+                    $"设置已保存，但断网保护仍保留原规则并继续阻止直连。\n\n{exception.Message}",
+                    kind: BubbleDialogKind.Warning);
             }
             catch (Exception exception)
             {
-                MessageBox.Show(
+                BubbleDialogWindow.Show(
                     this,
-                    $"设置已保存，但系统保护无法切换到新的代理入口。原有规则仍保留并继续阻止直连。\n\n{exception.Message}",
                     "ProxyGauge 系统保护",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
+                    $"设置已保存，但断网保护无法切换到新的检测入口。原有规则仍保留并继续阻止直连。\n\n{exception.Message}",
+                    kind: BubbleDialogKind.Warning);
             }
             await _viewModel.RefreshAsync();
         }
     }
 
-    private void RulesButton_Click(object sender, RoutedEventArgs e) =>
-        new RulePackWindow(_rulePackService) { Owner = this }.ShowDialog();
-
-    private void PlanButton_Click(object sender, RoutedEventArgs e)
+    private void ThemeButton_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new DetectionPlanWindow(_viewModel.GetEditableConfig()) { Owner = this };
-        if (dialog.ShowDialog() == true)
-        {
-            TrySaveConfig(dialog.Config);
-        }
+        _themeService.ToggleTheme();
+        UpdateThemeIcon();
     }
 
-    private async void AdvancedButton_Click(object sender, RoutedEventArgs e)
+    private void UpdateThemeIcon()
     {
-        var answer = MessageBox.Show(
-            this,
-            "确认后会先经当前本地代理入口读取出口 IP，再使用系统默认浏览器打开 6 个复核网站。\n\nScamalytics 与 AbuseIPDB 会直接进入该 IP 的结果页；部分网站可能要求人机验证，各站结果不会计入链路分。\n\n是否继续？",
-            "打开浏览器人工复核？",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Information,
-            MessageBoxResult.No);
-        if (answer != MessageBoxResult.Yes)
+        var isDark = _themeService.CurrentTheme == AppThemeKind.Dark;
+        ThemeSunIcon.Visibility = isDark ? Visibility.Collapsed : Visibility.Visible;
+        ThemeMoonIcon.Visibility = isDark ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void CopyExitButton_Click(object sender, RoutedEventArgs e)
+    {
+        var address = _viewModel.ExitAddress;
+        if (string.IsNullOrWhiteSpace(address) || address.Contains("无法", StringComparison.Ordinal) || address.Contains("读取", StringComparison.Ordinal))
         {
             return;
         }
+        if (!TrySetClipboardText(address.Trim()))
+        {
+            BubbleDialogWindow.Show(
+                this,
+                "复制失败",
+                "系统剪贴板正被其他程序占用，请稍后再试。",
+                kind: BubbleDialogKind.Error);
+            return;
+        }
+        ShowCopyFeedback();
+    }
 
-        Mouse.OverrideCursor = Cursors.Wait;
-        string? exitIp;
-        try
-        {
-            exitIp = await HealthCheckService.ResolveDefaultExitIpAsync(_viewModel.GetEditableConfig());
-        }
-        catch
-        {
-            exitIp = null;
-        }
-        finally
-        {
-            Mouse.OverrideCursor = null;
-        }
-
-        var reviewUrls = ManualReviewDirectUrls.ToList();
-        if (exitIp is not null)
-        {
-            var escapedIp = Uri.EscapeDataString(exitIp);
-            reviewUrls.Add($"https://scamalytics.com/ip/{escapedIp}");
-            reviewUrls.Add($"https://www.abuseipdb.com/check/{escapedIp}");
-        }
-
-        var failedCount = 0;
-        foreach (var url in reviewUrls)
+    private static bool TrySetClipboardText(string text)
+    {
+        for (var attempt = 0; attempt < 3; attempt++)
         {
             try
             {
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = url,
-                    UseShellExecute = true
-                });
+                Clipboard.SetDataObject(text, true);
+                return true;
+            }
+            catch (ExternalException) when (attempt < 2)
+            {
+                Thread.Sleep(25);
+            }
+            catch (ExternalException)
+            {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    private async void ShowCopyFeedback()
+    {
+        CopyExitFront.Visibility = Visibility.Collapsed;
+        CopyExitBack.Visibility = Visibility.Collapsed;
+        CopyExitCheckmark.Visibility = Visibility.Visible;
+        CopyExitButton.ToolTip = "出口 IP 已复制";
+        await Task.Delay(1500);
+        CopyExitFront.Visibility = Visibility.Visible;
+        CopyExitBack.Visibility = Visibility.Visible;
+        CopyExitCheckmark.Visibility = Visibility.Collapsed;
+        CopyExitButton.ToolTip = "复制出口 IP";
+    }
+
+    private void IpPurityButton_Click(object sender, RoutedEventArgs e) =>
+        ConfirmBrowserOpen(
+            "IP 纯净度检测",
+            "将使用默认浏览器打开 4 个第三方检测页面。ProxyGauge 不会读取或保存页面内容。",
+            ManualReviewDirectUrls);
+
+    private void PrivacyButton_Click(object sender, RoutedEventArgs e) =>
+        ConfirmBrowserOpen(
+            "隐私泄露检测",
+            "将使用默认浏览器打开 DNS、WebRTC、IPv6 等 4 个检测页面。",
+            PrivacyReviewUrls);
+
+    private void SpeedButton_Click(object sender, RoutedEventArgs e) =>
+        ConfirmBrowserOpen(
+            "浏览器测速",
+            "将使用默认浏览器打开 Cloudflare 测速页面，测量浏览器真实路径。",
+            ["https://speed.cloudflare.com/"]);
+
+    private void ConfirmBrowserOpen(string title, string detail, IEnumerable<string> urls)
+    {
+        if (BubbleDialogWindow.Show(
+                this,
+                $"打开{title}？",
+                detail,
+                "继续打开",
+                "取消",
+                BubbleDialogKind.Browser))
+        {
+            OpenUrls(urls);
+        }
+    }
+
+    private static void OpenUrls(IEnumerable<string> urls)
+    {
+        foreach (var url in urls)
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
             }
             catch
             {
-                failedCount++;
+                // A browser launch failure must not change proxy or guard state.
             }
         }
+    }
 
-        if (exitIp is null)
+    private async Task CheckForUpdatesAsync(bool silent)
+    {
+        try
         {
-            MessageBox.Show(
+            var release = await _updateService.CheckAsync();
+            if (release is null)
+            {
+                if (!silent)
+                {
+                    BubbleDialogWindow.Show(
+                        this,
+                        "软件更新",
+                        $"当前 v{UpdateService.CurrentVersion} 已是最新版。");
+                }
+                return;
+            }
+
+            var answer = BubbleDialogWindow.Show(
                 this,
-                "无法经当前本地代理入口确认出口 IP，因此没有打开需要 IP 参数的 Scamalytics 和 AbuseIPDB。其余 4 个网站已按正常方式打开；ProxyGauge 没有改动代理配置。",
-                "复核网站未完整打开",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+                "发现新版本",
+                $"发现 ProxyGauge v{release.Version}。\n\n下载后会校验 SHA-256，并由 Windows Installer 完成更新。",
+                "下载并更新",
+                "稍后");
+            if (!answer)
+            {
+                return;
+            }
+
+            Mouse.OverrideCursor = Cursors.Wait;
+            try
+            {
+                var downloaded = await _updateService.DownloadAsync(release);
+                UpdateService.LaunchInstaller(downloaded);
+                Application.Current.Shutdown();
+            }
+            finally
+            {
+                Mouse.OverrideCursor = null;
+            }
         }
-        else if (failedCount > 0)
+        catch (Exception exception)
         {
-            MessageBox.Show(
-                this,
-                "部分网站未能打开，请检查系统默认浏览器设置后重试。ProxyGauge 没有更改代理或浏览器配置。",
-                "ProxyGauge",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+            if (!silent)
+            {
+                BubbleDialogWindow.Show(
+                    this,
+                    "软件更新",
+                    $"暂时无法完成更新检查。\n\n{exception.Message}",
+                    kind: BubbleDialogKind.Warning);
+            }
         }
     }
 
@@ -228,14 +301,14 @@ public partial class MainWindow : Window
     {
         if (_viewModel.GuardEnabled)
         {
-            var answer = MessageBox.Show(
+            var answer = BubbleDialogWindow.Show(
                 this,
-                "关闭后，Windows 将允许流量绕过代理直接联网，真实 IP 可能暴露。\n\n确定关闭系统保护吗？",
-                "关闭系统保护？",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Warning,
-                MessageBoxResult.No);
-            if (answer != MessageBoxResult.Yes)
+                "关闭断网保护？",
+                "关闭后，网络路径发生变化时，Windows 可能通过真实 IP 直接联网。",
+                "确认关闭",
+                "取消",
+                BubbleDialogKind.Warning);
+            if (!answer)
             {
                 if (sender is CheckBox toggle)
                 {
@@ -251,22 +324,20 @@ public partial class MainWindow : Window
         }
         catch (GuardCommandException exception)
         {
-            MessageBox.Show(
+            BubbleDialogWindow.Show(
                 this,
-                exception.Message,
                 "ProxyGauge 系统保护",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+                exception.Message,
+                kind: BubbleDialogKind.Warning);
             await _viewModel.RefreshAsync();
         }
         catch (Exception exception)
         {
-            MessageBox.Show(
+            BubbleDialogWindow.Show(
                 this,
-                $"系统保护操作没有完成。\n\n{exception.Message}",
                 "ProxyGauge 系统保护",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+                $"系统保护操作没有完成。\n\n{exception.Message}",
+                kind: BubbleDialogKind.Warning);
             await _viewModel.RefreshAsync();
         }
     }
@@ -280,12 +351,11 @@ public partial class MainWindow : Window
         }
         catch (Exception exception)
         {
-            MessageBox.Show(
+            BubbleDialogWindow.Show(
                 this,
-                $"设置无法保存，原配置未被替换。\n\n{exception.Message}",
                 "ProxyGauge",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+                $"设置无法保存，原配置未被替换。\n\n{exception.Message}",
+                kind: BubbleDialogKind.Warning);
             return false;
         }
     }

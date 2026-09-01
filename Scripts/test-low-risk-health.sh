@@ -66,7 +66,10 @@ score_weights=$(/usr/bin/awk '
 /usr/bin/grep -Fq 'new("检测边界（默认低风险模式）"' "$WINDOWS_SERVICE"
 /usr/bin/grep -Fq 'snapshot.SystemProxyEnabled && snapshot.TunDetected' "$WINDOWS_SERVICE"
 /usr/bin/grep -Fq 'value = Math.Min(value, 49)' "$WINDOWS_MODEL"
-/usr/bin/grep -Fq 'Binding="{Binding IsHealthCheckRunning}"' "$WINDOWS_MAIN"
+if /usr/bin/grep -Fq 'Click="HealthButton_Click"' "$WINDOWS_MAIN"; then
+  echo "The redesigned dashboard must not expose the removed routine link-check action." >&2
+  exit 1
+fi
 
 generic_output=$(PROXYGAUGE_CONFIG=/dev/null \
   PROXYGAUGE_MIXED=127.0.0.1:9 \

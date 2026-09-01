@@ -118,6 +118,34 @@ resolved_exit_ip=$(PROXYGAUGE_CONFIG=/dev/null \
 [ "$resolved_exit_ip" = "203.0.113.44" ]
 /usr/bin/grep -Fq -- '--proxy http://127.0.0.1:7898' "$TEMP_DIR/fake-curl.log"
 
+exit_summary=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_MIXED=127.0.0.1:7898 \
+  PROXYGAUGE_EXIT_SUMMARY_JSON="$SCRIPT_DIR/../Tests/Fixtures/ipapi-risk.json" \
+  /bin/bash "$BACKEND" exit-summary)
+/usr/bin/printf '%s\n' "$exit_summary" | /usr/bin/grep -Fq $'ip\t203.0.113.8'
+/usr/bin/printf '%s\n' "$exit_summary" | /usr/bin/grep -Fq $'location\tUnited States Los Angeles'
+/usr/bin/printf '%s\n' "$exit_summary" | /usr/bin/grep -Fq $'asn\tAS64500 · Example ASN'
+/usr/bin/printf '%s\n' "$exit_summary" | /usr/bin/grep -Fq $'network\t数据中心'
+
+flat_exit_summary=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_MIXED=127.0.0.1:7898 \
+  PROXYGAUGE_EXIT_SUMMARY_JSON="$SCRIPT_DIR/../Tests/Fixtures/ipapi-summary-flat.json" \
+  PROXYGAUGE_EXIT_GEO_JSON="$SCRIPT_DIR/../Tests/Fixtures/ipapi-co-summary.json" \
+  /bin/bash "$BACKEND" exit-summary)
+/usr/bin/printf '%s\n' "$flat_exit_summary" | /usr/bin/grep -Fq $'ip\t203.0.113.8'
+/usr/bin/printf '%s\n' "$flat_exit_summary" | /usr/bin/grep -Fq $'location\tUnited States Los Angeles'
+/usr/bin/printf '%s\n' "$flat_exit_summary" | /usr/bin/grep -Fq $'asn\tAS64500 · Example ASN'
+/usr/bin/printf '%s\n' "$flat_exit_summary" | /usr/bin/grep -Fq $'network\tIP 类型未知'
+
+detailed_exit_summary=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_MIXED=127.0.0.1:7898 \
+  PROXYGAUGE_EXIT_SUMMARY_JSON="$SCRIPT_DIR/../Tests/Fixtures/ipapi-summary-flat.json" \
+  PROXYGAUGE_EXIT_DETAIL_JSON="$SCRIPT_DIR/../Tests/Fixtures/ipapi-summary-isp.json" \
+  /bin/bash "$BACKEND" exit-summary)
+/usr/bin/printf '%s\n' "$detailed_exit_summary" | /usr/bin/grep -Fq $'location\tUnited States Los Angeles'
+/usr/bin/printf '%s\n' "$detailed_exit_summary" | /usr/bin/grep -Fq $'asn\tAS64500 · Example ASN'
+/usr/bin/printf '%s\n' "$detailed_exit_summary" | /usr/bin/grep -Fq $'network\tISP 网络'
+
 /usr/bin/printf '%s\n' \
   '#!/bin/bash' \
   '/usr/bin/printf "%s\\n" "not-an-ip"' > "$TEMP_DIR/failing-curl"

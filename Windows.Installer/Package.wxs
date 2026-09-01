@@ -42,11 +42,15 @@
                       Directory="ProgramMenuFolder"
                       Name="ProxyGauge"
                       Advertise="yes"
+                      Icon="ProxyGaugeIcon.ico"
+                      IconIndex="0"
                       WorkingDirectory="INSTALLFOLDER" />
             <Shortcut Id="ProxyGaugeDesktopShortcut"
                       Directory="DesktopFolder"
                       Name="ProxyGauge"
                       Advertise="yes"
+                      Icon="ProxyGaugeIcon.ico"
+                      IconIndex="0"
                       WorkingDirectory="INSTALLFOLDER" />
           </File>
         </Component>

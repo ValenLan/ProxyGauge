@@ -1,7 +1,7 @@
 {
   "name": "proxygauge",
-  "version": "1.5.7",
-  "description": "Open-source native proxy health, route verification, and leak-protection dashboard for macOS and Windows 11.",
+  "version": "1.6.0",
+  "description": "面向 macOS 与 Windows 11 的原生代理状态、链路验证与防泄漏面板。",
   "license": "MIT",
   "author": "ValenLan",
   "type": "module",
@@ -17,7 +17,6 @@
   "files": [
     "LICENSE",
     "README.md",
-    "README.en.md",
     "Scripts/install-release-macos.sh",
     "Scripts/install-release-windows.ps1",
     "Scripts/proxygauge-npm-lib.mjs",

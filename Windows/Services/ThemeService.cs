@@ -13,9 +13,11 @@ public enum AppThemeKind
 
 public sealed class ThemeService : IDisposable
 {
+    private const string RegistryPath = @"Software\ProxyGauge";
+    private const string ThemeValueName = "Theme";
     private bool _started;
 
-    public AppThemeKind CurrentTheme { get; private set; } = AppThemeKind.Dark;
+    public AppThemeKind CurrentTheme { get; private set; } = AppThemeKind.Light;
 
     public void Start()
     {
@@ -25,8 +27,7 @@ public sealed class ThemeService : IDisposable
         }
 
         _started = true;
-        ApplyCurrentTheme();
-        SystemEvents.UserPreferenceChanged += SystemEvents_UserPreferenceChanged;
+        ApplyTheme(ResolveTheme(SystemParameters.HighContrast, ReadSavedTheme()));
     }
 
     public void Dispose()
@@ -36,24 +37,29 @@ public sealed class ThemeService : IDisposable
             return;
         }
 
-        SystemEvents.UserPreferenceChanged -= SystemEvents_UserPreferenceChanged;
         _started = false;
     }
 
-    public static AppThemeKind ResolveTheme(bool highContrast, object? appsUseLightTheme)
+    public AppThemeKind ToggleTheme()
+    {
+        var selected = CurrentTheme == AppThemeKind.Dark
+            ? AppThemeKind.Light
+            : AppThemeKind.Dark;
+        SaveTheme(selected);
+        ApplyTheme(SystemParameters.HighContrast ? AppThemeKind.HighContrast : selected);
+        return CurrentTheme;
+    }
+
+    public static AppThemeKind ResolveTheme(bool highContrast, string? savedTheme)
     {
         if (highContrast)
         {
             return AppThemeKind.HighContrast;
         }
 
-        return appsUseLightTheme switch
-        {
-            int value when value == 0 => AppThemeKind.Dark,
-            long value when value == 0 => AppThemeKind.Dark,
-            string value when value == "0" => AppThemeKind.Dark,
-            _ => AppThemeKind.Light
-        };
+        return string.Equals(savedTheme, "dark", StringComparison.OrdinalIgnoreCase)
+            ? AppThemeKind.Dark
+            : AppThemeKind.Light;
     }
 
     public static IReadOnlyDictionary<string, string> GetPalette(AppThemeKind theme) => theme switch
@@ -63,42 +69,59 @@ public sealed class ThemeService : IDisposable
         _ => DarkPalette
     };
 
-    private void SystemEvents_UserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
+    public static void ApplyPalette(
+        ResourceDictionary resources,
+        IReadOnlyDictionary<string, string> palette)
     {
-        if (Application.Current?.Dispatcher is not { } dispatcher)
+        foreach (var (key, value) in palette)
         {
-            return;
-        }
+            var color = (Color)ColorConverter.ConvertFromString(value);
+            resources[key] = color;
 
-        dispatcher.BeginInvoke(new Action(ApplyCurrentTheme));
+            var brushKey = key.EndsWith("Color", StringComparison.Ordinal)
+                ? $"{key[..^"Color".Length]}Brush"
+                : $"{key}Brush";
+            resources[brushKey] = new SolidColorBrush(color);
+        }
     }
 
-    private void ApplyCurrentTheme()
+    private void ApplyTheme(AppThemeKind theme)
     {
         if (Application.Current is not { } application)
         {
             return;
         }
 
-        CurrentTheme = ResolveTheme(SystemParameters.HighContrast, ReadAppsUseLightTheme());
-        foreach (var (key, value) in GetPalette(CurrentTheme))
-        {
-            application.Resources[key] = (Color)ColorConverter.ConvertFromString(value);
-        }
+        CurrentTheme = theme;
+        ApplyPalette(application.Resources, GetPalette(CurrentTheme));
     }
 
-    private static object? ReadAppsUseLightTheme()
+    private static string? ReadSavedTheme()
     {
         try
         {
-            using var key = Registry.CurrentUser.OpenSubKey(
-                @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
-            return key?.GetValue("AppsUseLightTheme");
+            using var key = Registry.CurrentUser.OpenSubKey(RegistryPath);
+            return key?.GetValue(ThemeValueName) as string;
         }
         catch
         {
-            // A locked-down profile should remain usable. Windows defaults to light.
             return null;
+        }
+    }
+
+    private static void SaveTheme(AppThemeKind theme)
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.CreateSubKey(RegistryPath);
+            key?.SetValue(
+                ThemeValueName,
+                theme == AppThemeKind.Dark ? "dark" : "light",
+                RegistryValueKind.String);
+        }
+        catch
+        {
+            // A locked-down profile still receives the selected theme for this session.
         }
     }
 
@@ -154,45 +177,45 @@ public sealed class ThemeService : IDisposable
     private static readonly IReadOnlyDictionary<string, string> DarkPalette =
         new Dictionary<string, string>
         {
-            ["CanvasColor"] = "#FF242424",
-            ["SurfaceColor"] = "#FF1C1C1C",
-            ["SurfaceRaisedColor"] = "#FF2A2A2A",
-            ["SurfaceSubtleColor"] = "#FF202020",
-            ["ControlColor"] = "#FF2C2C2E",
-            ["ControlHoverColor"] = "#FF3A3A3C",
-            ["FieldColor"] = "#FF141414",
-            ["BorderColor"] = "#14FFFFFF",
-            ["TextColor"] = "#FFECECEC",
-            ["MutedTextColor"] = "#FF9C9CA1",
-            ["SubtleTextColor"] = "#FF62748A",
-            ["AccentColor"] = "#FF218CFF",
-            ["AccentStrongColor"] = "#FF0A84FF",
-            ["AccentHoverColor"] = "#FF3D9DFF",
-            ["AccentFocusColor"] = "#FFD9EBFF",
-            ["OnAccentColor"] = "#FFFFFFFF",
-            ["AccentSurfaceColor"] = "#FF20375A",
-            ["AccentTintColor"] = "#223D76AD",
-            ["SuccessColor"] = "#FF33C759",
+            ["CanvasColor"] = "#FF181A1C",
+            ["SurfaceColor"] = "#FF202324",
+            ["SurfaceRaisedColor"] = "#FF25292A",
+            ["SurfaceSubtleColor"] = "#FF1D2022",
+            ["ControlColor"] = "#FF25292A",
+            ["ControlHoverColor"] = "#FF2C3130",
+            ["FieldColor"] = "#FF151719",
+            ["BorderColor"] = "#FF343A38",
+            ["TextColor"] = "#FFE7EAE9",
+            ["MutedTextColor"] = "#FF989E9B",
+            ["SubtleTextColor"] = "#FF626866",
+            ["AccentColor"] = "#FF36EC8F",
+            ["AccentStrongColor"] = "#FF25D87B",
+            ["AccentHoverColor"] = "#FF57F3A2",
+            ["AccentFocusColor"] = "#FFC5FFE0",
+            ["OnAccentColor"] = "#FF0D1712",
+            ["AccentSurfaceColor"] = "#FF1E352A",
+            ["AccentTintColor"] = "#2236EC8F",
+            ["SuccessColor"] = "#FF36EC8F",
             ["WarningColor"] = "#FFFF9F0A",
             ["ErrorColor"] = "#FFFF453A",
             ["IdleColor"] = "#FF8E8E93",
-            ["SuccessBackgroundColor"] = "#2433C759",
+            ["SuccessBackgroundColor"] = "#2436EC8F",
             ["WarningBackgroundColor"] = "#24FF9F0A",
             ["ErrorBackgroundColor"] = "#24FF453A",
             ["IdleBackgroundColor"] = "#248E8E93",
-            ["RulesColor"] = "#FF8A6BF5",
-            ["RulesSurfaceColor"] = "#FF262040",
-            ["AdvancedColor"] = "#FF33B8D1",
-            ["AdvancedSurfaceColor"] = "#FF1D3038",
-            ["SwitchTrackColor"] = "#FF3A3A3C",
-            ["SwitchThumbColor"] = "#FFF5F5F7",
-            ["ProgressTrackColor"] = "#FF26354A"
+            ["RulesColor"] = "#FF36EC8F",
+            ["RulesSurfaceColor"] = "#FF1E352A",
+            ["AdvancedColor"] = "#FF36EC8F",
+            ["AdvancedSurfaceColor"] = "#FF1E352A",
+            ["SwitchTrackColor"] = "#FF343A38",
+            ["SwitchThumbColor"] = "#FFE7EAE9",
+            ["ProgressTrackColor"] = "#FF25312C"
         };
 
     private static readonly IReadOnlyDictionary<string, string> LightPalette =
         new Dictionary<string, string>
         {
-            ["CanvasColor"] = "#FFF3F5F7",
+            ["CanvasColor"] = "#FFFFFFFF",
             ["SurfaceColor"] = "#FFFFFFFF",
             ["SurfaceRaisedColor"] = "#FFF8FAFC",
             ["SurfaceSubtleColor"] = "#FFEAF0F5",

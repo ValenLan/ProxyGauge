@@ -19,16 +19,17 @@
                             ResizeBorderThickness="0"
                             UseAeroCaptionButtons="False" />
     </shell:WindowChrome.WindowChrome>
-    <Border Background="{StaticResource CanvasBrush}"
-            BorderBrush="{StaticResource BorderBrush}"
-            BorderThickness="1">
+    <Border Background="{DynamicResource CanvasBrush}"
+            BorderBrush="{DynamicResource BorderBrush}"
+            BorderThickness="1"
+            CornerRadius="20">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="44" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
-            <Border Grid.Row="0" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
+            <Border Grid.Row="0" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
                 <Grid>
                     <TextBlock Text="代理链路检测" FontSize="13" FontWeight="SemiBold" Margin="17,0" VerticalAlignment="Center" />
                     <Button Style="{StaticResource TitleButtonStyle}" HorizontalAlignment="Right" Margin="0,4,5,4" Click="CloseButton_Click" shell:WindowChrome.IsHitTestVisibleInChrome="True">
@@ -59,7 +60,7 @@
                     </Border>
                     <StackPanel Grid.Column="1" Margin="14,-2,0,0">
                         <TextBlock Text="{Binding Headline}" FontFamily="Segoe UI Variable Display, Segoe UI" FontSize="22" FontWeight="SemiBold" />
-                        <TextBlock Text="{Binding Subtitle}" Foreground="{StaticResource MutedTextBrush}" FontSize="12" Margin="0,5,0,0" />
+                        <TextBlock Text="{Binding Subtitle}" Foreground="{DynamicResource MutedTextBrush}" FontSize="12" Margin="0,5,0,0" />
                     </StackPanel>
                     <Border Grid.Column="2" Background="{Binding ScoreBackground}" BorderBrush="{Binding ScoreBrush}" BorderThickness="1" CornerRadius="12" Padding="12,7" Margin="14,0,0,0">
                         <StackPanel HorizontalAlignment="Center">
@@ -72,26 +73,26 @@
                     </Border>
                 </Grid>
 
-                <Border Grid.Row="1" Background="{StaticResource SurfaceSubtleBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="11" Padding="13,9" Margin="0,17,0,0">
+                <Border Grid.Row="1" Background="{DynamicResource SurfaceSubtleBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="11" Padding="13,9" Margin="0,17,0,0">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock Text="{Binding CheckedAtText}" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                        <TextBlock Text="{Binding CheckedAtText}" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" />
                         <StackPanel Grid.Column="1" Orientation="Horizontal">
-                            <TextBlock Text="{Binding PassedText}" Foreground="{StaticResource SuccessBrush}" FontSize="11" FontWeight="SemiBold" />
-                            <TextBlock Text="  ·  " Foreground="{StaticResource SubtleTextBrush}" FontSize="11" />
-                            <TextBlock Text="{Binding WarningText}" Foreground="{StaticResource WarningBrush}" FontSize="11" FontWeight="SemiBold" />
-                            <TextBlock Text="  ·  " Foreground="{StaticResource SubtleTextBrush}" FontSize="11" />
-                            <TextBlock Text="{Binding FailedText}" Foreground="{StaticResource ErrorBrush}" FontSize="11" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding PassedText}" Foreground="{DynamicResource SuccessBrush}" FontSize="11" FontWeight="SemiBold" />
+                            <TextBlock Text="  ·  " Foreground="{DynamicResource SubtleTextBrush}" FontSize="11" />
+                            <TextBlock Text="{Binding WarningText}" Foreground="{DynamicResource WarningBrush}" FontSize="11" FontWeight="SemiBold" />
+                            <TextBlock Text="  ·  " Foreground="{DynamicResource SubtleTextBrush}" FontSize="11" />
+                            <TextBlock Text="{Binding FailedText}" Foreground="{DynamicResource ErrorBrush}" FontSize="11" FontWeight="SemiBold" />
                         </StackPanel>
                     </Grid>
                 </Border>
 
                 <TextBlock Grid.Row="2"
                            Text="关键链路加权；IP 纯净度复核与账户状态不计分"
-                           Foreground="{StaticResource MutedTextBrush}"
+                           Foreground="{DynamicResource MutedTextBrush}"
                            FontSize="11"
                            Margin="2,10,0,10" />
 
@@ -99,8 +100,8 @@
                     <ItemsControl ItemsSource="{Binding Report.Sections}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Border Background="{StaticResource SurfaceBrush}"
-                                        BorderBrush="{StaticResource BorderBrush}"
+                                <Border Background="{DynamicResource SurfaceBrush}"
+                                        BorderBrush="{DynamicResource BorderBrush}"
                                         BorderThickness="1"
                                         CornerRadius="13"
                                         Padding="14"
@@ -115,12 +116,12 @@
                                                             <ColumnDefinition Width="26" />
                                                             <ColumnDefinition Width="*" />
                                                         </Grid.ColumnDefinitions>
-                                                        <Border x:Name="ResultDot" Width="20" Height="20" CornerRadius="10" Background="{StaticResource ErrorBackgroundBrush}" VerticalAlignment="Top">
-                                                            <TextBlock x:Name="ResultMark" Text="{Binding Mark}" Foreground="{StaticResource ErrorBrush}" FontSize="11" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                        <Border x:Name="ResultDot" Width="20" Height="20" CornerRadius="10" Background="{DynamicResource ErrorBackgroundBrush}" VerticalAlignment="Top">
+                                                            <TextBlock x:Name="ResultMark" Text="{Binding Mark}" Foreground="{DynamicResource ErrorBrush}" FontSize="11" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                                         </Border>
                                                         <StackPanel Grid.Column="1" Margin="7,-1,0,0">
                                                             <TextBlock Text="{Binding Label}" FontSize="12" FontWeight="SemiBold" />
-                                                            <TextBlock x:Name="DetailText" Text="{Binding Detail}" Foreground="{StaticResource MutedTextBrush}" FontSize="11" Margin="0,3,0,0" TextWrapping="Wrap" />
+                                                            <TextBlock x:Name="DetailText" Text="{Binding Detail}" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,3,0,0" TextWrapping="Wrap" />
                                                             <Button x:Name="OpenLinkButton"
                                                                     Content="在浏览器打开"
                                                                     Tag="{Binding Detail}"
@@ -134,16 +135,16 @@
                                                     </Grid>
                                                     <DataTemplate.Triggers>
                                                         <DataTrigger Binding="{Binding Passed}" Value="True">
-                                                            <Setter TargetName="ResultDot" Property="Background" Value="{StaticResource SuccessBackgroundBrush}" />
-                                                            <Setter TargetName="ResultMark" Property="Foreground" Value="{StaticResource SuccessBrush}" />
+                                                            <Setter TargetName="ResultDot" Property="Background" Value="{DynamicResource SuccessBackgroundBrush}" />
+                                                            <Setter TargetName="ResultMark" Property="Foreground" Value="{DynamicResource SuccessBrush}" />
                                                         </DataTrigger>
                                                         <DataTrigger Binding="{Binding LevelKey}" Value="Warning">
-                                                            <Setter TargetName="ResultDot" Property="Background" Value="{StaticResource WarningBackgroundBrush}" />
-                                                            <Setter TargetName="ResultMark" Property="Foreground" Value="{StaticResource WarningBrush}" />
+                                                            <Setter TargetName="ResultDot" Property="Background" Value="{DynamicResource WarningBackgroundBrush}" />
+                                                            <Setter TargetName="ResultMark" Property="Foreground" Value="{DynamicResource WarningBrush}" />
                                                         </DataTrigger>
                                                         <DataTrigger Binding="{Binding LevelKey}" Value="Idle">
-                                                            <Setter TargetName="ResultDot" Property="Background" Value="{StaticResource IdleBackgroundBrush}" />
-                                                            <Setter TargetName="ResultMark" Property="Foreground" Value="{StaticResource IdleBrush}" />
+                                                            <Setter TargetName="ResultDot" Property="Background" Value="{DynamicResource IdleBackgroundBrush}" />
+                                                            <Setter TargetName="ResultMark" Property="Foreground" Value="{DynamicResource IdleBrush}" />
                                                         </DataTrigger>
                                                         <DataTrigger Binding="{Binding IsLink}" Value="True">
                                                             <Setter TargetName="DetailText" Property="Visibility" Value="Collapsed" />

@@ -4,131 +4,104 @@ set -euo pipefail
 SCRIPT_DIR=$(/usr/bin/dirname "$0")
 PROJECT_ROOT=$(cd "$SCRIPT_DIR/.." && /bin/pwd)
 APP_SOURCE="$PROJECT_ROOT/Sources/ProxyGaugeApp.swift"
-WINDOWS_RESOURCES="$PROJECT_ROOT/Windows/App.xaml"
+DASHBOARD_SOURCE="$PROJECT_ROOT/Sources/DashboardView.swift"
 WINDOWS_MAIN="$PROJECT_ROOT/Windows/MainWindow.xaml"
 
-/usr/bin/grep -Fq 'case .ok: return CloudPalette.statusGreen' "$APP_SOURCE"
-/usr/bin/grep -Fq 'case .idle: return CloudPalette.statusGray' "$APP_SOURCE"
-/usr/bin/grep -Fq 'MetricCard(metric: model.core)' "$APP_SOURCE"
-/usr/bin/grep -Fq 'MetricCard(metric: model.port)' "$APP_SOURCE"
-/usr/bin/grep -Fq 'MetricCard(metric: model.entry)' "$APP_SOURCE"
-/usr/bin/grep -Fq 'parsed["entry"] ?? parsed["tun"]' "$APP_SOURCE"
-/usr/bin/grep -Fq 'metric.title = fields[2]' "$APP_SOURCE"
-/usr/bin/grep -Fq 'metric.symbol = fields[3]' "$APP_SOURCE"
-/usr/bin/grep -Fq 'static let minimumWidth: CGFloat = 640' "$APP_SOURCE"
-/usr/bin/grep -Fq 'static let minimumContentHeight: CGFloat = 448' "$APP_SOURCE"
-/usr/bin/grep -Fq 'static let defaultWidth: CGFloat = 680' "$APP_SOURCE"
-/usr/bin/grep -Fq 'static let defaultHeight: CGFloat = 500' "$APP_SOURCE"
-/usr/bin/grep -Fq 'Window("ProxyGauge", id: "main")' "$APP_SOURCE"
-/usr/bin/grep -Fq '.appendingPathComponent("com.valenlan.proxygauge.lock")' "$APP_SOURCE"
-/usr/bin/grep -Fq '.windowResizability(.contentMinSize)' "$APP_SOURCE"
-/usr/bin/grep -Fq '.background(Color(nsColor: .windowBackgroundColor))' "$APP_SOURCE"
-/usr/bin/grep -Fq '.background(Color(nsColor: .controlBackgroundColor)' "$APP_SOURCE"
-/usr/bin/grep -Fq '.frame(maxWidth: .infinity, minHeight: 72)' "$APP_SOURCE"
-/usr/bin/grep -Fq 'static let actionTitle = Font.system(size: 14, weight: .semibold)' "$APP_SOURCE"
-/usr/bin/grep -Fq 'static let actionDetail = Font.system(size: 10.5)' "$APP_SOURCE"
-/usr/bin/grep -Fq 'private enum CloudSymbols' "$APP_SOURCE"
-/usr/bin/grep -Fq 'static let localPort = "cable.connector.horizontal"' "$APP_SOURCE"
-/usr/bin/grep -Fq 'static let killSwitch = "shield"' "$APP_SOURCE"
-/usr/bin/grep -Fq 'static let health = "waveform.path.ecg"' "$APP_SOURCE"
-/usr/bin/grep -Fq 'private struct CloudSymbolGlyph: View' "$APP_SOURCE"
-/usr/bin/grep -Fq 'private struct CloudIconBadge: View' "$APP_SOURCE"
-/usr/bin/grep -Fq '.symbolRenderingMode(.monochrome)' "$APP_SOURCE"
-/usr/bin/grep -Fq '.tint(CloudPalette.statusGreen)' "$APP_SOURCE"
-/usr/bin/grep -Fq 'private struct DashboardActionCard: View' "$APP_SOURCE"
-/usr/bin/grep -Fq 'Text(isRunning ? "检测中" : "检测")' "$APP_SOURCE"
-/usr/bin/grep -Fq 'actionLabel: isPreparing ? "准备中" : "浏览器"' "$APP_SOURCE"
-/usr/bin/grep -Fq 'actionLabel: "管理"' "$APP_SOURCE"
-/usr/bin/grep -Fq 'actionSymbol: CloudSymbols.open' "$APP_SOURCE"
-/usr/bin/grep -Fq 'symbol: CloudSymbols.run' "$APP_SOURCE"
-/usr/bin/grep -Fq 'return ["代理核心", "流量入口", "出口一致"]' "$APP_SOURCE"
-/usr/bin/grep -Fq 'return ["基础链路", "出口一致", "\(plan.secondaryLabel) 分流"]' "$APP_SOURCE"
-/usr/bin/grep -Fq 'scopeLabels.joined(separator: "  ·  ")' "$APP_SOURCE"
-/usr/bin/grep -Fq 'Text(isRunning ? "正在按方案检测…" : "按当前方案检查连接")' "$APP_SOURCE"
-/usr/bin/grep -Fq '.fill(tint.opacity(isHovering ? 0.24 : 0.14))' "$APP_SOURCE"
-/usr/bin/grep -Fq 'private struct DiagnosticActionButtonStyle: ButtonStyle' "$APP_SOURCE"
-/usr/bin/grep -Fq '.buttonStyle(DiagnosticActionButtonStyle())' "$APP_SOURCE"
-/usr/bin/grep -Fq '.allowsHitTesting(!isDisabled)' "$APP_SOURCE"
-/usr/bin/grep -Fq '.accessibilityLabel("链路检测正在运行")' "$APP_SOURCE"
-/usr/bin/grep -Fq 'Text(discovery.found ? "已找到本地代理" : "连接本地代理")' "$APP_SOURCE"
-/usr/bin/grep -Fq 'confirm("127.0.0.1:\(port)")' "$APP_SOURCE"
-/usr/bin/grep -Fq '仅读取本地端口与运行模式，不读取订阅和节点' "$APP_SOURCE"
-/usr/bin/grep -Fq 'Button(action: model.openConnectionSetup)' "$APP_SOURCE"
-/usr/bin/grep -Fq '.interactiveDismissDisabled()' "$APP_SOURCE"
-/usr/bin/grep -Fq 'private struct HealthPlanSetupView: View' "$APP_SOURCE"
-/usr/bin/grep -Fq 'Text("链路检测方案")' "$APP_SOURCE"
-/usr/bin/grep -Fq 'Toggle(isOn: $draft.secondaryEnabled)' "$APP_SOURCE"
-/usr/bin/grep -Fq '@Published var showHealthPlanSetup = false' "$APP_SOURCE"
-/usr/bin/grep -Fq '@Published var isBusy = false' "$APP_SOURCE"
-/usr/bin/grep -Fq '@Published var busyLabel = ""' "$APP_SOURCE"
-/usr/bin/grep -Fq '.foregroundStyle(CloudPalette.networkBlue)' "$APP_SOURCE"
-[ "$(/usr/bin/grep -Fc '.frame(width: 76, height: 28)' "$APP_SOURCE")" -ge 2 ]
-/usr/bin/grep -Fq '.font(.system(size: 11, weight: .semibold))' "$APP_SOURCE"
-/usr/bin/grep -Fq '.fixedSize(horizontal: true, vertical: false)' "$APP_SOURCE"
-/usr/bin/grep -Fq 'tint: CloudPalette.networkBlue' "$APP_SOURCE"
-/usr/bin/grep -Fq 'metric.value == "未配置"' "$APP_SOURCE"
-/usr/bin/grep -Fq 'Text(isUnconfigured ? "未开启" : metric.value)' "$APP_SOURCE"
-/usr/bin/grep -Fq 'set: setEnabled' "$APP_SOURCE"
+for label in '监控代理连接、出口 IP 与浏览器隐私' '代理状态' '断网保护' '当前出口' 'IP 纯净度' '隐私泄露' '浏览器测速'; do
+  /usr/bin/grep -Fq "$label" "$DASHBOARD_SOURCE"
+  /usr/bin/grep -Fq "$label" "$WINDOWS_MAIN"
+done
 
-if /usr/bin/grep -Fq 'KillSwitchSetupView' "$APP_SOURCE" \
-  || /usr/bin/grep -Fq '代理出口服务器 IPv4' "$APP_SOURCE" \
-  || /usr/bin/grep -Fq '安装并开启' "$APP_SOURCE"; then
-  echo "Kill Switch toggle must not ask for rule-installation parameters." >&2
+/usr/bin/grep -Fq '@AppStorage("proxygauge.appearance.v1")' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq '.preferredColorScheme(appearance == "dark" ? .dark : .light)' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq 'ThemeButton_Click' "$WINDOWS_MAIN"
+/usr/bin/grep -Fq 'ThemeSunIcon' "$WINDOWS_MAIN"
+/usr/bin/grep -Fq 'ThemeMoonIcon' "$WINDOWS_MAIN"
+/usr/bin/grep -Fq 'symbol: appearance == "dark" ? "moon.fill" : "sun.max.fill"' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq 'ThemeSunIcon.Visibility = isDark ? Visibility.Collapsed : Visibility.Visible;' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'ThemeMoonIcon.Visibility = isDark ? Visibility.Visible : Visibility.Collapsed;' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'CopyExitButton_Click' "$WINDOWS_MAIN"
+/usr/bin/grep -Fq 'x:Name="CopyExitButton" Grid.Row="0" Style="{StaticResource HeaderIconButtonStyle}" Foreground="{DynamicResource MutedTextBrush}"' "$WINDOWS_MAIN"
+/usr/bin/grep -Fq 'ExitClipboard.copy(model.exitAddress)' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq 'copiedExitAddress ? "checkmark" : "doc.on.doc"' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq 'tint: AppThemePalette.secondaryText' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq 'ExitChip(model.exitLocation)' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq 'ExitChip(model.exitNetworkType)' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq 'x:Name="ExitLocationChip" Text="{Binding ExitLocation}"' "$WINDOWS_MAIN"
+/usr/bin/grep -Fq 'x:Name="ExitNetworkTypeChip" Text="{Binding ExitNetworkType}"' "$WINDOWS_MAIN"
+/usr/bin/grep -Fq 'struct CuteDashboardIcon: View' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq 'private struct CuteGlyph: View' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq 'case .protection:' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq 'BubblePromptView(' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq 'BubbleOverlay(dismissOnBackdrop: model.deferConnectionSetup)' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq 'dismissOnBackdrop?()' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq 'primaryTitle: "继续打开"' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq 'ProxyGauge 不会读取或保存页面内容。' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq '.font(CloudTypography.headline)' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq '.font(CloudTypography.metricLabel)' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq '.font(CloudTypography.metricValue(monospaced: true))' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq '.font(CloudTypography.actionTitle)' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq '.font(CloudTypography.actionDetail)' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq '.frame(maxWidth: 920)' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq 'AdaptiveToolCardLayout(spacing: 12, horizontalBreakpoint: 650)' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq '.frame(maxWidth: .infinity, minHeight: 112, alignment: .leading)' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq 'minHeight: geometry.size.height' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq 'MainWindowCapabilityReader()' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq 'static let minimumWidth: CGFloat = 760' "$APP_SOURCE"
+/usr/bin/grep -Fq 'static let minimumContentHeight: CGFloat = 500' "$APP_SOURCE"
+/usr/bin/grep -Fq 'static let defaultHeight: CGFloat = 500' "$APP_SOURCE"
+/usr/bin/grep -Fq '.windowResizability(.contentMinSize)' "$APP_SOURCE"
+/usr/bin/grep -Fq 'static let canvas = adaptive(dark: 0x181A1C' "$APP_SOURCE"
+/usr/bin/grep -Fq 'static let surface = adaptive(dark: 0x202324' "$APP_SOURCE"
+/usr/bin/grep -Fq 'static let text = adaptive(dark: 0xE7EAE9' "$APP_SOURCE"
+/usr/bin/grep -Fq 'static let accent = adaptive(dark: 0x36EC8F' "$APP_SOURCE"
+/usr/bin/grep -Fq '.background(AppThemePalette.canvas)' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq '.tint(AppThemePalette.accent)' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq 'Click="GuardButton_Click"' "$WINDOWS_MAIN"
+/usr/bin/grep -Fq 'Text="当前出口" FontSize="11" FontWeight="Medium"' "$WINDOWS_MAIN"
+/usr/bin/grep -Fq 'FontSize="18" FontWeight="SemiBold" Margin="0,8,0,0"' "$WINDOWS_MAIN"
+/usr/bin/grep -Fq 'Text="IP 纯净度" FontSize="14" FontWeight="SemiBold"' "$WINDOWS_MAIN"
+/usr/bin/grep -Fq 'Style="{StaticResource DashboardCardButtonStyle}" Click="IpPurityButton_Click"' "$WINDOWS_MAIN"
+/usr/bin/grep -Fq 'Style="{StaticResource DashboardCardButtonStyle}" Click="PrivacyButton_Click"' "$WINDOWS_MAIN"
+/usr/bin/grep -Fq 'Style="{StaticResource DashboardCardButtonStyle}" Click="SpeedButton_Click"' "$WINDOWS_MAIN"
+/usr/bin/grep -Fq 'https://speed.cloudflare.com/' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq 'async let exitResult = execute("exit-summary")' "$APP_SOURCE"
+
+if /usr/bin/grep -Fq 'Text("链路检测")' "$DASHBOARD_SOURCE" \
+  || /usr/bin/grep -Fq 'Text("规则管理")' "$DASHBOARD_SOURCE" \
+  || /usr/bin/grep -Fq 'MetricCard(metric:' "$DASHBOARD_SOURCE"; then
+  echo 'The active dashboard must not expose the removed diagnostics or old metric grid.' >&2
   exit 1
 fi
 
 if /usr/bin/grep -Eq 'kill-pause|暂停[[:space:]]*10[[:space:]]*分钟' "$APP_SOURCE"; then
-  echo "Kill Switch must remain a persistent on/off switch without a timed pause." >&2
+  echo 'Disconnect protection must remain a persistent on/off switch.' >&2
   exit 1
 fi
 
-if /usr/bin/grep -Fq 'Label("配置"' "$APP_SOURCE"; then
-  echo "Unconfigured Kill Switch must remain an off switch, not a configuration button." >&2
+if /usr/bin/grep -Fq '.windowResizability(.contentSize)' "$APP_SOURCE" \
+  || /usr/bin/grep -Fq 'static let maximumWidth:' "$APP_SOURCE" \
+  || /usr/bin/grep -Fq 'static let maximumContentHeight:' "$APP_SOURCE"; then
+  echo 'The main macOS window must allow full screen without stretching dashboard content.' >&2
   exit 1
 fi
 
-if /usr/bin/grep -q 'MetricCard(metric: .*accent:' "$APP_SOURCE"; then
-  echo "Read-only status cards must not use per-card accent colors." >&2
+if /usr/bin/grep -Eq '\.alert\(|\.sheet\(' "$DASHBOARD_SOURCE"; then
+  echo 'The dashboard must use the shared bubble popup instead of system alerts or sheets.' >&2
   exit 1
 fi
 
-if /usr/bin/grep -Fq 'guardTeal' "$APP_SOURCE"; then
-  echo "Kill Switch must use the shared protection green." >&2
+if /usr/bin/grep -Fq 'Button("稍后", action: deferSetup)' "$APP_SOURCE"; then
+  echo 'The connection bubble must close from its backdrop instead of a Later button.' >&2
   exit 1
 fi
 
-if /usr/bin/grep -Fq 'shield.lefthalf.filled' "$APP_SOURCE"; then
-  echo "Kill Switch icon must use the same complete shield silhouette in every state." >&2
+if /usr/bin/grep -Eq 'exitProtocol|ExitProtocol|普通公网' \
+  "$APP_SOURCE" "$DASHBOARD_SOURCE" "$WINDOWS_MAIN" \
+  "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs" \
+  "$PROJECT_ROOT/Windows/Services/ExitSummaryService.cs"; then
+  echo 'The exit card must show country/region plus a verified IP type, never protocol or generic public network.' >&2
   exit 1
 fi
 
-if /usr/bin/grep -Fq '.frame(width: 276)' "$APP_SOURCE"; then
-  echo "The health action must stay on its own row in the 4:3 main window." >&2
-  exit 1
-fi
-
-if /usr/bin/grep -Fq 'ActionTriggerLabel' "$APP_SOURCE"; then
-  echo "Diagnostic actions must not regress to standalone pill buttons." >&2
-  exit 1
-fi
-
-if /usr/bin/grep -Fq '.padding(.trailing, 76)' "$APP_SOURCE"; then
-  echo "Health controls must use layout spacing instead of fixed overlay offsets." >&2
-  exit 1
-fi
-
-if /usr/bin/grep -Fq '.windowResizability(.contentSize)' "$APP_SOURCE"; then
-  echo "The main macOS window must remain user-resizable." >&2
-  exit 1
-fi
-
-if /usr/bin/grep -Fq '.preferredColorScheme(' "$APP_SOURCE" \
-  || /usr/bin/grep -Fq 'NSRequiresAquaSystemAppearance' "$PROJECT_ROOT/Info.plist"; then
-  echo "macOS appearance must continue to follow the system light/dark setting." >&2
-  exit 1
-fi
-
-/usr/bin/grep -Fq 'x:Key="RulesBrush"' "$WINDOWS_RESOURCES"
-/usr/bin/grep -Fq 'Foreground="{StaticResource RulesBrush}"' "$WINDOWS_MAIN"
-
-echo "ProxyGauge UI color semantics tests passed."
+echo 'ProxyGauge dashboard semantics tests passed.'

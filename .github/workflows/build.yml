@@ -27,6 +27,7 @@ jobs:
           Scripts/test-branding.sh
           Scripts/test-windows-parity.sh
           Scripts/test-release-installers.sh
+          Scripts/test-updater.sh
           npm pack --dry-run --json
           Scripts/build.sh
       - name: Verify bundle

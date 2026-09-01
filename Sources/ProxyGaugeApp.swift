@@ -155,22 +155,57 @@ final class ProxyModel: ObservableObject {
     @Published var isDiscoveringConnection = false
     @Published var discovery = ProxyDiscovery()
     @Published var healthPlan = ProxyGaugePreferences.loadHealthPlan()
+    @Published var exitAddress = "正在读取…"
+    @Published var exitLocation = "正在确认代理出口"
+    @Published var exitNetwork = "ASN 未知"
+    @Published var exitNetworkType = "IP 类型未知"
+    @Published var availableUpdate: AppUpdateRelease?
+    @Published var showUpdatePrompt = false
+    @Published var showUpdateResult = false
+    @Published var updateMessage = ""
+    @Published var isCheckingUpdate = false
+    @Published var isInstallingUpdate = false
 
     @Published var core = MetricState(title: "代理核心", symbol: CloudSymbols.core, value: "检查中", level: .idle)
     @Published var port = MetricState(title: "本地端口", symbol: CloudSymbols.localPort, value: "检查中", level: .idle)
     @Published var entry = MetricState(title: "流量入口", symbol: CloudSymbols.entryInactive, value: "检查中", level: .idle)
     @Published var killSwitch = MetricState(title: "Kill Switch", symbol: CloudSymbols.killSwitch, value: "检查中", level: .idle)
 
+    var connectionValue: String {
+        switch overallLevel {
+        case .ok: return "已连接"
+        case .warning: return headline
+        case .error: return "未连接"
+        case .idle: return "检查中"
+        }
+    }
+
+    var connectionDetail: String {
+        let client = discovery.client == "未识别" ? "Mihomo" : discovery.client
+        let mode = discovery.mode == "未开启" ? entry.title : discovery.mode
+        let endpoint = UserDefaults.standard.string(forKey: ProxyGaugePreferences.selectedEndpointKey)
+            ?? discovery.endpoint
+        return "\(client) · \(mode) · \(endpoint)"
+    }
+
+    var currentVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
+    }
+
+    private let updateService = AppUpdateService()
+
     private let backendPath = Bundle.main.path(forResource: "proxygauge-backend", ofType: "sh")
         ?? FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".local/share/proxygauge/proxygauge-backend.sh").path
-    init() {
+    init(startImmediately: Bool = true) {
+        guard startImmediately else { return }
         Task { [weak self] in
             guard let self else { return }
             await self.refresh()
             if !UserDefaults.standard.bool(forKey: ProxyGaugePreferences.setupCompletedKey) {
                 await self.discoverConnection(showSheet: true)
             }
+            await self.checkForUpdatesIfNeeded()
         }
     }
 
@@ -220,8 +255,23 @@ final class ProxyModel: ObservableObject {
     func refresh() async {
         guard !isRefreshing else { return }
         isRefreshing = true
-        let result = await execute("probe")
+        async let probeResult = execute("probe")
+        async let discoveryResult = execute("discover")
+        async let exitResult = execute("exit-summary")
+        let (result, discovered, exit) = await (probeResult, discoveryResult, exitResult)
         isRefreshing = false
+
+        if discovered.status == 0 {
+            discovery = parseDiscovery(discovered.output)
+        }
+        if exit.status == 0 {
+            applyExitSummary(exit.output)
+        } else {
+            exitAddress = "暂时无法读取"
+            exitLocation = "请检查本地代理连接"
+            exitNetwork = "ASN 未知"
+            exitNetworkType = "IP 类型未知"
+        }
 
         guard result.status == 0 else {
             headline = "无法读取状态"
@@ -230,6 +280,56 @@ final class ProxyModel: ObservableObject {
             return
         }
         applyProbe(result.output)
+    }
+
+    func checkForUpdates(silent: Bool = false) async {
+        guard !isCheckingUpdate && !isInstallingUpdate else { return }
+        isCheckingUpdate = true
+        defer { isCheckingUpdate = false }
+        do {
+            if let release = try await updateService.check(currentVersion: currentVersion) {
+                availableUpdate = release
+                showUpdatePrompt = true
+            } else if !silent {
+                updateMessage = "当前 v\(currentVersion) 已是最新版。"
+                showUpdateResult = true
+            }
+        } catch {
+            if !silent {
+                updateMessage = "暂时无法完成更新检查。\n\n\(error.localizedDescription)"
+                showUpdateResult = true
+            }
+        }
+    }
+
+    func installAvailableUpdate() {
+        guard let release = availableUpdate, !isInstallingUpdate else { return }
+        isInstallingUpdate = true
+        busyLabel = "正在下载并校验更新…"
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let downloaded = try await self.updateService.download(release)
+                try self.updateService.installDownloadedUpdate(
+                    release,
+                    archive: downloaded.archive,
+                    checksum: downloaded.checksum
+                )
+            } catch {
+                self.isInstallingUpdate = false
+                self.busyLabel = ""
+                self.updateMessage = "更新没有安装。\n\n\(error.localizedDescription)"
+                self.showUpdateResult = true
+            }
+        }
+    }
+
+    private func checkForUpdatesIfNeeded() async {
+        let key = "proxygauge.lastUpdateCheck.v1"
+        let lastCheck = UserDefaults.standard.object(forKey: key) as? Date ?? .distantPast
+        guard Date().timeIntervalSince(lastCheck) >= 24 * 60 * 60 else { return }
+        UserDefaults.standard.set(Date(), forKey: key)
+        await checkForUpdates(silent: true)
     }
 
     func runHealthCheck() {
@@ -339,6 +439,19 @@ final class ProxyModel: ObservableObject {
         )
     }
 
+    private func applyExitSummary(_ output: String) {
+        var fields: [String: String] = [:]
+        for line in output.split(separator: "\n") {
+            let parts = line.split(separator: "\t", maxSplits: 1, omittingEmptySubsequences: false)
+            guard parts.count == 2 else { continue }
+            fields[String(parts[0])] = String(parts[1])
+        }
+        exitAddress = fields["ip"] ?? "暂时无法读取"
+        exitLocation = fields["location"] ?? "位置未知"
+        exitNetwork = fields["asn"] ?? "ASN 未知"
+        exitNetworkType = fields["network"] ?? "IP 类型未知"
+    }
+
     private func updateMetric(_ metric: inout MetricState, from fields: [String]?) {
         guard let fields, fields.count >= 2 else { return }
         metric.value = fields[0]
@@ -396,8 +509,40 @@ final class ProxyModel: ObservableObject {
     }
 }
 
+enum AppThemePalette {
+    private static func rgb(_ value: UInt32) -> NSColor {
+        NSColor(
+            srgbRed: CGFloat((value >> 16) & 0xFF) / 255,
+            green: CGFloat((value >> 8) & 0xFF) / 255,
+            blue: CGFloat(value & 0xFF) / 255,
+            alpha: 1
+        )
+    }
+
+    private static func adaptive(dark: UInt32, light: NSColor) -> Color {
+        let darkColor = rgb(dark)
+        return Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? darkColor : light
+        })
+    }
+
+    static let canvas = adaptive(dark: 0x181A1C, light: .windowBackgroundColor)
+    static let surface = adaptive(dark: 0x202324, light: .controlBackgroundColor)
+    static let raisedSurface = adaptive(dark: 0x25292A, light: .controlBackgroundColor)
+    static let border = adaptive(dark: 0x343A38, light: .separatorColor)
+    static let text = adaptive(dark: 0xE7EAE9, light: .labelColor)
+    static let secondaryText = adaptive(dark: 0x989E9B, light: .secondaryLabelColor)
+    static let tertiaryText = adaptive(dark: 0x626866, light: .tertiaryLabelColor)
+    static let accent = adaptive(dark: 0x36EC8F, light: .systemBlue)
+    static let onAccent = adaptive(dark: 0x0D1712, light: .white)
+    static let statusGreen = adaptive(
+        dark: 0x36EC8F,
+        light: NSColor(srgbRed: 0.20, green: 0.78, blue: 0.35, alpha: 1)
+    )
+}
+
 private enum CloudPalette {
-    static let statusGreen = Color(red: 0.20, green: 0.78, blue: 0.35)
+    static let statusGreen = AppThemePalette.statusGreen
     static let statusGray = Color.secondary
     static let statusOrange = Color.orange
     static let statusRed = Color.red
@@ -423,16 +568,16 @@ private enum CloudSymbols {
     static let manage = "chevron.right"
 }
 
-private enum MainWindowLayout {
-    // Keep the dashboard legible at its smallest size, but let macOS users
-    // resize the window to match their workspace instead of enforcing a ratio.
-    static let minimumWidth: CGFloat = 640
-    static let minimumContentHeight: CGFloat = 448
-    static let defaultWidth: CGFloat = 680
+enum MainWindowLayout {
+    // Keep the dashboard legible at its smallest size. The window itself may
+    // grow or enter full screen while the dashboard remains width-constrained.
+    static let minimumWidth: CGFloat = 760
+    static let minimumContentHeight: CGFloat = 500
+    static let defaultWidth: CGFloat = 820
     static let defaultHeight: CGFloat = 500
 }
 
-private enum CloudTypography {
+enum CloudTypography {
     static let headline = Font.system(size: 21, weight: .semibold, design: .rounded)
     static let headerDetail = Font.system(size: 12)
     static let metricLabel = Font.system(size: 11, weight: .medium)
@@ -1767,12 +1912,11 @@ private struct HealthPlanSetupView: View {
     }
 }
 
-private struct ConnectionSetupView: View {
+struct ConnectionSetupView: View {
     let discovery: ProxyDiscovery
     let isDiscovering: Bool
     let confirm: (String) -> Void
     let redetect: () -> Void
-    let deferSetup: () -> Void
 
     @State private var manualMode = false
     @State private var manualPort = "7890"
@@ -1850,9 +1994,6 @@ private struct ConnectionSetupView: View {
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 10) {
-                Button("稍后", action: deferSetup)
-                    .controlSize(.small)
-
                 Spacer()
 
                 if discovery.found {
@@ -1876,7 +2017,6 @@ private struct ConnectionSetupView: View {
         }
         .padding(22)
         .frame(width: 540, height: manualMode ? 350 : 330)
-        .interactiveDismissDisabled()
         .onAppear(perform: syncFromDiscovery)
         .onChange(of: discovery) { _, _ in
             syncFromDiscovery()
@@ -1993,231 +2133,6 @@ private struct ConnectionSetupView: View {
     }
 }
 
-struct ContentView: View {
-    private static let manualReviewDirectURLs = [
-        "https://ippure.com/",
-        "https://ipcheck.ing/?hl=zh",
-        "https://browserleaks.com/ip",
-        "https://www.ipqualityscore.com/free-ip-lookup-proxy-vpn-test"
-    ]
-
-    @StateObject private var model = ProxyModel()
-    @State private var showingManualReviewConfirmation = false
-    @State private var showingManualReviewFailure = false
-    @State private var isPreparingManualReview = false
-    @State private var manualReviewFailureMessage = ""
-    @State private var showingRules = false
-
-    var body: some View {
-        VStack(spacing: 14) {
-            header
-
-            LazyVGrid(
-                columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 2),
-                spacing: 12
-            ) {
-                MetricCard(metric: model.core)
-                MetricCard(metric: model.port)
-                MetricCard(metric: model.entry)
-                KillSwitchCard(
-                    metric: model.killSwitch,
-                    isBusy: model.isBusy,
-                    setEnabled: { enabled in
-                        if enabled {
-                            model.enableKillSwitch()
-                        } else {
-                            model.showDisableConfirmation = true
-                        }
-                    }
-                )
-            }
-
-            actionArea
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 22)
-        .frame(
-            minWidth: MainWindowLayout.minimumWidth,
-            maxWidth: .infinity,
-            minHeight: MainWindowLayout.minimumContentHeight,
-            maxHeight: .infinity,
-            alignment: .top
-        )
-        .background(Color(nsColor: .windowBackgroundColor))
-        .sheet(item: $model.resultSheet) { result in
-            ResultView(result: result) {
-                model.resultSheet = nil
-            }
-        }
-        .sheet(isPresented: $showingRules) {
-            RulePackView {
-                showingRules = false
-            }
-        }
-        .sheet(isPresented: $model.showConnectionSetup) {
-            ConnectionSetupView(
-                discovery: model.discovery,
-                isDiscovering: model.isDiscoveringConnection,
-                confirm: model.confirmConnection,
-                redetect: {
-                    Task { await model.discoverConnection() }
-                },
-                deferSetup: model.deferConnectionSetup
-            )
-        }
-        .sheet(isPresented: $model.showHealthPlanSetup) {
-            HealthPlanSetupView(
-                plan: model.healthPlan,
-                save: model.saveHealthPlan,
-                close: { model.showHealthPlanSetup = false }
-            )
-        }
-        .alert("关闭 Kill Switch？", isPresented: $model.showDisableConfirmation) {
-            Button("取消", role: .cancel) {}
-            Button("确认关闭", role: .destructive) {
-                model.disableKillSwitch()
-            }
-        } message: {
-            Text("关闭后，代理意外中断时，应用可能使用真实 IP 直连外网。")
-        }
-        .alert("打开浏览器人工复核？", isPresented: $showingManualReviewConfirmation) {
-            Button("取消", role: .cancel) {}
-            Button("打开 6 个网站") {
-                Task { await openManualReviewSites() }
-            }
-        } message: {
-            Text("确认后会先经当前本地代理入口读取出口 IP，再使用系统默认浏览器打开 6 个复核网站。Scamalytics 与 AbuseIPDB 会直接进入该 IP 的结果页；部分网站可能要求人机验证，各站结果不会计入链路分。")
-        }
-        .alert("复核网站未完整打开", isPresented: $showingManualReviewFailure) {
-            Button("知道了", role: .cancel) {}
-        } message: {
-            Text(manualReviewFailureMessage)
-        }
-    }
-
-    private var header: some View {
-        HStack(spacing: 14) {
-            Image(nsImage: NSApplication.shared.applicationIconImage)
-                .resizable()
-                .interpolation(.high)
-                .frame(width: 48, height: 48)
-
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 9) {
-                    Circle()
-                        .fill(model.overallLevel.color)
-                        .frame(width: 8, height: 8)
-                    Text(model.headline)
-                        .font(CloudTypography.headline)
-                }
-                Text(model.detail)
-                    .font(CloudTypography.headerDetail)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            HStack(spacing: 7) {
-                Button(action: model.openConnectionSetup) {
-                    CloudSymbolGlyph(
-                        symbol: CloudSymbols.connectionSettings,
-                        tint: CloudPalette.networkBlue,
-                        size: 14,
-                        frameSize: 18
-                    )
-                }
-                .buttonStyle(.borderless)
-                .padding(8)
-                .background(CloudPalette.networkBlue.opacity(0.09), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .stroke(CloudPalette.networkBlue.opacity(0.12), lineWidth: 1)
-                }
-                .disabled(model.isBusy || model.isRefreshing)
-                .help("连接设置")
-
-                Button {
-                    Task { await model.refresh() }
-                } label: {
-                    if model.isRefreshing {
-                        ProgressView()
-                            .controlSize(.small)
-                            .frame(width: 18, height: 18)
-                    } else {
-                        CloudSymbolGlyph(
-                            symbol: CloudSymbols.refresh,
-                            tint: CloudPalette.networkBlue,
-                            size: 14,
-                            frameSize: 18
-                        )
-                    }
-                }
-                .buttonStyle(.borderless)
-                .padding(8)
-                .background(CloudPalette.networkBlue.opacity(0.09), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .stroke(CloudPalette.networkBlue.opacity(0.12), lineWidth: 1)
-                }
-                .disabled(model.isBusy || model.isRefreshing)
-                .help("刷新状态")
-            }
-        }
-    }
-
-    private var actionArea: some View {
-        VStack(spacing: 10) {
-            HealthActionCard(
-                plan: model.healthPlan,
-                isRunning: isHealthCheckRunning,
-                isDisabled: model.isBusy,
-                openPlan: { model.showHealthPlanSetup = true },
-                run: model.runHealthCheck
-            )
-            .accessibilityLabel(isHealthCheckRunning ? "链路检测正在运行" : "开始链路检测")
-            .help(isHealthCheckRunning ? "正在检测代理链路" : "按当前方案检测代理链路")
-
-            HStack(spacing: 10) {
-                AdvancedCheckCard(isPreparing: isPreparingManualReview) {
-                    showingManualReviewConfirmation = true
-                }
-                RulePackCard { showingRules = true }
-            }
-        }
-    }
-
-    private func openManualReviewSites() async {
-        guard !isPreparingManualReview else { return }
-        isPreparingManualReview = true
-        let exitIP = await model.resolveDefaultExitIP()
-        var reviewURLs = Self.manualReviewDirectURLs
-        if let exitIP {
-            reviewURLs.append("https://scamalytics.com/ip/\(exitIP)")
-            reviewURLs.append("https://www.abuseipdb.com/check/\(exitIP)")
-        }
-
-        let failedCount = reviewURLs.reduce(into: 0) { count, urlString in
-            guard let url = URL(string: urlString), NSWorkspace.shared.open(url) else {
-                count += 1
-                return
-            }
-        }
-        isPreparingManualReview = false
-
-        if exitIP == nil {
-            manualReviewFailureMessage = "无法经当前本地代理入口确认出口 IP，因此没有打开需要 IP 参数的 Scamalytics 和 AbuseIPDB。其余 4 个网站已按正常方式打开；ProxyGauge 没有改动代理配置。"
-            showingManualReviewFailure = true
-        } else if failedCount > 0 {
-            manualReviewFailureMessage = "有 \(failedCount) 个网站未能打开，请检查系统默认浏览器设置后重试。ProxyGauge 没有改动代理配置。"
-            showingManualReviewFailure = true
-        }
-    }
-
-    private var isHealthCheckRunning: Bool {
-        model.isBusy && model.busyLabel.contains("检测代理链路")
-    }
-}
-
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var singletonLockFD: Int32 = -1
     private var ownsSingletonLock = false
@@ -2281,18 +2196,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+#if !SNAPSHOT
 @main
 struct ProxyGaugeApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @StateObject private var model = ProxyModel()
 
     var body: some Scene {
         Window("ProxyGauge", id: "main") {
-            ContentView()
+            ContentView(model: model)
         }
         .defaultSize(
             width: MainWindowLayout.defaultWidth,
             height: MainWindowLayout.defaultHeight
         )
         .windowResizability(.contentMinSize)
+        .commands {
+            CommandGroup(after: .appInfo) {
+                Button("检查更新…") {
+                    Task { await model.checkForUpdates() }
+                }
+                .disabled(model.isCheckingUpdate || model.isInstallingUpdate)
+
+                Divider()
+
+                Button("连接设置…") {
+                    model.openConnectionSetup()
+                }
+            }
+        }
     }
 }
+#endif
