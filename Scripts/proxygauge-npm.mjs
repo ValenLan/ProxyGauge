@@ -17,31 +17,43 @@ Usage:
 
 function main() {
   const argumentsList = process.argv.slice(2);
-  const postinstall = argumentsList.includes("--postinstall");
-  const command = argumentsList.find((argument) => !argument.startsWith("--")) ?? "install";
-
-  if (postinstall && !shouldRunPostinstall(process.env)) {
-    console.log(
-      "ProxyGauge 桌面应用只在全局安装时自动安装；请运行 npm install -g proxygauge。"
-    );
+  if (argumentsList.length === 0) {
+    runNativeInstaller();
     return;
   }
 
-  if (["--version", "-v", "version"].some((argument) => argumentsList.includes(argument))) {
+  if (argumentsList.length === 1 && ["--version", "-v", "version"].includes(argumentsList[0])) {
     console.log(packageVersion());
     return;
   }
 
-  if (["--help", "-h", "help"].some((argument) => argumentsList.includes(argument))) {
+  if (argumentsList.length === 1 && ["--help", "-h", "help"].includes(argumentsList[0])) {
     printHelp();
     return;
   }
 
-  if (command !== "install") {
-    throw new Error(`未知命令：${command}`);
+  if (argumentsList.length === 1 && argumentsList[0] === "install") {
+    runNativeInstaller();
+    return;
   }
 
-  runNativeInstaller();
+  if (argumentsList.length === 2 &&
+      argumentsList[0] === "install" &&
+      argumentsList[1] === "--postinstall") {
+    if (process.env.npm_lifecycle_event !== "postinstall") {
+      throw new Error("--postinstall 只能由 npm postinstall 生命周期调用。");
+    }
+    if (!shouldRunPostinstall(process.env)) {
+      console.log(
+        "ProxyGauge 桌面应用只在全局安装时自动安装；请运行 npm install -g proxygauge。"
+      );
+      return;
+    }
+    runNativeInstaller();
+    return;
+  }
+
+  throw new Error(`未知或多余的参数：${argumentsList.join(" ")}`);
 }
 
 try {

@@ -1,4 +1,3 @@
-using System.Net;
 using System.Windows;
 using System.Windows.Input;
 using ProxyGauge.Models;
@@ -76,9 +75,11 @@ public partial class DetectionPlanWindow : Window
             ValidationText.Text = "请填写有效的目标域名，并使用英文逗号分隔。";
             return;
         }
-        if (enabled && expectedIp.Length > 0 && !IPAddress.TryParse(expectedIp, out _))
+        var normalizedExpectedIp = string.Empty;
+        if (enabled && expectedIp.Length > 0 &&
+            !ExitSummary.TryNormalizePublicAddress(expectedIp, out normalizedExpectedIp))
         {
-            ValidationText.Text = "额外出口期望 IP 的格式不正确，也可以留空。";
+            ValidationText.Text = "额外出口期望值必须是规范的公网 IPv4 或 IPv6，也可以留空。";
             return;
         }
 
@@ -91,7 +92,7 @@ public partial class DetectionPlanWindow : Window
             Config.SecondaryMixedHost = host;
             Config.SecondaryMixedPort = port;
             Config.SecondaryDomains = string.Join(',', domains);
-            Config.ExpectedSecondaryIp = expectedIp;
+            Config.ExpectedSecondaryIp = expectedIp.Length == 0 ? string.Empty : normalizedExpectedIp;
         }
         DialogResult = true;
     }

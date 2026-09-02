@@ -179,7 +179,8 @@
                         </Border>
                     </Grid>
 
-                    <Border Grid.Row="4" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="18" Padding="18">
+                    <Border Grid.Row="4" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="18" Padding="18"
+                            ToolTip="出口查询遵循 Windows 当前系统网络路径；前台打开时最多每 5 分钟自动核验一次。每次至少由两个独立公网查询服务交叉确认，它们会看到该路径的出口 IP 和请求时间，但不会收到代理配置、订阅或凭据。">
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="74" />
@@ -202,7 +203,7 @@
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
-                                <TextBlock Text="当前出口" FontSize="11" FontWeight="Medium" />
+                                <TextBlock x:Name="ExitCardTitle" Text="系统实际出口" FontSize="11" FontWeight="Medium" />
                                 <Button x:Name="CopyExitButton" Grid.Row="0" Style="{StaticResource HeaderIconButtonStyle}" Foreground="{DynamicResource MutedTextBrush}" Width="31" Height="31" HorizontalAlignment="Right" Margin="0,-6,-5,0" Click="CopyExitButton_Click" ToolTip="复制出口 IP" AutomationProperties.Name="复制出口 IP">
                                     <Viewbox Width="15" Height="15">
                                         <Canvas Width="18" Height="18">
@@ -216,7 +217,9 @@
                                 <StackPanel Grid.Row="2" Margin="0,8,0,0">
                                     <StackPanel Orientation="Horizontal">
                                         <Border Background="{DynamicResource AccentSurfaceBrush}" CornerRadius="8" Padding="9,4">
-                                            <TextBlock x:Name="ExitLocationChip" Text="{Binding ExitLocation}" Foreground="{DynamicResource AccentBrush}" FontSize="10.5" FontWeight="SemiBold" />
+                                            <TextBlock x:Name="ExitLocationChip" Text="{Binding ExitLocation}" Foreground="{DynamicResource AccentBrush}"
+                                                       FontSize="10.5" FontWeight="SemiBold" MaxWidth="520" MaxHeight="34"
+                                                       TextWrapping="Wrap" TextTrimming="CharacterEllipsis" />
                                         </Border>
                                         <Border x:Name="ExitIpVersionBorder" Background="{DynamicResource AccentSurfaceBrush}" CornerRadius="8" Padding="9,4" Margin="8,0,0,0"
                                                 Visibility="{Binding HasExitIpVersion, Converter={StaticResource BooleanToVisibilityConverter}}">
@@ -236,7 +239,7 @@
                             <ColumnDefinition Width="12" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <Button Grid.Column="0" Style="{StaticResource DashboardCardButtonStyle}" Click="IpPurityButton_Click" ToolTip="用默认浏览器查看 IP 风险与类型">
+                        <Button Grid.Column="0" Style="{StaticResource DashboardCardButtonStyle}" Click="IpPurityButton_Click" ToolTip="用默认浏览器查看 IP 风险">
                             <Grid>
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="62" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                 <Grid Width="50" Height="50" HorizontalAlignment="Left" VerticalAlignment="Center">
@@ -248,7 +251,7 @@
                                         <Ellipse Canvas.Left="19.7" Canvas.Top="19.4" Width="5" Height="5" Fill="{DynamicResource AccentBrush}" />
                                     </Canvas></Viewbox>
                                 </Grid>
-                                <StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Text="IP 纯净度" FontSize="14" FontWeight="SemiBold" /><TextBlock Text="查看 IP 风险与网络类型" Foreground="{DynamicResource MutedTextBrush}" FontSize="10.5" Margin="0,5,0,0" TextWrapping="Wrap" /></StackPanel>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Text="IP 纯净度" FontSize="14" FontWeight="SemiBold" /><TextBlock Text="打开第三方 IP 风险检测" Foreground="{DynamicResource MutedTextBrush}" FontSize="10.5" Margin="0,5,0,0" TextWrapping="Wrap" /></StackPanel>
                                 <Path Grid.Column="2" Width="7" Height="12" Stretch="Fill" Data="{StaticResource IconChevron}" Stroke="{DynamicResource MutedTextBrush}" StrokeThickness="1.4" VerticalAlignment="Center" />
                             </Grid>
                         </Button>

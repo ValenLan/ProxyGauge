@@ -9,11 +9,17 @@ enum ExitClipboard {
     }
 
     static func copy(_ rawValue: String, to pasteboard: NSPasteboard = .general) -> Bool {
+        copy(rawValue) { value in
+            let item = NSPasteboardItem()
+            guard item.setString(value, forType: .string) else { return false }
+            pasteboard.clearContents()
+            return pasteboard.writeObjects([item])
+        }
+    }
+
+    static func copy(_ rawValue: String, using writer: (String) -> Bool) -> Bool {
         guard let value = normalizedAddress(rawValue) else { return false }
-        let item = NSPasteboardItem()
-        guard item.setString(value, forType: .string) else { return false }
-        pasteboard.clearContents()
-        return pasteboard.writeObjects([item])
+        return writer(value)
     }
 
     private static func isIPAddress(_ value: String) -> Bool {

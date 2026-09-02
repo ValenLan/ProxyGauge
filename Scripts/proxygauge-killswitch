@@ -35,10 +35,10 @@ else
   TOKEN_FILE=/var/run/proxygauge-killswitch.pf-token
   RUNTIME_STATE=/var/run/proxygauge-killswitch.state
   PF_TEMPLATE="$SCRIPT_DIR/proxygauge.conf.template"
-  PERSIST_HELPER=/Library/PrivilegedHelperTools/com.valenlan.proxygauge.killswitch
+  PERSIST_HELPER=/Library/PrivilegedHelperTools/com.valenlan.proxygauge/proxygauge-killswitch
   PERSIST_PLIST=/Library/LaunchDaemons/com.valenlan.proxygauge.killswitch.plist
   PERSIST_STATE_DIR=/var/db/proxygauge
-  PERSIST_TEMPLATE=/Library/PrivilegedHelperTools/proxygauge.conf.template
+  PERSIST_TEMPLATE=/Library/PrivilegedHelperTools/com.valenlan.proxygauge/proxygauge.conf.template
   TEST_MODE=0
 fi
 
@@ -49,30 +49,14 @@ MANAGED_MARKER="$PERSIST_STATE_DIR/managed-anchor.sha256"
 ANCHOR=proxygauge
 ANCHOR_CONF="$ANCHOR_DIR/proxygauge"
 
-console_home() {
-  local console_user
-  console_user=$(/usr/bin/stat -f%Su /dev/console 2>/dev/null || true)
-  if [ -n "$console_user" ] && [ "$console_user" != "root" ] && [ "$console_user" != "loginwindow" ]; then
-    /usr/bin/dscl . -read "/Users/$console_user" NFSHomeDirectory 2>/dev/null | /usr/bin/awk '{print $2}'
-  fi
-}
-
 if [ "$TEST_MODE" -eq 0 ] && [ ! -r "$PF_TEMPLATE" ]; then
   if [ -r "$PERSIST_TEMPLATE" ]; then
     PF_TEMPLATE="$PERSIST_TEMPLATE"
-  elif [ -r "$SCRIPT_DIR/../PF/proxygauge.conf.template" ]; then
-    PF_TEMPLATE="$SCRIPT_DIR/../PF/proxygauge.conf.template"
-  else
-    CONSOLE_HOME=$(console_home)
-    if [ -n "$CONSOLE_HOME" ] && [ -r "$CONSOLE_HOME/.local/share/proxygauge/proxygauge.conf.template" ]; then
-      PF_TEMPLATE="$CONSOLE_HOME/.local/share/proxygauge/proxygauge.conf.template"
-    fi
   fi
 fi
 
 ACTION="${1:-status}"
 BOOTSTRAP_DEFAULT=0
-RULES_CHANGED=0
 
 unsupported_rules_present() {
   local candidate
@@ -103,8 +87,33 @@ if [ "$ACTION" = "on" ] && ! /usr/bin/grep -qE \
   BOOTSTRAP_DEFAULT=1
 fi
 
-if [ "$TEST_MODE" -eq 0 ] && [ "$(/usr/bin/id -u)" -ne 0 ]; then
-  exec /usr/bin/sudo "$0" "$@"
+validate_fixed_payload() {
+  local candidate owner mode
+  [ "$TEST_MODE" -eq 0 ] || return 0
+  [ "$0" = "$PERSIST_HELPER" ] || {
+    echo "❌ Kill Switch helper 必须从受保护的固定路径运行"
+    return 1
+  }
+  for candidate in "$PERSIST_HELPER" "$PERSIST_TEMPLATE"; do
+    [ -f "$candidate" ] && [ ! -L "$candidate" ] || {
+      echo "❌ Kill Switch 固定组件不存在或不安全"
+      return 1
+    }
+    owner=$(/usr/bin/stat -f '%u' "$candidate" 2>/dev/null || true)
+    mode=$(/usr/bin/stat -f '%Lp' "$candidate" 2>/dev/null || true)
+    if [ "$owner" != "0" ] || [ -z "$mode" ] || [ $((8#$mode & 022)) -ne 0 ]; then
+      echo "❌ Kill Switch 固定组件权限不安全"
+      return 1
+    fi
+  done
+}
+
+if [ "$TEST_MODE" -eq 0 ]; then
+  if [ "$(/usr/bin/id -u)" -ne 0 ]; then
+    echo "❌ 请通过 ProxyGauge 的受保护管理员桥接操作 Kill Switch"
+    exit 1
+  fi
+  validate_fixed_payload || exit 1
 fi
 
 valid_interfaces() {
@@ -114,7 +123,8 @@ valid_interfaces() {
   case "$interfaces" in
     *$'\n'*|*$'\r'*) return 1 ;;
   esac
-  if ! /usr/bin/printf '%s\n' "$interfaces" | /usr/bin/grep -qE '^((en|bridge|ppp)[0-9]+)([[:space:]]+(en|bridge|ppp)[0-9]+)*$'; then
+  if ! /usr/bin/printf '%s\n' "$interfaces" \
+    | /usr/bin/grep -qE '^[A-Za-z][A-Za-z0-9_.-]{0,14}([[:space:]]+[A-Za-z][A-Za-z0-9_.-]{0,14})*$'; then
     return 1
   fi
   read -r -a interface_names <<EOF
@@ -123,10 +133,11 @@ EOF
   count=0
   for interface_name in "${interface_names[@]}"; do
     case "$interface_name" in
-      en[0-9]*|bridge[0-9]*|ppp[0-9]*)
-        /usr/bin/printf '%s\n' "$interface_name" | /usr/bin/grep -qE '^(en|bridge|ppp)[0-9]+$' || return 1
+      lo[0-9]*|utun[0-9]*) return 1 ;;
+      *)
+        /usr/bin/printf '%s\n' "$interface_name" \
+          | /usr/bin/grep -qE '^[A-Za-z][A-Za-z0-9_.-]{0,14}$' || return 1
         ;;
-      *) return 1 ;;
     esac
     count=$((count + 1))
   done
@@ -141,7 +152,8 @@ detect_physical_interfaces() {
   else
     interfaces=$(/sbin/ifconfig -l 2>/dev/null \
       | /usr/bin/tr ' ' '\n' \
-      | /usr/bin/grep -E '^(en|bridge|ppp)[0-9]+$' \
+      | /usr/bin/grep -E '^[A-Za-z][A-Za-z0-9_.-]{0,14}$' \
+      | /usr/bin/grep -Ev '^(lo|utun)[0-9]+$' \
       | /usr/bin/sort -u \
       | /usr/bin/paste -sd ' ' -)
     if [ -z "$interfaces" ]; then
@@ -155,23 +167,81 @@ detect_physical_interfaces() {
   /usr/bin/printf '%s\n' "$interfaces"
 }
 
-proxy_core_runs_as_root() {
-  local pids pid uid found
-  [ "$TEST_MODE" -eq 1 ] && return 0
-
-  pids=$(/usr/bin/pgrep -x verge-mihomo 2>/dev/null || true)
-  found=0
-  for pid in $pids; do
-    uid=$(/bin/ps -o uid= -p "$pid" 2>/dev/null | /usr/bin/tr -d '[:space:]')
-    [ -n "$uid" ] || continue
-    found=1
-    if [ "$uid" != "0" ]; then
-      echo "❌ 当前代理核心不是以系统服务运行，未开启 Kill Switch"
-      return 1
-    fi
+valid_tunnel_interfaces() {
+  local interfaces interface_name
+  local -a interface_names
+  interfaces="$1"
+  case "$interfaces" in
+    *$'\n'*|*$'\r'*) return 1 ;;
+  esac
+  /usr/bin/printf '%s\n' "$interfaces" \
+    | /usr/bin/grep -qE '^lo0([[:space:]]+utun[0-9]+)*$' || return 1
+  read -r -a interface_names <<EOF
+$interfaces
+EOF
+  for interface_name in "${interface_names[@]}"; do
+    case "$interface_name" in
+      lo0|utun[0-9]*) ;;
+      *) return 1 ;;
+    esac
   done
-  if [ "$found" -ne 1 ]; then
-    echo "❌ 未找到正在运行的代理核心，未开启 Kill Switch"
+}
+
+detect_tunnel_interfaces() {
+  local detected interfaces
+  if [ "$TEST_MODE" -eq 1 ] && [ -n "${PROXYGAUGE_KILLSWITCH_TEST_TUN_INTERFACES:-}" ]; then
+    detected="$PROXYGAUGE_KILLSWITCH_TEST_TUN_INTERFACES"
+  else
+    detected=$(/sbin/ifconfig -l 2>/dev/null \
+      | /usr/bin/tr ' ' '\n' \
+      | /usr/bin/grep -E '^utun[0-9]+$' \
+      | /usr/bin/sort -u \
+      | /usr/bin/paste -sd ' ' -)
+  fi
+  interfaces=lo0
+  [ -z "$detected" ] || interfaces="$interfaces $detected"
+  valid_tunnel_interfaces "$interfaces" || return 1
+  /usr/bin/printf '%s\n' "$interfaces"
+}
+
+proxy_core_records() {
+  local process_name pids pid uid
+  if [ "$TEST_MODE" -eq 1 ]; then
+    /usr/bin/printf '%s\n' "${PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS-verge-mihomo:1001:0}"
+    return 0
+  fi
+  for process_name in verge-mihomo mihomo clash-meta; do
+    pids=$(/usr/bin/pgrep -x "$process_name" 2>/dev/null || true)
+    for pid in $pids; do
+      uid=$(/bin/ps -o uid= -p "$pid" 2>/dev/null | /usr/bin/tr -d '[:space:]')
+      [ -n "$uid" ] || continue
+      /usr/bin/printf '%s:%s:%s\n' "$process_name" "$pid" "$uid"
+    done
+  done
+}
+
+proxy_core_runs_as_root() {
+  local records process_name pid uid extra count non_root
+  records=$(proxy_core_records) || return 1
+  count=0
+  non_root=0
+  while IFS=: read -r process_name pid uid extra; do
+    [ -n "$process_name$pid$uid$extra" ] || continue
+    case "$process_name" in verge-mihomo|mihomo|clash-meta) ;; *) return 1 ;; esac
+    case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+    case "$uid" in ''|*[!0-9]*) return 1 ;; esac
+    [ -z "$extra" ] || return 1
+    count=$((count + 1))
+    [ "$uid" = 0 ] || non_root=1
+  done <<EOF
+$records
+EOF
+  if [ "$count" -ne 1 ]; then
+    echo "❌ 必须恰好运行一个 Mihomo 代理核心，未开启 Kill Switch"
+    return 1
+  fi
+  if [ "$non_root" -ne 0 ]; then
+    echo "❌ 当前代理核心不是以 root 系统服务运行，未开启 Kill Switch"
     return 1
   fi
 }
@@ -248,6 +318,11 @@ install_persistence_infrastructure() {
     "  <string>$PERSIST_LABEL</string>" \
     '  <key>ProgramArguments</key>' \
     '  <array>' \
+    '    <string>/usr/bin/lockf</string>' \
+    '    <string>-k</string>' \
+    '    <string>-t</string>' \
+    '    <string>120</string>' \
+    '    <string>/private/var/run/com.valenlan.proxygauge.killswitch.lock</string>' \
     "    <string>$PERSIST_HELPER</string>" \
     '    <string>restore</string>' \
     '  </array>' \
@@ -261,10 +336,10 @@ install_persistence_infrastructure() {
     '</plist>' > "$plist_source"
 
   if ! /usr/bin/plutil -lint "$plist_source" >/dev/null 2>&1 \
-    || ! install_private_file "$0" "$PERSIST_HELPER" 755 \
-    || ! install_private_file "$plist_source" "$PERSIST_PLIST" 644 \
-    || { [ "$PF_TEMPLATE" != "$PERSIST_TEMPLATE" ] \
-      && ! install_private_file "$PF_TEMPLATE" "$PERSIST_TEMPLATE" 644; }; then
+    || { [ "$TEST_MODE" -eq 1 ] && ! install_private_file "$0" "$PERSIST_HELPER" 755; } \
+    || { [ "$TEST_MODE" -eq 1 ] && [ "$PF_TEMPLATE" != "$PERSIST_TEMPLATE" ] \
+      && ! install_private_file "$PF_TEMPLATE" "$PERSIST_TEMPLATE" 644; } \
+    || ! install_private_file "$plist_source" "$PERSIST_PLIST" 644; then
     /bin/rm -rf "$temp_dir"
     echo "❌ 无法安装 Kill Switch 开机恢复服务"
     return 1
@@ -308,8 +383,137 @@ managed_anchor_unchanged() {
   [ -n "$expected" ] && [ "$expected" = "$actual" ]
 }
 
+managed_anchor_has_interface_bound_states() {
+  [ -r "$MANAGED_MARKER" ] && managed_anchor_unchanged || return 1
+  /usr/bin/awk '
+    /^[[:space:]]*pass([[:space:]]|$)/ {
+      passes++
+      if ($0 !~ /keep[[:space:]]+state[[:space:]]+\(if-bound\)/) unsafe++
+    }
+    END { exit !(passes > 0 && unsafe == 0) }
+  ' "$ANCHOR_CONF"
+}
+
+render_managed_rules() {
+  local template destination trusted_tunnels
+  template="$1"
+  destination="$2"
+  trusted_tunnels="${3:-}"
+  [ -r "$template" ] || return 1
+  if [ -z "$trusted_tunnels" ]; then
+    trusted_tunnels=$(detect_tunnel_interfaces) || return 1
+  fi
+  valid_tunnel_interfaces "$trusted_tunnels" || return 1
+  /usr/bin/sed \
+    -e "s/__TUN_INTERFACES__/$trusted_tunnels/g" \
+    "$template" > "$destination" || return 1
+  ! /usr/bin/grep -q '__TUN_INTERFACES__' "$destination"
+}
+
+config_has_safe_anchor() {
+  local config
+  config="$1"
+  [ -r "$config" ] || return 1
+  /usr/bin/awk '
+    function normalized(line) {
+      sub(/[[:space:]]*#.*/, "", line)
+      sub(/^[[:space:]]+/, "", line)
+      sub(/[[:space:]]+$/, "", line)
+      return line
+    }
+    function is_filter(line) {
+      return line ~ /^(anchor|block|pass|match|antispoof)([[:space:]]|$)/ \
+        || line ~ /^\$/ || line ~ /^include([[:space:]]|$)/
+    }
+    function is_safe_skip(line) {
+      return line ~ /^set[[:space:]]+skip[[:space:]]+on[[:space:]]+lo0$/ \
+        || line ~ /^set[[:space:]]+skip[[:space:]]+on[[:space:]]+\{[[:space:]]*lo0[[:space:]]*\}$/
+    }
+    {
+      line = normalized($0)
+      if (line ~ /^set[[:space:]]+skip([[:space:]]|$)/ \
+          && !is_safe_skip(line)) unsafe_skip = 1
+      if (line ~ /^anchor[[:space:]]+"proxygauge"([[:space:]]|$)/) {
+        registrations++
+        if (line == "anchor \"proxygauge\" quick") exact++
+      }
+      if (first_filter == "" && is_filter(line)) first_filter = line
+    }
+    END {
+      exit !(registrations == 1 && exact == 1 \
+        && first_filter == "anchor \"proxygauge\" quick" \
+        && !unsafe_skip)
+    }
+  ' "$config"
+}
+
+main_config_has_safe_anchor() {
+  config_has_safe_anchor "$MAIN_CONF"
+}
+
+write_main_config_with_safe_anchor() {
+  local source destination
+  source="$1"
+  destination="$2"
+  /usr/bin/awk '
+    function normalized(line) {
+      sub(/[[:space:]]*#.*/, "", line)
+      sub(/^[[:space:]]+/, "", line)
+      sub(/[[:space:]]+$/, "", line)
+      return line
+    }
+    function is_filter(line) {
+      return line ~ /^(anchor|block|pass|match|antispoof)([[:space:]]|$)/ \
+        || line ~ /^\$/ || line ~ /^include([[:space:]]|$)/
+    }
+    {
+      line = normalized($0)
+      if (line ~ /^anchor[[:space:]]+"proxygauge"([[:space:]]|$)/) next
+      if (!inserted && is_filter(line)) {
+        print "anchor \"proxygauge\" quick"
+        inserted = 1
+      }
+      print $0
+    }
+    END {
+      if (!inserted) {
+        print ""
+        print "anchor \"proxygauge\" quick"
+      }
+    }
+  ' "$source" > "$destination"
+}
+
+runtime_anchor_registration_is_safe() {
+  local first_rule
+  first_rule=$("$PFCTL" -sr 2>/dev/null | /usr/bin/awk 'NF { print; exit }')
+  case "$first_rule" in
+    'anchor "proxygauge" quick'|'anchor "proxygauge" quick all') return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+anchor_registration_is_safe() {
+  main_config_has_safe_anchor && runtime_anchor_registration_is_safe
+}
+
+load_fail_closed_transition() {
+  local template temp_dir transition
+  template="$PERSIST_TEMPLATE"
+  [ -r "$template" ] || template="$PF_TEMPLATE"
+  temp_dir=$(/usr/bin/mktemp -d /tmp/proxygauge-pf-transition.XXXXXX) || return 1
+  transition="$temp_dir/$ANCHOR"
+  if ! render_managed_rules "$template" "$transition" lo0 \
+    || ! "$PFCTL" -a "$ANCHOR" -nf "$transition" >/dev/null 2>&1 \
+    || ! "$PFCTL" -a "$ANCHOR" -f "$transition" >/dev/null 2>&1; then
+    /bin/rm -rf "$temp_dir"
+    return 1
+  fi
+  /bin/rm -rf "$temp_dir"
+}
+
 refresh_managed_rules() {
-  local interfaces temp_dir rendered current_hash rendered_hash
+  local temp_dir rendered current_hash rendered_hash
   [ -r "$MANAGED_MARKER" ] || return 0
   if ! managed_anchor_unchanged; then
     # A root administrator replaced or edited the anchor. Stop managing its
@@ -317,10 +521,9 @@ refresh_managed_rules() {
     /bin/rm -f "$MANAGED_MARKER"
     return 0
   fi
-  interfaces=$(detect_physical_interfaces) || return 1
   temp_dir=$(/usr/bin/mktemp -d /tmp/proxygauge-pf-refresh.XXXXXX) || return 1
   rendered="$temp_dir/$ANCHOR"
-  /usr/bin/sed -e "s/__INTERFACES__/$interfaces/g" "$PERSIST_TEMPLATE" > "$rendered" || {
+  render_managed_rules "$PERSIST_TEMPLATE" "$rendered" || {
     /bin/rm -rf "$temp_dir"
     return 1
   }
@@ -336,7 +539,6 @@ refresh_managed_rules() {
       /bin/rm -rf "$temp_dir"
       return 1
     fi
-    RULES_CHANGED=1
   fi
   /bin/rm -rf "$temp_dir"
 }
@@ -357,7 +559,7 @@ clear_persisted_intent() {
 }
 
 install_rules() {
-  local interfaces temp_dir backup_path
+  local interfaces trusted_tunnels temp_dir backup_path
 
   proxy_core_runs_as_root || return 1
   interfaces=$(detect_physical_interfaces) || {
@@ -368,6 +570,10 @@ install_rules() {
     echo "❌ 自动识别到的物理网络接口不合法，未做改动"
     return 1
   fi
+  trusted_tunnels=$(detect_tunnel_interfaces) || {
+    echo "❌ 无法识别可信 TUN 接口，未做改动"
+    return 1
+  }
   if [ ! -r "$PF_TEMPLATE" ]; then
     echo "❌ 缺少 PF 规则模板，未做改动"
     return 1
@@ -382,9 +588,7 @@ install_rules() {
   fi
 
   temp_dir=$(/usr/bin/mktemp -d /tmp/proxygauge-pf.XXXXXX) || return 1
-  /usr/bin/sed \
-    -e "s/__INTERFACES__/$interfaces/g" \
-    "$PF_TEMPLATE" > "$temp_dir/$ANCHOR" || {
+  render_managed_rules "$PF_TEMPLATE" "$temp_dir/$ANCHOR" "$trusted_tunnels" || {
       /bin/rm -rf "$temp_dir"
       return 1
     }
@@ -393,12 +597,14 @@ install_rules() {
     /bin/rm -rf "$temp_dir"
     return 1
   }
-  /bin/cp "$MAIN_CONF" "$temp_dir/pf.conf" || {
+  write_main_config_with_safe_anchor "$MAIN_CONF" "$temp_dir/pf.conf" || {
     /bin/rm -rf "$temp_dir"
     return 1
   }
-  if ! /usr/bin/grep -qE "^[[:space:]]*anchor[[:space:]]+\"$ANCHOR\"" "$temp_dir/pf.conf"; then
-    /usr/bin/printf '\nanchor "%s"\n' "$ANCHOR" >> "$temp_dir/pf.conf"
+  if ! config_has_safe_anchor "$temp_dir/pf.conf"; then
+    /bin/rm -rf "$temp_dir"
+    echo "❌ 系统 PF 配置含有可绕过保护的 set skip 指令，未做改动"
+    return 1
   fi
 
   if ! "$PFCTL" -a "$ANCHOR" -nf "$temp_dir/$ANCHOR" >/dev/null 2>&1; then
@@ -427,6 +633,11 @@ install_rules() {
       return 1
     }
   fi
+  if [ "$ACTION" = "on" ] && ! load_fail_closed_transition; then
+    /bin/rm -rf "$temp_dir"
+    echo "❌ 无法预加载全出口阻断规则，未注册 PF anchor"
+    return 1
+  fi
   if ! install_config_file "$temp_dir/pf.conf" "$MAIN_CONF"; then
     /bin/rm -rf "$temp_dir"
     echo "❌ 无法注册 ProxyGauge PF anchor"
@@ -446,6 +657,14 @@ install_rules() {
     echo "❌ 系统 PF 配置加载失败，已还原安装前状态"
     return 1
   fi
+  if ! main_config_has_safe_anchor || ! runtime_anchor_registration_is_safe; then
+    install_config_file "$temp_dir/pf.conf.original" "$MAIN_CONF" >/dev/null 2>&1 || true
+    /bin/rm -f "$ANCHOR_CONF"
+    "$PFCTL" -f "$MAIN_CONF" >/dev/null 2>&1 || true
+    /bin/rm -rf "$temp_dir"
+    echo "❌ ProxyGauge anchor 注册位置或 PF set skip 配置不安全，已还原系统配置"
+    return 1
+  fi
   if ! persist_managed_anchor_hash; then
     install_config_file "$temp_dir/pf.conf.original" "$MAIN_CONF" >/dev/null 2>&1 || true
     /bin/rm -f "$ANCHOR_CONF"
@@ -463,7 +682,24 @@ install_rules() {
 ensure_existing_anchor_registered() {
   local temp_dir backup_path
 
-  if /usr/bin/grep -qE "^[[:space:]]*anchor[[:space:]]+\"$ANCHOR\"" "$MAIN_CONF" 2>/dev/null; then
+  if main_config_has_safe_anchor; then
+    if runtime_anchor_registration_is_safe; then
+      return 0
+    fi
+    if ! "$PFCTL" -nf "$MAIN_CONF" >/dev/null 2>&1; then
+      echo "❌ 已安装的系统 PF 配置校验失败，无法修复运行时顺序"
+      return 1
+    fi
+    if ! load_fail_closed_transition; then
+      echo "❌ 无法加载全出口临时阻断规则，未修复运行时顺序"
+      return 1
+    fi
+    if ! "$PFCTL" -f "$MAIN_CONF" >/dev/null 2>&1 \
+      || ! runtime_anchor_registration_is_safe; then
+      echo "❌ 无法将 ProxyGauge anchor 恢复到运行时首个过滤位置"
+      return 1
+    fi
+    echo "✅ 已修复 Kill Switch 运行时规则入口"
     return 0
   fi
   if [ ! -r "$ANCHOR_CONF" ]; then
@@ -484,11 +720,15 @@ ensure_existing_anchor_registered() {
     /bin/rm -rf "$temp_dir"
     return 1
   }
-  /bin/cp "$MAIN_CONF" "$temp_dir/pf.conf" || {
+  write_main_config_with_safe_anchor "$MAIN_CONF" "$temp_dir/pf.conf" || {
     /bin/rm -rf "$temp_dir"
     return 1
   }
-  /usr/bin/printf '\nanchor "%s"\n' "$ANCHOR" >> "$temp_dir/pf.conf"
+  if ! config_has_safe_anchor "$temp_dir/pf.conf"; then
+    /bin/rm -rf "$temp_dir"
+    echo "❌ 系统 PF 配置含有可绕过保护的 set skip 指令，未做改动"
+    return 1
+  fi
 
   if ! "$PFCTL" -nf "$temp_dir/pf.conf" >/dev/null 2>&1; then
     /bin/rm -rf "$temp_dir"
@@ -504,9 +744,14 @@ ensure_existing_anchor_registered() {
       return 1
     }
   fi
+  if ! load_fail_closed_transition; then
+    /bin/rm -rf "$temp_dir"
+    echo "❌ 无法加载全出口临时阻断规则，未修复 PF 规则入口"
+    return 1
+  fi
   if ! install_config_file "$temp_dir/pf.conf" "$MAIN_CONF"; then
     /bin/rm -rf "$temp_dir"
-    echo "❌ 无法恢复 Kill Switch 规则入口，未做改动"
+    echo "❌ 无法恢复 Kill Switch 规则入口；临时阻断规则保持生效"
     return 1
   fi
   if ! "$PFCTL" -f "$MAIN_CONF" >/dev/null 2>&1; then
@@ -514,6 +759,13 @@ ensure_existing_anchor_registered() {
     "$PFCTL" -f "$MAIN_CONF" >/dev/null 2>&1 || true
     /bin/rm -rf "$temp_dir"
     echo "❌ Kill Switch 规则入口恢复失败，已还原系统配置"
+    return 1
+  fi
+  if ! main_config_has_safe_anchor || ! runtime_anchor_registration_is_safe; then
+    install_config_file "$temp_dir/pf.conf.original" "$MAIN_CONF" >/dev/null 2>&1 || true
+    "$PFCTL" -f "$MAIN_CONF" >/dev/null 2>&1 || true
+    /bin/rm -rf "$temp_dir"
+    echo "❌ Kill Switch 规则入口注册位置或 PF set skip 配置不安全，已还原系统配置"
     return 1
   fi
   /bin/rm -rf "$temp_dir"
@@ -544,7 +796,7 @@ anchor_rules() {
 }
 
 anchor_enabled() {
-  pf_enabled && [ -n "$(anchor_rules)" ]
+  pf_enabled && anchor_registration_is_safe && [ -n "$(anchor_rules)" ]
 }
 
 release_owned_reference() {
@@ -557,45 +809,72 @@ release_owned_reference() {
   /bin/rm -f "$TOKEN_FILE"
 }
 
-enable_rules() {
-  if [ "$BOOTSTRAP_DEFAULT" -eq 1 ]; then
-    install_rules || return 1
-  fi
-  refresh_managed_rules || {
-    echo "❌ 无法刷新物理网络接口规则，保护未重新加载"
-    return 1
-  }
-  validate_anchor_ownership || return 1
-  ensure_existing_anchor_registered || return 1
-  if [ "$RULES_CHANGED" -eq 0 ] && [ -s "$TOKEN_FILE" ] && anchor_enabled; then
-    echo "🛡️ Kill Switch 已开启 — 运行时规则健康"
-    return 0
-  fi
-  if ! "$PFCTL" -a "$ANCHOR" -nf "$ANCHOR_CONF" >/dev/null 2>&1; then
-    echo "❌ $ANCHOR_CONF 语法校验失败，未做改动"
-    return 1
-  fi
-  if ! "$PFCTL" -a "$ANCHOR" -f "$ANCHOR_CONF" >/dev/null 2>&1; then
-    echo "❌ Kill Switch anchor 加载失败"
-    return 1
-  fi
-
+ensure_pf_reference() {
+  local enable_output enable_status token
   if [ -s "$TOKEN_FILE" ] && ! pf_enabled; then
     release_owned_reference
   fi
-  if [ ! -s "$TOKEN_FILE" ]; then
-    enable_output=$("$PFCTL" -E 2>&1)
-    enable_status=$?
-    token=$(/usr/bin/printf '%s\n' "$enable_output" | /usr/bin/awk '/Token[[:space:]]*:/ {print $NF; exit}')
-    if [ "$enable_status" -ne 0 ]; then
-      "$PFCTL" -a "$ANCHOR" -F rules >/dev/null 2>&1 || true
-      echo "❌ PF 启用失败: $enable_output"
+  if [ -s "$TOKEN_FILE" ]; then
+    return 0
+  fi
+  enable_output=$("$PFCTL" -E 2>&1)
+  enable_status=$?
+  token=$(/usr/bin/printf '%s\n' "$enable_output" \
+    | /usr/bin/awk '/Token[[:space:]]*:/ {print $NF; exit}')
+  if [ "$enable_status" -ne 0 ]; then
+    echo "❌ PF 启用失败: $enable_output"
+    return 1
+  fi
+  if [ -n "$token" ]; then
+    /usr/bin/printf '%s\n' "$token" > "$TOKEN_FILE"
+    /bin/chmod 600 "$TOKEN_FILE"
+  fi
+}
+
+enable_rules() {
+  local full_state_reset
+  full_state_reset=0
+  if [ "$BOOTSTRAP_DEFAULT" -eq 1 ]; then
+    install_rules || return 1
+  fi
+  if [ "$ACTION" = "on" ]; then
+    full_state_reset=1
+  elif [ -r "$MANAGED_MARKER" ] && managed_anchor_unchanged \
+    && ! managed_anchor_has_interface_bound_states; then
+    full_state_reset=1
+  fi
+  validate_anchor_ownership || return 1
+  ensure_existing_anchor_registered || return 1
+  if ! load_fail_closed_transition; then
+    echo "❌ 无法加载全出口临时阻断规则，保护未重新加载"
+    return 1
+  fi
+  ensure_pf_reference || return 1
+  if [ "$full_state_reset" -eq 1 ]; then
+    if ! clear_all_states; then
+      echo "❌ 无法清理旧版浮动连接状态；全出口阻断规则保持生效"
       return 1
     fi
-    if [ -n "$token" ]; then
-      /usr/bin/printf '%s\n' "$token" > "$TOKEN_FILE"
-      /bin/chmod 600 "$TOKEN_FILE"
-    fi
+  elif ! clear_existing_physical_states; then
+    echo "❌ 无法清理既有物理出口连接；全出口阻断规则保持生效"
+    return 1
+  fi
+  refresh_managed_rules || {
+    echo "❌ 无法刷新可信 TUN 接口规则；全出口阻断规则保持生效"
+    return 1
+  }
+  validate_anchor_ownership || return 1
+  if ! "$PFCTL" -a "$ANCHOR" -nf "$ANCHOR_CONF" >/dev/null 2>&1; then
+    echo "❌ $ANCHOR_CONF 语法校验失败；全出口阻断规则保持生效"
+    return 1
+  fi
+  if ! "$PFCTL" -a "$ANCHOR" -f "$ANCHOR_CONF" >/dev/null 2>&1; then
+    echo "❌ Kill Switch anchor 加载失败；全出口阻断规则保持生效"
+    return 1
+  fi
+  if ! clear_existing_physical_states; then
+    echo "❌ 无法完成最终连接状态清理；阻断规则保持生效"
+    return 1
   fi
 
   if anchor_enabled; then
@@ -607,19 +886,27 @@ enable_rules() {
   fi
 }
 
+clear_all_states() {
+  "$PFCTL" -F states >/dev/null 2>&1
+}
+
 clear_existing_physical_states() {
   local interfaces interface_name address addresses failed
   interfaces=$(detect_physical_interfaces) || return 1
   failed=0
   for interface_name in $interfaces; do
-    addresses=$(/sbin/ifconfig "$interface_name" 2>/dev/null | /usr/bin/awk '
-      $1 == "inet" { print $2 }
-      $1 == "inet6" {
-        address = $2
-        sub(/%.*/, "", address)
-        print address
-      }
-    ')
+    if [ "$TEST_MODE" -eq 1 ] && [ -n "${PROXYGAUGE_KILLSWITCH_TEST_STATE_ADDRESSES:-}" ]; then
+      addresses="$PROXYGAUGE_KILLSWITCH_TEST_STATE_ADDRESSES"
+    else
+      addresses=$(/sbin/ifconfig "$interface_name" 2>/dev/null | /usr/bin/awk '
+        $1 == "inet" { print $2 }
+        $1 == "inet6" {
+          address = $2
+          sub(/%.*/, "", address)
+          print address
+        }
+      ')
+    fi
     for address in $addresses; do
       case "$address" in
         *[!0-9A-Fa-f:.]*) failed=1; continue ;;
@@ -627,7 +914,9 @@ clear_existing_physical_states() {
       "$PFCTL" -k "$address" >/dev/null 2>&1 || failed=1
     done
   done
-  [ "$failed" -eq 0 ]
+  if [ "$failed" -ne 0 ]; then
+    "$PFCTL" -F states >/dev/null 2>&1 || return 1
+  fi
 }
 
 case "$ACTION" in
@@ -654,18 +943,13 @@ case "$ACTION" in
       echo "用法: proxygauge-killswitch on"
       exit 2
     fi
+    proxy_core_runs_as_root || exit 1
     install_persistence_infrastructure || exit 1
     enable_rules || exit 1
     if ! persist_enabled_intent; then
       "$PFCTL" -a "$ANCHOR" -F rules >/dev/null 2>&1 || true
       release_owned_reference
       echo "❌ 无法保存 Kill Switch 开机恢复状态，已回滚本次开启"
-      exit 1
-    fi
-    if ! clear_existing_physical_states; then
-      write_runtime_state fault states-not-cleared || true
-      echo "❌ 保护已开启，但无法清理开启前的物理接口连接状态"
-      echo "规则保持为阻断状态；请重新连接网络或重启后再确认"
       exit 1
     fi
     if ! write_runtime_state enabled; then
@@ -680,6 +964,7 @@ case "$ACTION" in
       echo "用法: proxygauge-killswitch off"
       exit 2
     fi
+    install_persistence_infrastructure || exit 1
     if ! "$PFCTL" -a "$ANCHOR" -F rules >/dev/null 2>&1; then
       echo "❌ Kill Switch anchor 清空失败"
       exit 1
@@ -732,6 +1017,10 @@ case "$ACTION" in
       write_runtime_state enabled || true
       echo "✅ Kill Switch: Enabled ($rule_count 条 anchor 规则)"
       echo "  $pf_line"
+    elif [ -n "$(anchor_rules)" ] && ! anchor_registration_is_safe; then
+      write_runtime_state fault unsafe-anchor-registration || true
+      echo "❌ Kill Switch: Fault (ProxyGauge anchor 注册位置或 PF set skip 配置不安全，可能绕过保护)"
+      [ -n "$pf_line" ] && echo "  $pf_line"
     elif [ -r "$PERSIST_MARKER" ]; then
       write_runtime_state fault runtime-rules-missing || true
       echo "❌ Kill Switch: Fault (已设置保护，但运行时规则缺失，恢复服务将重试)"

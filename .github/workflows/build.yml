@@ -24,6 +24,8 @@ jobs:
           Scripts/test-low-risk-health.sh
           Scripts/test-private-browser.sh
           Scripts/test-ui-semantics.sh
+          Scripts/test-clipboard.sh
+          Scripts/test-window-capability.sh
           Scripts/test-branding.sh
           Scripts/test-windows-parity.sh
           Scripts/test-release-installers.sh
@@ -69,6 +71,8 @@ jobs:
         if: ${{ matrix.runtime == 'win-x64' }}
         shell: pwsh
         run: |
+          node --check Scripts/install-release-windows.mjs
+          npm test
           dotnet run --project Windows.Tests/ProxyGauge.Windows.Tests.csproj --configuration Release
           $Tokens = $null
           $ParseErrors = $null
@@ -95,6 +99,27 @@ jobs:
           if ($ParseErrors.Count -ne 0) {
             $ParseErrors | ForEach-Object { Write-Error $_ }
             throw "Windows release installer is not compatible with Windows PowerShell 5.1."
+          }
+          $InstallerSource = Get-Content "Scripts/install-release-windows.ps1" -Raw
+          $EmbeddedScripts = [regex]::Matches(
+            $InstallerSource,
+            '(?ms)^\$(ArchitectureCommand|ElevatedWorker|ElevatedBootstrap)\s*=\s*@''\r?\n(.*?)\r?\n''@\s*$'
+          )
+          if ($EmbeddedScripts.Count -ne 3) {
+            throw "Windows release installer must contain all embedded worker scripts."
+          }
+          foreach ($EmbeddedScript in $EmbeddedScripts) {
+            $EmbeddedTokens = $null
+            $EmbeddedErrors = $null
+            [System.Management.Automation.Language.Parser]::ParseInput(
+              $EmbeddedScript.Groups[2].Value,
+              [ref]$EmbeddedTokens,
+              [ref]$EmbeddedErrors
+            ) | Out-Null
+            if ($EmbeddedErrors.Count -ne 0) {
+              $EmbeddedErrors | ForEach-Object { Write-Error $_ }
+              throw "An embedded Windows PowerShell worker has syntax errors."
+            }
           }
       - name: Build ProxyGauge Guard Service
         shell: pwsh
@@ -176,21 +201,44 @@ jobs:
           skip-decompress: true
       - name: Generate checksums
         run: |
-          shopt -s nullglob
-          ASSETS=(release-assets/ProxyGauge-*.zip release-assets/ProxyGauge-*.msi)
-          if [ "${#ASSETS[@]}" -ne 3 ]; then
-            echo "Expected 3 release packages, found ${#ASSETS[@]}." >&2
+          VERSION="${GITHUB_REF_NAME#v}"
+          EXPECTED_ASSETS=(
+            "ProxyGauge-$VERSION-macOS-arm64.zip"
+            "ProxyGauge-$VERSION-win-x64.msi"
+            "ProxyGauge-$VERSION-win-arm64.msi"
+          )
+          declare -A EXPECTED_NAMES=()
+          for ASSET in "${EXPECTED_ASSETS[@]}"; do
+            EXPECTED_NAMES["$ASSET"]=1
+            PATHNAME="release-assets/$ASSET"
+            if [ ! -f "$PATHNAME" ] || [ -L "$PATHNAME" ]; then
+              echo "Missing regular release package: $ASSET" >&2
+              exit 1
+            fi
+          done
+          mapfile -d '' ACTUAL_ASSETS < <(find release-assets -mindepth 1 -maxdepth 1 -print0)
+          if [ "${#ACTUAL_ASSETS[@]}" -ne "${#EXPECTED_ASSETS[@]}" ]; then
+            echo "Expected exactly 3 release packages, found ${#ACTUAL_ASSETS[@]}." >&2
             exit 1
           fi
+          for PATHNAME in "${ACTUAL_ASSETS[@]}"; do
+            ASSET="${PATHNAME##*/}"
+            if [ -z "${EXPECTED_NAMES[$ASSET]+present}" ]; then
+              echo "Unexpected release package: $ASSET" >&2
+              exit 1
+            fi
+          done
           cd release-assets
-          sha256sum ProxyGauge-*.zip ProxyGauge-*.msi > SHA256SUMS.txt
+          sha256sum "${EXPECTED_ASSETS[@]}" > SHA256SUMS.txt
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          VERSION="${GITHUB_REF_NAME#v}"
           gh release create "$GITHUB_REF_NAME" \
-            release-assets/ProxyGauge-*.zip \
-            release-assets/ProxyGauge-*.msi \
+            "release-assets/ProxyGauge-$VERSION-macOS-arm64.zip" \
+            "release-assets/ProxyGauge-$VERSION-win-x64.msi" \
+            "release-assets/ProxyGauge-$VERSION-win-arm64.msi" \
             release-assets/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \

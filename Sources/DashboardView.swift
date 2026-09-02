@@ -19,6 +19,7 @@ struct ContentView: View {
     @AppStorage("proxygauge.appearance.v1") private var appearance = "light"
     @State private var browserPrompt: BrowserLaunchPrompt?
     @State private var copiedExitAddress = false
+    @State private var copyFeedbackTask: Task<Void, Never>?
 
     var body: some View {
         GeometryReader { geometry in
@@ -53,6 +54,16 @@ struct ContentView: View {
             popupLayer
         }
         .animation(.spring(response: 0.28, dampingFraction: 0.86), value: popupIdentity)
+        .onReceive(NotificationCenter.default.publisher(
+            for: NSApplication.didBecomeActiveNotification
+        )) { _ in
+            model.applicationDidBecomeActive()
+        }
+        .onReceive(NotificationCenter.default.publisher(
+            for: NSApplication.didResignActiveNotification
+        )) { _ in
+            model.applicationDidResignActive()
+        }
     }
 
     private var productHeader: some View {
@@ -149,13 +160,14 @@ struct ContentView: View {
         HStack(spacing: 16) {
             CuteDashboardIcon(kind: .exit, size: 64)
             VStack(alignment: .leading, spacing: 7) {
-                Text("当前出口")
+                Text("系统实际出口")
                     .font(CloudTypography.metricLabel)
                 Text(model.exitAddress)
                     .font(CloudTypography.metricValue(monospaced: true))
                     .textSelection(.enabled)
                 HStack(spacing: 6) {
                     ExitChip(model.exitLocation)
+                        .layoutPriority(1)
                     if let ipVersion = IPAddressVersion.parse(model.exitAddress) {
                         ExitChip(ipVersion.rawValue)
                     }
@@ -166,23 +178,38 @@ struct ContentView: View {
         .padding(18)
         .frame(maxWidth: .infinity, minHeight: 144, alignment: .leading)
         .dashboardCard()
+        .help("出口查询遵循 macOS 当前系统网络路径；前台打开时最多每 5 分钟自动核验一次。每次至少由两个独立公网查询服务交叉确认，它们会看到该路径的出口 IP 和请求时间，但不会收到代理配置、订阅或凭据。")
         .overlay(alignment: .topTrailing) {
             HeaderUtilityButton(
                 symbol: copiedExitAddress ? "checkmark" : "doc.on.doc",
                 help: copiedExitAddress ? "出口 IP 已复制" : "复制出口 IP",
                 tint: AppThemePalette.secondaryText
             ) {
-                guard ExitClipboard.copy(model.exitAddress) else { return }
+                guard PublicIPAddress.normalize(model.exitAddress) == model.exitAddress,
+                      ExitClipboard.copy(model.exitAddress) else { return }
+                copyFeedbackTask?.cancel()
                 copiedExitAddress = true
-                let copiedAddress = model.exitAddress
-                Task { @MainActor in
-                    try? await Task.sleep(for: .seconds(1.5))
-                    if model.exitAddress == copiedAddress {
-                        copiedExitAddress = false
+                copyFeedbackTask = Task { @MainActor in
+                    do {
+                        try await Task.sleep(for: .seconds(1.5))
+                    } catch {
+                        return
                     }
+                    guard !Task.isCancelled else { return }
+                    copiedExitAddress = false
+                    copyFeedbackTask = nil
                 }
             }
             .padding(12)
+        }
+        .onChange(of: model.exitAddress) {
+            copyFeedbackTask?.cancel()
+            copyFeedbackTask = nil
+            copiedExitAddress = false
+        }
+        .onDisappear {
+            copyFeedbackTask?.cancel()
+            copyFeedbackTask = nil
         }
     }
 
@@ -214,7 +241,7 @@ struct ContentView: View {
         BrowserToolCard(
             icon: .purity,
             title: "IP 纯净度",
-            detail: "查看 IP 风险与网络类型"
+            detail: "打开第三方 IP 风险检测"
         ) {
             browserPrompt = BrowserLaunchPrompt(
                 icon: .purity,
@@ -697,7 +724,9 @@ private struct ExitChip: View {
         Text(text)
             .font(.system(size: 10.5, weight: .semibold))
             .foregroundStyle(AppThemePalette.accent)
-            .lineLimit(1)
+            .lineLimit(2)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 9)
             .padding(.vertical, 4)
             .background(AppThemePalette.accent.opacity(0.12), in: Capsule())

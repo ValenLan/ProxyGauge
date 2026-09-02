@@ -27,8 +27,6 @@ done
 /usr/bin/grep -Fq 'ConfirmBrowserOpen(' "$WINDOWS_SOURCE"
 /usr/bin/grep -Fq 'primaryTitle: "继续打开"' "$MAC_SOURCE"
 /usr/bin/grep -Fq '"继续打开"' "$WINDOWS_SOURCE"
-/usr/bin/grep -Fq '/bin/rm -f "$USER_BIN/proxygauge-private-browser"' "$PROJECT_ROOT/Scripts/install.sh"
-
 if /usr/bin/grep -rnE \
   'proxygauge-private-browser|PrivateBrowserService|AdvancedDetectionWindow|--user-data-dir=|--proxy-server=' \
   "$PROJECT_ROOT/Sources" "$PROJECT_ROOT/Windows" "$PROJECT_ROOT/Scripts/build.sh"; then

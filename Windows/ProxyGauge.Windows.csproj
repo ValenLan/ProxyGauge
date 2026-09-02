@@ -10,9 +10,9 @@
     <AssemblyName>ProxyGauge</AssemblyName>
     <RootNamespace>ProxyGauge</RootNamespace>
     <ApplicationIcon>Assets\ProxyGauge.ico</ApplicationIcon>
-    <Version>1.6.2</Version>
-    <AssemblyVersion>1.6.2.0</AssemblyVersion>
-    <FileVersion>1.6.2.0</FileVersion>
+    <Version>1.6.3</Version>
+    <AssemblyVersion>1.6.3.0</AssemblyVersion>
+    <FileVersion>1.6.3.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,5 +21,9 @@
     <EmbeddedResource Include="..\Rules\ProxyGauge-Merge.yaml"
                       Link="Rules\ProxyGauge-Merge.yaml"
                       LogicalName="ProxyGauge.Rules.ProxyGauge-Merge.yaml" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ProxyGauge.Windows.Tests" />
   </ItemGroup>
 </Project>

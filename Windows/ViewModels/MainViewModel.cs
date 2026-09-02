@@ -1,15 +1,19 @@
+using System.IO;
 using System.Windows.Media;
 using ProxyGauge.Models;
 using ProxyGauge.Services;
 
 namespace ProxyGauge.ViewModels;
 
-public sealed class MainViewModel : ObservableObject
+public sealed class MainViewModel : ObservableObject, IDisposable
 {
     private readonly ConfigService _configService;
-    private readonly ProxyProbeService _probeService;
-    private readonly HealthCheckService _healthCheckService;
     private readonly GuardClient _guardClient;
+    private readonly Func<AppConfig, CancellationToken, Task<ProxySnapshot>> _probeAsync;
+    private readonly Func<AppConfig, CancellationToken, Task<ExitSummary>> _exitResolver;
+    private readonly Func<CancellationToken, Task<GuardStatus>> _guardStatusResolver;
+    private readonly Func<AppConfig, CancellationToken, Task<HealthReport>> _healthCheckAsync;
+    private readonly CancellationTokenSource _lifetimeCancellation = new();
     private AppConfig _config;
     private string _headline = "正在读取代理状态";
     private string _detail = "稍等片刻，ProxyGauge 正在检查本地流量入口";
@@ -21,21 +25,52 @@ public sealed class MainViewModel : ObservableObject
     private GuardStatus _guardStatus = GuardStatus.Unavailable();
     private bool _isGuardBusy;
     private ExitSummary _exitSummary = ExitSummary.Unavailable();
+    private CancellationTokenSource? _activeRefreshCancellation;
+    private Task _refreshLoopTask = Task.CompletedTask;
+    private long _refreshGeneration;
+    private bool _refreshRequested;
+    private bool _disposed;
 
     public MainViewModel(
         ConfigService configService,
         ProxyProbeService probeService,
         HealthCheckService healthCheckService,
         GuardClient guardClient)
+        : this(
+            configService,
+            healthCheckService,
+            guardClient,
+            probeService.ProbeAsync,
+            ExitSummaryService.ResolveAsync,
+            guardClient.GetStatusAsync,
+            healthCheckService.RunAsync)
+    {
+    }
+
+    internal MainViewModel(
+        ConfigService configService,
+        HealthCheckService healthCheckService,
+        GuardClient guardClient,
+        Func<AppConfig, CancellationToken, Task<ProxySnapshot>> probeAsync,
+        Func<AppConfig, CancellationToken, Task<ExitSummary>> exitResolver,
+        Func<CancellationToken, Task<GuardStatus>> guardStatusResolver,
+        Func<AppConfig, CancellationToken, Task<HealthReport>>? healthCheckAsync = null)
     {
         _configService = configService;
-        _probeService = probeService;
-        _healthCheckService = healthCheckService;
         _guardClient = guardClient;
+        _probeAsync = probeAsync;
+        _exitResolver = exitResolver;
+        _guardStatusResolver = guardStatusResolver;
+        _healthCheckAsync = healthCheckAsync ?? healthCheckService.RunAsync;
         _config = _configService.Load();
 
         Core = new MetricViewModel(new MetricSnapshot("代理核心", "检查中", "正在查找 Mihomo", "核", HealthLevel.Idle));
-        Port = new MetricViewModel(new MetricSnapshot("本地端口", "检查中", $"{_config.MixedHost}:{_config.MixedPort}", "端", HealthLevel.Idle));
+        Port = new MetricViewModel(new MetricSnapshot(
+            "本地端口",
+            "检查中",
+            LocalEndpointPolicy.FormatEndpoint(_config.MixedHost, _config.MixedPort),
+            "端",
+            HealthLevel.Idle));
         Route = new MetricViewModel(new MetricSnapshot("流量入口", "检查中", "系统代理或 TUN", "入", HealthLevel.Idle));
     }
 
@@ -46,7 +81,7 @@ public sealed class MainViewModel : ObservableObject
     public string Detail { get => _detail; private set => SetProperty(ref _detail, value); }
     public string HealthButtonLabel { get => _healthButtonLabel; private set => SetProperty(ref _healthButtonLabel, value); }
     public string LastUpdated { get => _lastUpdated; private set => SetProperty(ref _lastUpdated, value); }
-    public string Endpoint => $"{_config.MixedHost}:{_config.MixedPort}";
+    public string Endpoint => LocalEndpointPolicy.FormatEndpoint(_config.MixedHost, _config.MixedPort);
     public string ConnectionValue => OverallLevel switch
     {
         HealthLevel.Ok => "已连接",
@@ -56,18 +91,60 @@ public sealed class MainViewModel : ObservableObject
     };
     public string ConnectionDetail
     {
-        get
-        {
-            var mode = Route.Title switch
-            {
-                "TUN 路由" => "TUN",
-                "系统代理" => "系统代理",
-                "双重入口" => "系统代理 + TUN",
-                _ => Route.Title
-            };
-            return $"Mihomo · {mode} · {Endpoint}";
-        }
+        get => BuildConnectionDetail(
+            Route.Title,
+            Route.Value,
+            Core.Level,
+            Port.Level,
+            Endpoint);
     }
+
+    internal static string BuildConnectionDetail(
+        string routeTitle,
+        string routeValue,
+        HealthLevel coreLevel,
+        HealthLevel portLevel,
+        string endpoint)
+    {
+        if (routeTitle.Contains("其他 VPN / TUN", StringComparison.Ordinal))
+        {
+            return routeTitle.Contains("系统代理", StringComparison.Ordinal)
+                ? "其他 VPN / TUN · 与系统代理并存"
+                : "其他 VPN / TUN · 系统路径";
+        }
+        var mode = routeTitle switch
+        {
+            "TUN 路由" => "TUN",
+            "系统代理" => "系统代理",
+            "PAC 代理" => "PAC",
+            "自动代理" => "WPAD",
+            "双重入口" => "系统代理 + TUN",
+            "系统代理 + TUN" => "系统代理 + TUN",
+            _ => routeTitle
+        };
+        var mihomoCoreHealthy = coreLevel == HealthLevel.Ok;
+        var localMihomoEndpointHealthy = mihomoCoreHealthy && portLevel == HealthLevel.Ok;
+        if (mihomoCoreHealthy &&
+            routeTitle == "TUN 路由" &&
+            routeValue == "代表性路由已确认")
+        {
+            return localMihomoEndpointHealthy
+                ? $"Mihomo · TUN · {endpoint}"
+                : "Mihomo · TUN-only";
+        }
+
+        var verifiedMihomoPath = localMihomoEndpointHealthy &&
+             (routeTitle == "双重入口" && routeValue == "同时开启" ||
+              routeTitle == "系统代理" && routeValue == "已启用");
+        return verifiedMihomoPath
+            ? $"Mihomo · {mode} · {endpoint}"
+            : $"系统路径 · {mode}";
+    }
+
+    internal static bool HasDetectedSystemPath(ProxySnapshot snapshot) =>
+        snapshot.SystemProxyEnabled ||
+        snapshot.TunDetected ||
+        snapshot.OtherTunnelDetected;
     public string ExitAddress => _exitSummary.Address;
     public string ExitLocation => _exitSummary.Location;
     public string ExitIpVersion => _exitSummary.IpVersion ?? string.Empty;
@@ -148,7 +225,7 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
-    public bool IsNotBusy => !IsBusy;
+    public bool IsNotBusy => !IsBusy && !IsGuardBusy;
     public bool IsGuardBusy
     {
         get => _isGuardBusy;
@@ -158,6 +235,7 @@ public sealed class MainViewModel : ObservableObject
             {
                 OnPropertyChanged(nameof(GuardButtonLabel));
                 OnPropertyChanged(nameof(CanChangeGuard));
+                OnPropertyChanged(nameof(IsNotBusy));
             }
         }
     }
@@ -173,46 +251,143 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
-    public async Task RefreshAsync()
+    public Task RefreshAsync()
     {
-        if (IsBusy)
+        if (_disposed)
+        {
+            return Task.CompletedTask;
+        }
+
+        _refreshRequested = true;
+        _refreshGeneration++;
+        ApplyExit(ExitSummary.Checking());
+        _activeRefreshCancellation?.Cancel();
+        return StartRefreshLoopIfNeeded();
+    }
+
+    private Task StartRefreshLoopIfNeeded()
+    {
+        if (!_disposed && !IsHealthCheckRunning && !IsGuardBusy &&
+            _refreshRequested && _refreshLoopTask.IsCompleted)
+        {
+            _refreshLoopTask = RunRefreshLoopAsync();
+        }
+        return _refreshLoopTask;
+    }
+
+    public void InvalidateExitSummary()
+    {
+        if (_disposed)
         {
             return;
         }
 
+        _refreshGeneration++;
+        ApplyExit(ExitSummary.Checking());
+        _activeRefreshCancellation?.Cancel();
+    }
+
+    private async Task RunRefreshLoopAsync()
+    {
         IsBusy = true;
-        var guardTask = _guardClient.GetStatusAsync();
-        var exitTask = ExitSummaryService.ResolveAsync(_config);
         try
         {
-            var snapshot = await _probeService.ProbeAsync(_config);
-            Apply(snapshot);
-            LastUpdated = $"更新于 {DateTime.Now:HH:mm:ss}";
-        }
-        catch
-        {
-            Headline = "暂时无法读取状态";
-            Detail = "请稍后刷新，或检查 Windows 网络组件";
-            OverallLevel = HealthLevel.Error;
+            while (_refreshRequested && !_disposed)
+            {
+                _refreshRequested = false;
+                var generation = _refreshGeneration;
+                var config = _config.Clone();
+                using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                    _lifetimeCancellation.Token);
+                _activeRefreshCancellation = cancellation;
+                try
+                {
+                    await RunSingleRefreshAsync(config, generation, cancellation.Token);
+                }
+                finally
+                {
+                    if (ReferenceEquals(_activeRefreshCancellation, cancellation))
+                    {
+                        _activeRefreshCancellation = null;
+                    }
+                }
+            }
         }
         finally
         {
-            try
-            {
-                ApplyExit(await exitTask);
-            }
-            catch
-            {
-                ApplyExit(ExitSummary.Unavailable());
-            }
-            ApplyGuard(await guardTask);
             IsBusy = false;
         }
     }
 
+    private async Task RunSingleRefreshAsync(
+        AppConfig config,
+        long generation,
+        CancellationToken cancellationToken)
+    {
+        var guardTask = InvokeSafely(() => _guardStatusResolver(cancellationToken));
+        var exitTask = InvokeSafely(() => _exitResolver(config, cancellationToken));
+        var probeTask = InvokeSafely(() => _probeAsync(config, cancellationToken));
+
+        ProxySnapshot? snapshot = null;
+        ExitSummary exitSummary = ExitSummary.Unavailable();
+        GuardStatus guardStatus = GuardStatus.Unavailable();
+        try
+        {
+            snapshot = await probeTask;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch
+        {
+            snapshot = null;
+        }
+
+        try
+        {
+            exitSummary = await exitTask;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch
+        {
+            exitSummary = ExitSummary.Unavailable();
+        }
+
+        try
+        {
+            guardStatus = await guardTask;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch
+        {
+            guardStatus = GuardStatus.Unavailable();
+        }
+
+        if (_disposed || cancellationToken.IsCancellationRequested || generation != _refreshGeneration)
+        {
+            return;
+        }
+
+        if (snapshot is null)
+        {
+            ApplyUnavailableProbe();
+        }
+        else
+        {
+            Apply(snapshot);
+        }
+        ApplyExit(exitSummary);
+        ApplyGuard(guardStatus);
+        LastUpdated = $"更新于 {DateTime.Now:HH:mm:ss}";
+    }
+
     public async Task ToggleGuardAsync()
     {
-        if (!CanChangeGuard)
+        if (_disposed || !CanChangeGuard)
         {
             return;
         }
@@ -222,23 +397,35 @@ public sealed class MainViewModel : ObservableObject
         {
             if (_guardStatus.IsEnabled)
             {
-                await _guardClient.DisableAsync();
+                await _guardClient.DisableAsync(_lifetimeCancellation.Token);
             }
             else
             {
-                await _guardClient.EnableAsync(_config.MixedPort);
+                await _guardClient.EnableAsync(_config.MixedPort, _lifetimeCancellation.Token);
             }
-            ApplyGuard(await _guardClient.GetStatusAsync());
+            var status = await _guardClient.GetStatusAsync(_lifetimeCancellation.Token);
+            if (!_disposed)
+            {
+                ApplyGuard(status);
+            }
+        }
+        catch (OperationCanceledException) when (_lifetimeCancellation.IsCancellationRequested)
+        {
+            // Window disposal cancels in-flight Guard requests and suppresses late state changes.
         }
         finally
         {
             IsGuardBusy = false;
+            if (!_disposed)
+            {
+                _ = StartRefreshLoopIfNeeded();
+            }
         }
     }
 
     public async Task ReconfigureGuardAsync()
     {
-        if (!_guardStatus.IsEnabled || !_guardStatus.OwnedByCurrentUser)
+        if (_disposed || !_guardStatus.IsEnabled || !_guardStatus.OwnedByCurrentUser)
         {
             return;
         }
@@ -246,18 +433,30 @@ public sealed class MainViewModel : ObservableObject
         IsGuardBusy = true;
         try
         {
-            await _guardClient.EnableAsync(_config.MixedPort);
-            ApplyGuard(await _guardClient.GetStatusAsync());
+            await _guardClient.EnableAsync(_config.MixedPort, _lifetimeCancellation.Token);
+            var status = await _guardClient.GetStatusAsync(_lifetimeCancellation.Token);
+            if (!_disposed)
+            {
+                ApplyGuard(status);
+            }
+        }
+        catch (OperationCanceledException) when (_lifetimeCancellation.IsCancellationRequested)
+        {
+            // Window disposal cancels in-flight Guard requests and suppresses late state changes.
         }
         finally
         {
             IsGuardBusy = false;
+            if (!_disposed)
+            {
+                _ = StartRefreshLoopIfNeeded();
+            }
         }
     }
 
     public async Task<HealthReport?> RunHealthCheckAsync()
     {
-        if (IsBusy)
+        if (_disposed || IsBusy || IsGuardBusy)
         {
             return null;
         }
@@ -265,17 +464,32 @@ public sealed class MainViewModel : ObservableObject
         IsBusy = true;
         IsHealthCheckRunning = true;
         HealthButtonLabel = "检测中";
+        var refreshAfterCompletion = false;
         try
         {
-            var report = await _healthCheckService.RunAsync(_config);
-            await RefreshAfterHealthCheckAsync();
+            var report = await _healthCheckAsync(
+                _config.Clone(),
+                _lifetimeCancellation.Token);
+            refreshAfterCompletion = true;
             return report;
+        }
+        catch (OperationCanceledException) when (_lifetimeCancellation.IsCancellationRequested)
+        {
+            return null;
         }
         finally
         {
             HealthButtonLabel = "检测";
             IsHealthCheckRunning = false;
             IsBusy = false;
+            if (!_disposed && refreshAfterCompletion)
+            {
+                _ = RefreshAsync();
+            }
+            else if (!_disposed)
+            {
+                _ = StartRefreshLoopIfNeeded();
+            }
         }
     }
 
@@ -283,24 +497,42 @@ public sealed class MainViewModel : ObservableObject
 
     public void SaveConfig(AppConfig config)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         _configService.Save(config);
-        _config = _configService.Load();
+        if (!_configService.TryLoad(out var savedConfig))
+        {
+            throw new InvalidDataException("已写入的配置无法通过完整性校验。");
+        }
+        _config = savedConfig;
         OnPropertyChanged(nameof(Endpoint));
         OnPropertyChanged(nameof(PlanSummary));
         OnPropertyChanged(nameof(ConnectionDetail));
+        InvalidateExitSummary();
     }
 
-    private async Task RefreshAfterHealthCheckAsync()
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        _lifetimeCancellation.Cancel();
+        _refreshGeneration++;
+        _refreshRequested = false;
+        _activeRefreshCancellation?.Cancel();
+    }
+
+    private static Task<T> InvokeSafely<T>(Func<Task<T>> factory)
     {
         try
         {
-            var snapshot = await _probeService.ProbeAsync(_config);
-            Apply(snapshot);
-            LastUpdated = $"更新于 {DateTime.Now:HH:mm:ss}";
+            return factory();
         }
-        catch
+        catch (Exception exception)
         {
-            // The completed health report remains useful if the compact refresh fails.
+            return Task.FromException<T>(exception);
         }
     }
 
@@ -312,6 +544,18 @@ public sealed class MainViewModel : ObservableObject
         Core.Update(snapshot.Core);
         Port.Update(snapshot.Port);
         Route.Update(snapshot.Route);
+        OnPropertyChanged(nameof(ConnectionValue));
+        OnPropertyChanged(nameof(ConnectionDetail));
+    }
+
+    private void ApplyUnavailableProbe()
+    {
+        Headline = "暂时无法读取状态";
+        Detail = "请稍后刷新，或检查 Windows 网络组件";
+        OverallLevel = HealthLevel.Error;
+        Core.Update(new MetricSnapshot("代理核心", "状态不可用", "检测失败", "核", HealthLevel.Error));
+        Port.Update(new MetricSnapshot("本地端口", "状态不可用", Endpoint, "端", HealthLevel.Error));
+        Route.Update(new MetricSnapshot("流量入口", "状态不可用", "系统路径检测失败", "入", HealthLevel.Error));
         OnPropertyChanged(nameof(ConnectionValue));
         OnPropertyChanged(nameof(ConnectionDetail));
     }

@@ -18,10 +18,17 @@ cd "$PROJECT_ROOT"
   -target arm64-apple-macosx26.0 \
   -module-cache-path "$TEMP_ROOT/module-cache" \
   -parse-as-library \
+  Sources/AppStatePolicies.swift \
+  Sources/BackendCommandRunner.swift \
+  Sources/BundledResourceIntegrity.swift \
+  Sources/ConnectionDetailFormatter.swift \
+  Sources/KillSwitchAdminService.swift \
   Sources/ProxyGaugeApp.swift \
   Sources/DashboardView.swift \
   Sources/ExitClipboard.swift \
+  Sources/ExitSummaryService.swift \
   Sources/IPAddressVersion.swift \
+  Sources/LocalEndpointPolicy.swift \
   Sources/WindowCapability.swift \
   Sources/UpdateService.swift \
   Tests/DashboardSnapshot.swift \

@@ -23,4 +23,5 @@ public sealed record ProxySnapshot(
     MetricSnapshot Port,
     MetricSnapshot Route,
     bool SystemProxyEnabled,
-    bool TunDetected);
+    bool TunDetected,
+    bool OtherTunnelDetected = false);

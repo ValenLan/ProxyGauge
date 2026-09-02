@@ -1,25 +1,27 @@
-#if CLIPBOARD_CHECK
-import AppKit
-
 @main
 struct ClipboardCheck {
     static func main() throws {
-        _ = NSApplication.shared
-        let pasteboard = NSPasteboard.withUniqueName()
-        defer { pasteboard.releaseGlobally() }
+        var copiedValue: String?
+        let writer: (String) -> Bool = { value in
+            copiedValue = value
+            return true
+        }
 
-        guard !ExitClipboard.copy("正在读取…", to: pasteboard) else {
+        guard !ExitClipboard.copy("正在读取…", using: writer), copiedValue == nil else {
             throw ClipboardError.placeholderAccepted
         }
-        guard ExitClipboard.copy(" 203.0.113.8\n", to: pasteboard) else {
+        guard ExitClipboard.copy(" 203.0.113.8\n", using: writer) else {
             throw ClipboardError.writeFailed
         }
-        guard pasteboard.string(forType: .string) == "203.0.113.8" else {
+        guard copiedValue == "203.0.113.8" else {
             throw ClipboardError.contentMismatch
         }
-        guard ExitClipboard.copy("2001:db8::8", to: pasteboard),
-              pasteboard.string(forType: .string) == "2001:db8::8" else {
+        guard ExitClipboard.copy("2001:db8::8", using: writer),
+              copiedValue == "2001:db8::8" else {
             throw ClipboardError.ipv6Failed
+        }
+        guard !ExitClipboard.copy("8.8.8.8", using: { _ in false }) else {
+            throw ClipboardError.writeFailureIgnored
         }
         print("ProxyGauge clipboard tests passed.")
     }
@@ -29,6 +31,6 @@ struct ClipboardCheck {
         case writeFailed
         case contentMismatch
         case ipv6Failed
+        case writeFailureIgnored
     }
 }
-#endif

@@ -8,6 +8,7 @@ namespace ProxyGauge.Services;
 public sealed class MihomoControllerService
 {
     private static readonly string[] KnownPipeNames = ["mihomo", "verge-mihomo"];
+    private const int MaximumControllerResponseBytes = 4 * 1024 * 1024;
 
     public async Task<JsonDocument?> TryGetJsonAsync(
         string path,
@@ -19,6 +20,7 @@ public sealed class MihomoControllerService
             {
                 using var handler = new SocketsHttpHandler
                 {
+                    AllowAutoRedirect = false,
                     ConnectCallback = async (_, token) =>
                     {
                         var pipe = new NamedPipeClientStream(
@@ -41,19 +43,61 @@ public sealed class MihomoControllerService
                 using var client = new HttpClient(handler)
                 {
                     BaseAddress = new Uri("http://localhost"),
-                    Timeout = TimeSpan.FromSeconds(2)
+                    Timeout = Timeout.InfiniteTimeSpan
                 };
-                var json = await client.GetStringAsync(path, cancellationToken);
-                return JsonDocument.Parse(json);
+                return await GetJsonWithClientAsync(
+                    client,
+                    path,
+                    TimeSpan.FromSeconds(2),
+                    cancellationToken);
             }
-            catch (Exception exception) when (exception is IOException or HttpRequestException or
-                                               TaskCanceledException or UnauthorizedAccessException or
-                                               JsonException)
+            catch (Exception exception) when (
+                !cancellationToken.IsCancellationRequested &&
+                exception is IOException or HttpRequestException or OperationCanceledException or
+                    UnauthorizedAccessException or JsonException)
             {
                 // Try the next known local controller pipe. Raw controller data is never logged.
             }
         }
 
         return null;
+    }
+
+    internal static async Task<JsonDocument> GetJsonWithClientAsync(
+        HttpClient client,
+        string path,
+        TimeSpan requestTimeout,
+        CancellationToken cancellationToken = default)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(requestTimeout);
+        var requestCancellation = deadline.Token;
+        using var response = await client.GetAsync(
+            path,
+            HttpCompletionOption.ResponseHeadersRead,
+            requestCancellation);
+        response.EnsureSuccessStatusCode();
+        if (response.Content.Headers.ContentLength is > MaximumControllerResponseBytes)
+        {
+            throw new HttpRequestException("Mihomo 控制端响应超出安全大小限制。");
+        }
+
+        await using var input = await response.Content.ReadAsStreamAsync(requestCancellation);
+        using var output = new MemoryStream();
+        var buffer = new byte[8192];
+        while (true)
+        {
+            var read = await input.ReadAsync(buffer, requestCancellation);
+            if (read == 0)
+            {
+                break;
+            }
+            if (output.Length + read > MaximumControllerResponseBytes)
+            {
+                throw new HttpRequestException("Mihomo 控制端响应超出安全大小限制。");
+            }
+            output.Write(buffer, 0, read);
+        }
+        return JsonDocument.Parse(output.ToArray());
     }
 }

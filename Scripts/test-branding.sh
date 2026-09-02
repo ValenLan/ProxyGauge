@@ -9,7 +9,6 @@ for required_path in \
   "$PROJECT_ROOT/Resources/ProxyGauge.icns" \
   "$PROJECT_ROOT/Resources/ProxyGauge.png" \
   "$PROJECT_ROOT/Resources/ProxyGauge-source.png" \
-  "$PROJECT_ROOT/Helpers/ProxyGauge Admin.applescript" \
   "$PROJECT_ROOT/PF/proxygauge.conf.template" \
   "$PROJECT_ROOT/Rules/ProxyGauge-Merge.yaml" \
   "$PROJECT_ROOT/Rules/ProxyGauge-Google-Chain-Probe.yaml" \
@@ -52,7 +51,6 @@ if /usr/bin/grep -Eiq \
   'cloudcheck|cloudlink|cloudroute|puffroute' \
   "$PROJECT_ROOT/Scripts/proxygauge-check.sh" \
   "$PROJECT_ROOT/Scripts/proxygauge-backend.sh" \
-  "$PROJECT_ROOT/Scripts/install.sh" \
   "$PROJECT_ROOT/Windows/Services/ConfigService.cs" \
   "$PROJECT_ROOT/Sources/ProxyGaugeApp.swift"; then
   echo 'Current app and config paths must not contain legacy product compatibility.' >&2

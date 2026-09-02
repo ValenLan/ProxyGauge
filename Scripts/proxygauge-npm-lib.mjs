@@ -17,21 +17,15 @@ export function installCommand(platform, architecture, root = projectRoot) {
   if (platform === "darwin" && architecture === "arm64") {
     return {
       executable: "/bin/bash",
-      arguments: [resolve(root, "Scripts/install-release-macos.sh")],
+      arguments: ["-p", resolve(root, "Scripts/install-release-macos.sh")],
       label: "macOS arm64"
     };
   }
 
   if (platform === "win32" && ["x64", "arm64"].includes(architecture)) {
     return {
-      executable: "powershell.exe",
-      arguments: [
-        "-NoLogo",
-        "-NoProfile",
-        "-NonInteractive",
-        "-File",
-        resolve(root, "Scripts/install-release-windows.ps1")
-      ],
+      executable: process.execPath,
+      arguments: [resolve(root, "Scripts/install-release-windows.mjs")],
       label: `Windows ${architecture}`
     };
   }
@@ -42,6 +36,38 @@ export function installCommand(platform, architecture, root = projectRoot) {
   );
 }
 
+export function resolveHardwareArchitecture(platform, architecture, arm64Capability = "") {
+  if (platform === "darwin" && architecture === "x64" && arm64Capability.trim() === "1") {
+    return "arm64";
+  }
+  return architecture;
+}
+
+export function resolveWindowsRuntime(environment, architecture) {
+  const native = (
+    environment.PROCESSOR_ARCHITEW6432 ||
+    environment.PROCESSOR_ARCHITECTURE ||
+    architecture
+  ).toUpperCase();
+  if (native === "ARM64") return "win-arm64";
+  if (["AMD64", "X64"].includes(native)) return "win-x64";
+  if (architecture === "arm64") return "win-arm64";
+  if (architecture === "x64") return "win-x64";
+  throw new Error(`不支持的 Windows 架构：${native || architecture}`);
+}
+
+export function detectedArchitecture(platform, architecture, environment = process.env) {
+  if (platform === "win32") {
+    return resolveWindowsRuntime(environment, architecture).slice("win-".length);
+  }
+  if (platform !== "darwin" || architecture !== "x64") return architecture;
+  const result = spawnSync("/usr/sbin/sysctl", ["-n", "hw.optional.arm64"], {
+    encoding: "utf8",
+    windowsHide: true
+  });
+  return resolveHardwareArchitecture(platform, architecture, result.stdout ?? "");
+}
+
 export function shouldRunPostinstall(environment) {
   if (environment.PROXYGAUGE_FORCE_INSTALL === "1") {
     return true;
@@ -49,15 +75,54 @@ export function shouldRunPostinstall(environment) {
   return environment.npm_config_global === "true";
 }
 
+const proxyEnvironmentNames = [
+  "npm_config_https_proxy",
+  "npm_config_proxy",
+  "npm_config_noproxy",
+  "HTTPS_PROXY",
+  "https_proxy",
+  "HTTP_PROXY",
+  "http_proxy",
+  "NO_PROXY",
+  "no_proxy"
+];
+
+export function nativeInstallerEnvironment(platform, environment, version) {
+  const platformNames = platform === "win32"
+    ? ["SystemRoot", "WINDIR", "TEMP", "TMP"]
+    : platform === "darwin"
+      ? ["HOME", "TMPDIR", "ALL_PROXY", "all_proxy"]
+      : [];
+  const allowedNames = new Set(
+    [...proxyEnvironmentNames, ...platformNames].map(name =>
+      platform === "win32" ? name.toLowerCase() : name
+    )
+  );
+  const selected = Object.fromEntries(
+    Object.entries(environment).filter(([name]) =>
+      allowedNames.has(platform === "win32" ? name.toLowerCase() : name)
+    )
+  );
+  return {
+    ...selected,
+    PROXYGAUGE_VERSION: version
+  };
+}
+
 export function runNativeInstaller({
   platform = process.platform,
-  architecture = process.arch,
+  architecture,
   environment = process.env,
   root = projectRoot,
   dryRun = environment.PROXYGAUGE_INSTALL_DRY_RUN === "1"
 } = {}) {
+  const targetArchitecture = detectedArchitecture(
+    platform,
+    architecture ?? process.arch,
+    environment
+  );
   const version = packageVersion(root);
-  const command = installCommand(platform, architecture, root);
+  const command = installCommand(platform, targetArchitecture, root);
 
   if (dryRun) {
     console.log(
@@ -68,10 +133,7 @@ export function runNativeInstaller({
 
   const result = spawnSync(command.executable, command.arguments, {
     cwd: root,
-    env: {
-      ...environment,
-      PROXYGAUGE_VERSION: version
-    },
+    env: nativeInstallerEnvironment(platform, environment, version),
     stdio: "inherit",
     windowsHide: false
   });

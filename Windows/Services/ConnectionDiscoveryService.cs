@@ -1,12 +1,18 @@
 using System.Text.Json;
-using Microsoft.Win32;
 using ProxyGauge.Models;
 
 namespace ProxyGauge.Services;
 
+internal readonly record struct ConnectionCandidate(
+    string Host,
+    int Port,
+    string Source,
+    bool IsExplicitSystemProxy);
+
 public sealed class ConnectionDiscoveryService
 {
-    private static readonly int[] CommonMixedPorts = [7890, 7897, 1080];
+    private static readonly int[] CommonMixedPorts = [7890, 7897];
+    internal static IReadOnlyList<int> FallbackMixedPorts => CommonMixedPorts;
     private readonly ProxyProbeService _probeService;
     private readonly MihomoControllerService _controllerService;
 
@@ -23,61 +29,102 @@ public sealed class ConnectionDiscoveryService
         CancellationToken cancellationToken = default)
     {
         var systemProxy = _probeService.IsSystemProxyEnabled();
-        var tunDetectedTask = _probeService.DetectTunAsync(cancellationToken);
-        var candidates = new List<(string Host, int Port, string Source)>();
+        var tunnelKindTask = _probeService.DetectTunnelKindAsync(cancellationToken);
+        var candidates = new List<ConnectionCandidate>();
 
         using (var config = await _controllerService.TryGetJsonAsync("/configs", cancellationToken))
         {
             if (TryReadMixedPort(config?.RootElement, out var controllerPort))
             {
-                candidates.Add(("127.0.0.1", controllerPort, "Mihomo 本地控制接口"));
+                candidates.Add(new ConnectionCandidate(
+                    "127.0.0.1",
+                    controllerPort,
+                    "Mihomo 本地控制接口",
+                    IsExplicitSystemProxy: false));
             }
         }
 
         if (TryReadSystemProxy(out var proxyHost, out var proxyPort))
         {
-            candidates.Add((proxyHost, proxyPort, "Windows 系统代理"));
+            candidates.Add(new ConnectionCandidate(
+                proxyHost,
+                proxyPort,
+                "Windows 系统代理",
+                IsExplicitSystemProxy: true));
         }
 
         if (LocalEndpointPolicy.IsLoopbackHost(current.MixedHost))
         {
-            candidates.Add((
+            candidates.Add(new ConnectionCandidate(
                 LocalEndpointPolicy.NormalizeLoopbackHost(current.MixedHost),
                 current.MixedPort,
-                "ProxyGauge 当前设置"));
+                "ProxyGauge 当前设置",
+                IsExplicitSystemProxy: false));
         }
 
         candidates.AddRange(CommonMixedPorts.Select(port =>
-            ("127.0.0.1", port, "常用 Mihomo 端口")));
+            new ConnectionCandidate(
+                "127.0.0.1",
+                port,
+                "常用 Mihomo 端口",
+                IsExplicitSystemProxy: false)));
+        var tunnelKind = await tunnelKindTask;
+        var coreProcessIds = _probeService.GetProxyCoreProcessIds();
 
-        foreach (var candidate in candidates.DistinctBy(value => (value.Host, value.Port)))
+        foreach (var candidateGroup in candidates.GroupBy(candidate => (candidate.Host, candidate.Port)))
         {
-            if (await _probeService.CanConnectAsync(
-                    candidate.Host,
-                    candidate.Port,
-                    1,
-                    cancellationToken))
+            var probeCandidate = candidateGroup.First();
+            var attribution = await TcpListenerOwnership.ProbeAsync(
+                probeCandidate.Host,
+                probeCandidate.Port,
+                coreProcessIds,
+                1,
+                cancellationToken);
+            var hasExplicitSystemProxy = candidateGroup.Any(candidate => candidate.IsExplicitSystemProxy);
+            if (!ShouldAcceptCandidate(hasExplicitSystemProxy, attribution))
             {
-                return new ConnectionDiscoveryResult(
-                    true,
-                    candidate.Host,
-                    candidate.Port,
-                    _probeService.CountProxyCores() > 0 ? "Mihomo / Clash Verge" : "本地代理",
-                    candidate.Source,
-                    systemProxy,
-                    await tunDetectedTask);
+                continue;
             }
+
+            var ownedByMihomo = attribution == TcpListenerAttribution.MihomoOwned;
+            var candidate = ownedByMihomo
+                ? probeCandidate
+                : candidateGroup.First(value => value.IsExplicitSystemProxy);
+            return new ConnectionDiscoveryResult(
+                true,
+                candidate.Host,
+                candidate.Port,
+                ownedByMihomo ? "Mihomo / Clash Verge" : "本地代理（未归属 Mihomo）",
+                candidate.Source,
+                systemProxy,
+                tunnelKind == TunnelKind.Mihomo,
+                tunnelKind == TunnelKind.Other,
+                tunnelKind == TunnelKind.Split,
+                tunnelKind == TunnelKind.VirtualNetwork,
+                tunnelKind == TunnelKind.Unknown,
+                EndpointOwnershipChecked: true,
+                EndpointOwnedByMihomo: ownedByMihomo);
         }
 
         return new ConnectionDiscoveryResult(
             false,
             "127.0.0.1",
             current.MixedPort,
-            _probeService.CountProxyCores() > 0 ? "Mihomo / Clash Verge" : "未发现代理核心",
+            coreProcessIds.Count > 0 ? "Mihomo / Clash Verge" : "未发现代理核心",
             "自动检测未找到可用入口",
             systemProxy,
-            await tunDetectedTask);
+            tunnelKind == TunnelKind.Mihomo,
+            tunnelKind == TunnelKind.Other,
+            tunnelKind == TunnelKind.Split,
+            tunnelKind == TunnelKind.VirtualNetwork,
+            tunnelKind == TunnelKind.Unknown);
     }
+
+    internal static bool ShouldAcceptCandidate(
+        bool isExplicitSystemProxy,
+        TcpListenerAttribution attribution) =>
+        attribution == TcpListenerAttribution.MihomoOwned ||
+        (isExplicitSystemProxy && attribution == TcpListenerAttribution.OtherOrUnknown);
 
     private static bool TryReadMixedPort(JsonElement? root, out int port)
     {
@@ -91,37 +138,16 @@ public sealed class ConnectionDiscoveryService
     {
         host = string.Empty;
         port = 0;
-        try
+        var proxy = ProxyProbeService.ReadSystemProxyConfiguration();
+        if (!proxy.ExplicitCoversHttps ||
+            !proxy.HasValidExplicitEndpoint ||
+            !LocalEndpointPolicy.IsLoopbackHost(proxy.ExplicitHost))
         {
-            using var key = Registry.CurrentUser.OpenSubKey(
-                @"Software\Microsoft\Windows\CurrentVersion\Internet Settings");
-            if (Convert.ToInt32(key?.GetValue("ProxyEnable") ?? 0) != 1)
-            {
-                return false;
-            }
-
-            var raw = Convert.ToString(key?.GetValue("ProxyServer"))?.Trim();
-            if (string.IsNullOrWhiteSpace(raw)) return false;
-            var entries = raw.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            foreach (var entry in entries.Prepend(raw))
-            {
-                var endpoint = entry.Contains('=') ? entry[(entry.IndexOf('=') + 1)..] : entry;
-                if (!Uri.TryCreate($"http://{endpoint}", UriKind.Absolute, out var uri) ||
-                    !LocalEndpointPolicy.IsLoopbackHost(uri.Host) || uri.Port is <= 0 or > 65535)
-                {
-                    continue;
-                }
-
-                host = "127.0.0.1";
-                port = uri.Port;
-                return true;
-            }
-        }
-        catch
-        {
-            // Invalid or policy-controlled proxy values fall back to local port probing.
+            return false;
         }
 
-        return false;
+        host = LocalEndpointPolicy.NormalizeLoopbackHost(proxy.ExplicitHost);
+        port = proxy.ExplicitPort!.Value;
+        return true;
     }
 }

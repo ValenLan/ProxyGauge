@@ -89,6 +89,8 @@
       </Directory>
     </StandardDirectory>
 
+    <!-- Scope=perMachine sets ALLUSERS=1, so MSI resolves these standard directory
+         properties to the all-users Start Menu and Public Desktop. -->
     <StandardDirectory Id="ProgramMenuFolder" />
     <StandardDirectory Id="DesktopFolder" />
 

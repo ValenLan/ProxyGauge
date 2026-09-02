@@ -17,9 +17,23 @@ done
 /usr/bin/grep -Fq 'SecondaryEnabled' "$PROJECT_ROOT/Windows/Models/AppConfig.cs"
 /usr/bin/grep -Fq 'Mihomo 本地控制接口' "$PROJECT_ROOT/Windows/Services/ConnectionDiscoveryService.cs"
 /usr/bin/grep -Fq 'Windows 系统代理' "$PROJECT_ROOT/Windows/Services/ConnectionDiscoveryService.cs"
+/usr/bin/grep -Fq 'CommonMixedPorts = [7890, 7897];' \
+  "$PROJECT_ROOT/Windows/Services/ConnectionDiscoveryService.cs"
+if /usr/bin/grep -Fq 'CommonMixedPorts = [7890, 7897, 1080]' \
+  "$PROJECT_ROOT/Windows/Services/ConnectionDiscoveryService.cs"; then
+  echo 'The SOCKS convention port 1080 must not be guessed as a mixed HTTP/SOCKS port.' >&2
+  exit 1
+fi
 /usr/bin/grep -Fq 'LocalEndpointPolicy.IsLoopbackHost' "$PROJECT_ROOT/Windows/SettingsWindow.xaml.cs"
 /usr/bin/grep -Fq 'LocalEndpointPolicy.NormalizeLoopbackHost' "$PROJECT_ROOT/Windows/Services/ConfigService.cs"
+/usr/bin/grep -Fq 'LocalEndpointPolicy.FormatEndpoint' "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
+/usr/bin/grep -Fq 'public static string FormatEndpoint' "$PROJECT_ROOT/Windows/Services/LocalEndpointPolicy.cs"
 /usr/bin/grep -Fq 'LocalEndpointPolicy.IsLoopbackHost' "$PROJECT_ROOT/Windows/Services/HealthCheckService.cs"
+/usr/bin/grep -Fq 'ShouldUseTunOnlySystemRoute(snapshot)' "$PROJECT_ROOT/Windows/Services/HealthCheckService.cs"
+/usr/bin/grep -Fq 'SelectPrimaryExitRoute(snapshot)' "$PROJECT_ROOT/Windows/Services/HealthCheckService.cs"
+/usr/bin/grep -Fq 'UseProxy = false' "$PROJECT_ROOT/Windows/Services/HealthCheckService.cs"
+/usr/bin/grep -Fq 'secondaryPortAttribution = await TcpListenerOwnership.ProbeAsync(' \
+  "$PROJECT_ROOT/Windows/Services/HealthCheckService.cs"
 /usr/bin/grep -Fq 'Mihomo 控制接口' "$PROJECT_ROOT/Windows/Services/MihomoPlanInspectionService.cs"
 /usr/bin/grep -Fq '默认入口与额外入口返回不同公网出口' "$PROJECT_ROOT/Windows/Services/HealthCheckService.cs"
 /usr/bin/grep -Fq 'https://ippure.com/' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
@@ -29,13 +43,94 @@ done
 /usr/bin/grep -Fq 'https://browserleaks.com/webrtc' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
 /usr/bin/grep -Fq 'https://www.dnsleaktest.com/' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
 /usr/bin/grep -Fq 'https://speed.cloudflare.com/' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
-/usr/bin/grep -Fq 'ResolveDefaultExitIpAsync' "$PROJECT_ROOT/Windows/Services/HealthCheckService.cs"
 /usr/bin/grep -Fq 'ExitSummaryService.ResolveAsync' "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
 /usr/bin/grep -Fq 'https://ipapi.co/json/' "$PROJECT_ROOT/Windows/Services/ExitSummaryService.cs"
-if [[ $(/usr/bin/grep -c 'https://' "$PROJECT_ROOT/Windows/Services/ExitSummaryService.cs") -ne 1 ]]; then
-  echo 'The Windows exit summary must not add another upstream request.' >&2
+/usr/bin/grep -Fq 'https://api.ipify.org' "$PROJECT_ROOT/Windows/Services/ExitSummaryService.cs"
+/usr/bin/grep -Fq 'https://ifconfig.me/ip' "$PROJECT_ROOT/Windows/Services/ExitSummaryService.cs"
+/usr/bin/grep -Fq 'https://ip.sb/ip' "$PROJECT_ROOT/Windows/Services/ExitSummaryService.cs"
+/usr/bin/grep -Fq 'CreateSystemRouteClient' "$PROJECT_ROOT/Windows/Services/ExitSummaryService.cs"
+/usr/bin/grep -Fq 'Proxy = HttpClient.DefaultProxy' "$PROJECT_ROOT/Windows/Services/ExitSummaryService.cs"
+/usr/bin/grep -Fq 'AllowAutoRedirect = false' "$PROJECT_ROOT/Windows/Services/ExitSummaryService.cs"
+/usr/bin/grep -Fq 'Task.WhenAll(addressTasks)' "$PROJECT_ROOT/Windows/Services/ExitSummaryService.cs"
+/usr/bin/grep -Fq 'NoCache = true' "$PROJECT_ROOT/Windows/Services/ExitSummaryService.cs"
+/usr/bin/grep -Fq 'NoStore = true' "$PROJECT_ROOT/Windows/Services/ExitSummaryService.cs"
+if /usr/bin/grep -Eq 'CreateProxyClient|new WebProxy|config\.Mixed(Host|Port)' \
+  "$PROJECT_ROOT/Windows/Services/ExitSummaryService.cs"; then
+  echo 'The Windows main exit card must follow the operating-system route instead of a configured mixed port.' >&2
   exit 1
 fi
+/usr/bin/grep -Fq 'NetworkChange.NetworkAddressChanged +=' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'NetworkChange.NetworkAddressChanged -=' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'NetworkChange.NetworkAvailabilityChanged +=' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'NetworkChange.NetworkAvailabilityChanged -=' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'ScheduleDebouncedRefresh' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq '_routeChangeMonitor = new RouteChangeMonitor(DispatchNetworkRefresh);' \
+  "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq '_ = _routeChangeMonitor.Start();' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq '_routeChangeMonitor.Dispose();' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'NotifyRouteChange2(' "$PROJECT_ROOT/Windows/Services/RouteChangeMonitor.cs"
+/usr/bin/grep -Fq 'CancelMibChangeNotify2(' "$PROJECT_ROOT/Windows/Services/RouteChangeMonitor.cs"
+if /usr/bin/grep -Fq 'if (!_initialRefreshCompleted || !IsLoaded)' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"; then
+  echo 'A Windows route change during the initial refresh must queue a newer generation.' >&2
+  exit 1
+fi
+/usr/bin/grep -Fq '_refreshGeneration' "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
+/usr/bin/grep -Fq '"其他 VPN / TUN · 系统路径";' "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
+/usr/bin/grep -Fq '"其他 VPN / TUN · 与系统代理并存"' "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
+/usr/bin/grep -Fq 'DescribeCombinedRoute(' "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
+/usr/bin/grep -Fq 'var fixedMihomoDualRoute = localMihomoHealthy' \
+  "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
+/usr/bin/grep -Fq '"系统代理 + TUN",' "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
+/usr/bin/grep -Fq 'DescribeMihomoTunnelRoute(mihomoCoreHealthy)' \
+  "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
+/usr/bin/grep -Fq 'DescribeDetectedSystemRoute(' "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
+/usr/bin/grep -Fq 'BuildConnectionDetail(' "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
+/usr/bin/grep -Fq '系统路径 · {mode}' "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
+/usr/bin/grep -Fq 'routeTitle == "TUN 路由" &&' \
+  "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
+/usr/bin/grep -Fq 'routeValue == "代表性路由已确认"' \
+  "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
+/usr/bin/grep -Fq '"Mihomo · TUN-only"' \
+  "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
+if /usr/bin/grep -Fq 'routeValue == "已接管"' \
+  "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"; then
+  echo 'Representative route probes must not be rendered as proof that every destination is captured.' >&2
+  exit 1
+fi
+/usr/bin/grep -Fq '_copyFeedbackCancellation' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq '_viewModel.PropertyChanged += ViewModel_PropertyChanged' \
+  "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq '_viewModel.PropertyChanged -= ViewModel_PropertyChanged' \
+  "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'Task.Delay(1500, cancellation.Token)' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'OtherTunnelDetected' "$PROJECT_ROOT/Windows/Models/ConnectionDiscoveryResult.cs"
+/usr/bin/grep -Fq 'SplitTunnelDetected' "$PROJECT_ROOT/Windows/Models/ConnectionDiscoveryResult.cs"
+/usr/bin/grep -Fq 'VirtualNetworkDetected' "$PROJECT_ROOT/Windows/Models/ConnectionDiscoveryResult.cs"
+/usr/bin/grep -Fq 'RouteLookupUnknown' "$PROJECT_ROOT/Windows/Models/ConnectionDiscoveryResult.cs"
+/usr/bin/grep -Fq 'result.RouteWarning' "$PROJECT_ROOT/Windows/SettingsWindow.xaml.cs"
+/usr/bin/grep -Fq '没有找到 Mihomo mixed 入口' "$PROJECT_ROOT/Windows/SettingsWindow.xaml.cs"
+/usr/bin/grep -Fq 'ApplyExit(ExitSummary.Checking())' "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
+/usr/bin/grep -Fq 'x:Name="ExitCardTitle" Text="系统实际出口"' "$PROJECT_ROOT/Windows/MainWindow.xaml"
+/usr/bin/grep -Fq '会看到该路径的出口 IP 和请求时间，但不会收到代理配置、订阅或凭据' "$PROJECT_ROOT/Windows/MainWindow.xaml"
+/usr/bin/grep -Fq 'Interval = TimeSpan.FromMinutes(5)' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'Interval = TimeSpan.FromSeconds(1)' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'DetectProxyConfigurationChange' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'WinHttpGetIEProxyConfigForCurrentUser' "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
+/usr/bin/grep -Fq 'Environment.GetEnvironmentVariable("HTTPS_PROXY")' "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
+/usr/bin/grep -Fq 'public bool MayBypassExitLookup' "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
+/usr/bin/grep -Fq 'MaximumControllerResponseBytes = 4 * 1024 * 1024' "$PROJECT_ROOT/Windows/Services/MihomoControllerService.cs"
+/usr/bin/grep -Fq 'HttpCompletionOption.ResponseHeadersRead' "$PROJECT_ROOT/Windows/Services/MihomoControllerService.cs"
+/usr/bin/grep -Fq 'An HTTP-only proxy must not be treated as covering the HTTPS exit lookup.' \
+  "$PROJECT_ROOT/Windows.Tests/Program.cs"
+/usr/bin/grep -Fq 'Deactivated += MainWindow_Deactivated' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq '_refreshDebounceTimer.Stop();' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'CanStartAutomaticRefresh(_isClosed, IsLoaded, IsActive)' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'InstallerTimeoutMilliseconds = 30 * 60 * 1000' "$PROJECT_ROOT/Windows/Services/UpdateService.cs"
+if /usr/bin/grep -Fq '$p.WaitForExit()' "$PROJECT_ROOT/Windows/Services/UpdateService.cs"; then
+  echo 'The in-app Windows updater must not wait indefinitely for msiexec.' >&2
+  exit 1
+fi
+/usr/bin/grep -Fq 'Deactivated -= MainWindow_Deactivated' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
 /usr/bin/grep -Fq 'The city lookup response must produce an exit summary.' "$PROJECT_ROOT/Windows.Tests/Program.cs"
 /usr/bin/grep -Fq 'public static bool IsSupportedAddress(string? address)' "$PROJECT_ROOT/Windows/Models/ExitSummary.cs"
 /usr/bin/grep -Fq 'IPAddress.TryParse(address, out var parsed)' "$PROJECT_ROOT/Windows/Models/ExitSummary.cs"
@@ -44,6 +139,10 @@ fi
 /usr/bin/grep -Fq 'x:Name="ExitIpVersionChip" Text="{Binding ExitIpVersion}"' "$PROJECT_ROOT/Windows/MainWindow.xaml"
 /usr/bin/grep -Fq 'Visibility="{Binding HasExitIpVersion, Converter={StaticResource BooleanToVisibilityConverter}}"' "$PROJECT_ROOT/Windows/MainWindow.xaml"
 /usr/bin/grep -Fq 'An invalid local address must never be inferred as IPv4 or IPv6.' "$PROJECT_ROOT/Windows.Tests/Program.cs"
+/usr/bin/grep -Fq 'ExitSummary.TryNormalizePublicAddress(expectedIp, out normalizedExpectedIp)' \
+  "$PROJECT_ROOT/Windows/SettingsWindow.xaml.cs"
+/usr/bin/grep -Fq 'ExitSummary.TryNormalizePublicAddress(expectedIp, out normalizedExpectedIp)' \
+  "$PROJECT_ROOT/Windows/DetectionPlanWindow.xaml.cs"
 if /usr/bin/grep -Eq 'api\.ipapi\.is/\?q=|(^|[^[:alnum:]_])(Network(Type)?|ExitNetwork(Type)?)([^[:alnum:]_]|$)|ASN 未知' \
   "$PROJECT_ROOT/Windows/Services/ExitSummaryService.cs" \
   "$PROJECT_ROOT/Windows/Models/ExitSummary.cs" \
@@ -102,6 +201,8 @@ fi
 /usr/bin/grep -Fq '<SupportedOSPlatformVersion>10.0.22000.0</SupportedOSPlatformVersion>' \
   "$PROJECT_ROOT/Windows/ProxyGauge.Windows.csproj"
 /usr/bin/grep -Fq 'dotnet-version: 10.0.x' "$PROJECT_ROOT/.github/workflows/build.yml"
+/usr/bin/grep -Fq 'node --check Scripts/install-release-windows.mjs' "$PROJECT_ROOT/.github/workflows/build.yml"
+/usr/bin/grep -Fq 'npm test' "$PROJECT_ROOT/.github/workflows/build.yml"
 /usr/bin/grep -Fq 'OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000)' \
   "$PROJECT_ROOT/Windows/App.xaml.cs"
 /usr/bin/grep -Fq 'ProxyGauge 仅支持 Windows 11，不支持 Windows 10。' \
@@ -110,9 +211,93 @@ fi
   "$PROJECT_ROOT/Windows/Services/ConfigService.cs"
 /usr/bin/grep -Fq 'File.Replace(temporaryPath, ConfigPath' \
   "$PROJECT_ROOT/Windows/Services/ConfigService.cs"
-/usr/bin/grep -Fq 'timeout.CancelAfter(RouteProbeTimeout);' \
+/usr/bin/grep -Fq 'GetBestInterfaceEx(' \
   "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
-/usr/bin/grep -Fq 'process.Kill(entireProcessTree: true);' \
+/usr/bin/grep -Fq 'BestRouteProbeIpv4' \
+  "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
+/usr/bin/grep -Fq 'BestRouteProbeIpv6' \
+  "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
+/usr/bin/grep -Fq 'IPAddress.Parse("208.67.222.222")' \
+  "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
+/usr/bin/grep -Fq 'IPAddress.Parse("2620:119:35::35")' \
+  "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
+/usr/bin/grep -Fq 'AggregateBestRouteLookups(' \
+  "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
+/usr/bin/grep -Fq 'BestRouteLookup.Inconsistent()' \
+  "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
+/usr/bin/grep -Fq '"代表性路由已确认"' \
+  "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
+/usr/bin/grep -Fq 'registryVirtual: carriesBestRoute && IsRegistryVirtualAdapter(adapter.Id)' \
+  "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
+/usr/bin/grep -Fq 'TcpListenerOwnership.ProbeAsync(' \
+  "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
+/usr/bin/grep -Fq 'GetProxyCoreProcessIds()' \
+  "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
+/usr/bin/grep -Fq 'TcpListenerOwnership.ProbeAsync(' \
+  "$PROJECT_ROOT/Windows/Services/ConnectionDiscoveryService.cs"
+/usr/bin/grep -Fq 'ShouldAcceptCandidate(' \
+  "$PROJECT_ROOT/Windows/Services/ConnectionDiscoveryService.cs"
+if /usr/bin/grep -Fq '_probeService.CountProxyCores() > 0 ?' \
+  "$PROJECT_ROOT/Windows/Services/ConnectionDiscoveryService.cs"; then
+  echo 'A reachable port must not inherit Mihomo attribution merely because a core process exists.' >&2
+  exit 1
+fi
+/usr/bin/grep -Fq 'GetExtendedTcpTable(' \
+  "$PROJECT_ROOT/Windows/Services/TcpListenerOwnership.cs"
+/usr/bin/grep -Fq 'OwnerPidListener = 3' \
+  "$PROJECT_ROOT/Windows/Services/TcpListenerOwnership.cs"
+/usr/bin/grep -Fq 'OwnerPidConnections = 4' \
+  "$PROJECT_ROOT/Windows/Services/TcpListenerOwnership.cs"
+/usr/bin/grep -Fq 'Marshal.OffsetOf<TcpTableOwnerPidHeader>' \
+  "$PROJECT_ROOT/Windows/Services/TcpListenerOwnership.cs"
+/usr/bin/grep -Fq 'Marshal.OffsetOf<Tcp6TableOwnerPidHeader>' \
+  "$PROJECT_ROOT/Windows/Services/TcpListenerOwnership.cs"
+/usr/bin/grep -Fq 'new RoutedAdapterEvidence(TunnelKind.Mihomo, Ipv4Index: 17, Ipv6Index: 23)' \
+  "$PROJECT_ROOT/Windows.Tests/Program.cs"
+/usr/bin/grep -Fq 'Either IPv4 or IPv6 bypassing Mihomo must downgrade the dual-stack path' \
+  "$PROJECT_ROOT/Windows.Tests/Program.cs"
+/usr/bin/grep -Fq 'TunnelKind.VirtualNetwork' "$PROJECT_ROOT/Windows.Tests/Program.cs"
+/usr/bin/grep -Fq 'A failed best-route query must fail closed' "$PROJECT_ROOT/Windows.Tests/Program.cs"
+/usr/bin/grep -Fq 'Only ERROR_NOT_SUPPORTED may prove an address family unavailable' \
+  "$PROJECT_ROOT/Windows.Tests/Program.cs"
+/usr/bin/grep -Fq 'Within-family interface divergence, including one diverted target, must be reported as split routing.' \
+  "$PROJECT_ROOT/Windows.Tests/Program.cs"
+/usr/bin/grep -Fq 'One failed native lookup must remain unknown instead of being mistaken for unavailable or split routing.' \
+  "$PROJECT_ROOT/Windows.Tests/Program.cs"
+/usr/bin/grep -Fq 'One nearby Mihomo core must not make an unrelated reachable port healthy' \
+  "$PROJECT_ROOT/Windows.Tests/Program.cs"
+/usr/bin/grep -Fq 'The health report must follow a confirmed TUN-only system route instead of forcing a closed mixed endpoint.' \
+  "$PROJECT_ROOT/Windows.Tests/Program.cs"
+/usr/bin/grep -Fq 'Configured and common ports require Mihomo PID ownership' \
+  "$PROJECT_ROOT/Windows.Tests/Program.cs"
+/usr/bin/grep -Fq 'GetExtendedTcpTable must attribute a real loopback listener to the current Windows test PID.' \
+  "$PROJECT_ROOT/Windows.Tests/Program.cs"
+/usr/bin/grep -Fq 'The same real loopback listener must reject a non-owning PID.' \
+  "$PROJECT_ROOT/Windows.Tests/Program.cs"
+/usr/bin/grep -Fq 'GetExtendedTcpTable must attribute a real IPv6 loopback listener to the current Windows test PID.' \
+  "$PROJECT_ROOT/Windows.Tests/Program.cs"
+/usr/bin/grep -Fq 'The connected ownership probe must preserve IPv6 listener attribution.' \
+  "$PROJECT_ROOT/Windows.Tests/Program.cs"
+/usr/bin/grep -Fq 'An IPv4 connection accepted by an IPv6 dual-mode listener must resolve through the exact connected tuple.' \
+  "$PROJECT_ROOT/Windows.Tests/Program.cs"
+/usr/bin/grep -Fq 'Found and missing mixed endpoints must both preserve the split-route leak warning.' \
+  "$PROJECT_ROOT/Windows.Tests/Program.cs"
+/usr/bin/grep -Fq 'Found and missing mixed endpoints must both preserve virtual-network attribution' \
+  "$PROJECT_ROOT/Windows.Tests/Program.cs"
+/usr/bin/grep -Fq 'routeChangeMonitor.Start() && routeChangeMonitor.IsStarted' \
+  "$PROJECT_ROOT/Windows.Tests/Program.cs"
+/usr/bin/grep -Fq 'TryGetBestRouteInterfaceIndex(' "$PROJECT_ROOT/Windows.Tests/Program.cs"
+if /usr/bin/grep -Eq 'route\.exe|198\.18\.0\.0|CombineTunnelEvidence' \
+  "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs" \
+  "$PROJECT_ROOT/Windows.Tests/Program.cs"; then
+  echo 'Windows TUN attribution must use actual IPv4/IPv6 best-route interfaces, not the fake-IP route heuristic.' >&2
+  exit 1
+fi
+/usr/bin/grep -Fq 'A pre-cancelled tunnel probe must not query IP Helper.' \
+  "$PROJECT_ROOT/Windows.Tests/Program.cs"
+/usr/bin/grep -Fq 'Exceptions must never cross the unmanaged callback boundary.' \
+  "$PROJECT_ROOT/Windows/Services/RouteChangeMonitor.cs"
+/usr/bin/grep -Fq 'return registryVirtual ? TunnelKind.VirtualNetwork : TunnelKind.None;' \
   "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
 /usr/bin/grep -Fq 'A corrupt config must require setup.' \
   "$PROJECT_ROOT/Windows.Tests/Program.cs"
@@ -163,6 +348,8 @@ fi
 /usr/bin/grep -Fq 'Id="ProxyGaugeStartMenuShortcut"' \
   "$PROJECT_ROOT/Windows.Installer/Package.wxs"
 /usr/bin/grep -Fq 'Id="ProxyGaugeDesktopShortcut"' \
+  "$PROJECT_ROOT/Windows.Installer/Package.wxs"
+/usr/bin/grep -Fq 'Scope="perMachine"' \
   "$PROJECT_ROOT/Windows.Installer/Package.wxs"
 /usr/bin/grep -Fq '<StandardDirectory Id="DesktopFolder" />' \
   "$PROJECT_ROOT/Windows.Installer/Package.wxs"

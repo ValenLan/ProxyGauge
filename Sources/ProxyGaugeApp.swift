@@ -1,5 +1,8 @@
 import AppKit
+import CFNetwork
+import CryptoKit
 import Darwin
+import Network
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -46,6 +49,7 @@ struct ResultSheet: Identifiable {
     let title: String
     let output: String
     let success: Bool
+    let status: Int32
 }
 
 struct ProxyDiscovery: Sendable, Equatable {
@@ -56,88 +60,6 @@ struct ProxyDiscovery: Sendable, Equatable {
     var source = "本地运行状态"
     var active = false
     var privacy = "仅读取本地端口与运行模式，不读取订阅和节点"
-}
-
-struct HealthCheckPlan: Sendable, Equatable {
-    var secondaryEnabled = false
-    var secondaryLabel = "Google / Gemini / Claude"
-    var secondaryGroup = "Google-Chain"
-    var defaultGroup = "PROXY"
-    var secondaryEndpoint = "127.0.0.1:7891"
-    var secondaryDomains = "gemini.google.com, generativelanguage.googleapis.com, www.google.com, claude.ai, api.anthropic.com, platform.claude.com, bridge.claudeusercontent.com"
-
-    static let currentTemplate = HealthCheckPlan()
-
-    var normalizedDomains: [String] {
-        secondaryDomains
-            .split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
-            .filter { !$0.isEmpty }
-    }
-
-    var isValid: Bool {
-        let safeText = CharacterSet(charactersIn: "\n\r\t").inverted
-        let labelsAreValid = !secondaryLabel.isEmpty && secondaryLabel.count <= 32
-            && secondaryLabel.rangeOfCharacter(from: safeText.inverted) == nil
-        let groupsAreValid = [secondaryGroup, defaultGroup].allSatisfy {
-            !$0.isEmpty && $0.count <= 64 && $0.rangeOfCharacter(from: safeText.inverted) == nil
-        }
-        let domainsAreValid = !normalizedDomains.isEmpty && normalizedDomains.count <= 8
-            && normalizedDomains.allSatisfy { domain in
-                domain.range(of: #"^[a-z0-9.-]+$"#, options: .regularExpression) != nil
-                    && !domain.hasPrefix(".") && !domain.hasSuffix(".")
-            }
-        return !secondaryEnabled || (
-            labelsAreValid
-                && groupsAreValid
-                && ProxyGaugePreferences.validLocalEndpoint(secondaryEndpoint)
-                && domainsAreValid
-        )
-    }
-}
-
-private enum ProxyGaugePreferences {
-    static let setupCompletedKey = "proxygauge.connectionSetupCompleted.v1"
-    static let selectedEndpointKey = "proxygauge.selectedMixedEndpoint"
-    static let secondaryEnabledKey = "proxygauge.health.secondaryEnabled.v1"
-    static let secondaryLabelKey = "proxygauge.health.secondaryLabel.v1"
-    static let secondaryGroupKey = "proxygauge.health.secondaryGroup.v1"
-    static let defaultGroupKey = "proxygauge.health.defaultGroup.v1"
-    static let secondaryEndpointKey = "proxygauge.health.secondaryEndpoint.v1"
-    static let secondaryDomainsKey = "proxygauge.health.secondaryDomains.v1"
-
-    static func validLocalEndpoint(_ endpoint: String) -> Bool {
-        let parts = endpoint.split(separator: ":", omittingEmptySubsequences: false)
-        guard parts.count == 2,
-              ["127.0.0.1", "localhost"].contains(String(parts[0])),
-              let port = Int(parts[1]),
-              (1...65535).contains(port) else { return false }
-        return true
-    }
-
-    static func loadHealthPlan() -> HealthCheckPlan {
-        let defaults = UserDefaults.standard
-        let template = HealthCheckPlan.currentTemplate
-        return HealthCheckPlan(
-            secondaryEnabled: defaults.bool(forKey: secondaryEnabledKey),
-            secondaryLabel: defaults.string(forKey: secondaryLabelKey) ?? template.secondaryLabel,
-            secondaryGroup: defaults.string(forKey: secondaryGroupKey) ?? template.secondaryGroup,
-            defaultGroup: defaults.string(forKey: defaultGroupKey) ?? template.defaultGroup,
-            secondaryEndpoint: defaults.string(forKey: secondaryEndpointKey) ?? template.secondaryEndpoint,
-            secondaryDomains: defaults.string(forKey: secondaryDomainsKey) ?? template.secondaryDomains
-        )
-    }
-
-    static func saveHealthPlan(_ plan: HealthCheckPlan) {
-        guard plan.isValid else { return }
-        let defaults = UserDefaults.standard
-        defaults.set(plan.secondaryEnabled, forKey: secondaryEnabledKey)
-        defaults.set(plan.secondaryLabel, forKey: secondaryLabelKey)
-        defaults.set(plan.secondaryGroup, forKey: secondaryGroupKey)
-        defaults.set(plan.defaultGroup, forKey: defaultGroupKey)
-        defaults.set(plan.secondaryEndpoint, forKey: secondaryEndpointKey)
-        defaults.set(plan.normalizedDomains.joined(separator: ","), forKey: secondaryDomainsKey)
-    }
 }
 
 @MainActor
@@ -155,8 +77,15 @@ final class ProxyModel: ObservableObject {
     @Published var isDiscoveringConnection = false
     @Published var discovery = ProxyDiscovery()
     @Published var healthPlan = ProxyGaugePreferences.loadHealthPlan()
-    @Published var exitAddress = "正在读取…"
-    @Published var exitLocation = "正在确认代理出口"
+    @Published private var exitSummary = ExitSummarySnapshot.checking
+    var exitAddress: String {
+        get { exitSummary.address }
+        set { exitSummary = ExitSummarySnapshot(address: newValue, location: exitSummary.location) }
+    }
+    var exitLocation: String {
+        get { exitSummary.location }
+        set { exitSummary = ExitSummarySnapshot(address: exitSummary.address, location: newValue) }
+    }
     @Published var availableUpdate: AppUpdateRelease?
     @Published var showUpdatePrompt = false
     @Published var showUpdateResult = false
@@ -179,11 +108,23 @@ final class ProxyModel: ObservableObject {
     }
 
     var connectionDetail: String {
-        let client = discovery.client == "未识别" ? "Mihomo" : discovery.client
-        let mode = discovery.mode == "未开启" ? entry.title : discovery.mode
-        let endpoint = UserDefaults.standard.string(forKey: ProxyGaugePreferences.selectedEndpointKey)
-            ?? discovery.endpoint
-        return "\(client) · \(mode) · \(endpoint)"
+        let endpoint = UserDefaults.standard.string(
+            forKey: ProxyGaugePreferences.selectedEndpointKey
+        ).flatMap(LocalEndpointPolicy.normalize)
+            ?? LocalEndpointPolicy.normalize(discovery.endpoint)
+            ?? "127.0.0.1:7890"
+        return ConnectionDetailFormatter.format(
+            client: discovery.client,
+            endpoint: endpoint,
+            mode: discovery.mode,
+            discoveryFound: discovery.found,
+            discoveryActive: discovery.active,
+            coreHealthy: core.level == .ok,
+            portHealthy: port.level == .ok,
+            entryTitle: entry.title,
+            entryValue: entry.value,
+            entryHealthy: entry.level == .ok
+        )
     }
 
     var currentVersion: String {
@@ -191,20 +132,60 @@ final class ProxyModel: ObservableObject {
     }
 
     private let updateService = AppUpdateService()
+    private let exitSummaryService: any ExitSummaryResolving
+    private var refreshGeneration = RefreshGenerationGate()
+    private var discoveryGeneration = RefreshGenerationGate()
+    private var refreshQueued = false
+    private var refreshWaiters: [CheckedContinuation<Void, Never>] = []
+    private var networkMonitor: NWPathMonitor?
+    private let networkMonitorQueue = DispatchQueue(label: "com.valenlan.proxygauge.network-path")
+    private var receivedInitialNetworkPath = false
+    private var networkPathSatisfied: Bool?
+    private var lastRefreshRequestAt = Date()
+    private var needsRefreshWhenActive = false
+    private var activeRefreshTask: Task<Void, Never>?
+    private var automaticRefreshTask: Task<Void, Never>?
+    private var periodicRefreshTask: Task<Void, Never>?
+    private var systemProxyMonitorTask: Task<Void, Never>?
+    private var lastSystemProxyFingerprint: String?
+    private var lastLocalStateFingerprint: String?
 
     private let backendPath = Bundle.main.path(forResource: "proxygauge-backend", ofType: "sh")
-        ?? FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".local/share/proxygauge/proxygauge-backend.sh").path
-    init(startImmediately: Bool = true) {
+
+    init(
+        startImmediately: Bool = true,
+        exitSummaryService: any ExitSummaryResolving = SystemExitSummaryService()
+    ) {
+        self.exitSummaryService = exitSummaryService
         guard startImmediately else { return }
+        startNetworkMonitoring()
+        startPeriodicRefresh()
+        startSystemProxyMonitoring()
         Task { [weak self] in
             guard let self else { return }
             await self.refresh()
-            if !UserDefaults.standard.bool(forKey: ProxyGaugePreferences.setupCompletedKey) {
+            let defaults = UserDefaults.standard
+            let setupCompleted = defaults.bool(forKey: ProxyGaugePreferences.setupCompletedKey)
+            let savedEndpointIsValid = defaults.string(
+                forKey: ProxyGaugePreferences.selectedEndpointKey
+            ).flatMap(LocalEndpointPolicy.normalize) != nil
+            if setupCompleted && !savedEndpointIsValid {
+                defaults.set(false, forKey: ProxyGaugePreferences.setupCompletedKey)
+            }
+            if (!setupCompleted || !savedEndpointIsValid),
+               !Self.hasDetectedSystemPath(self.discovery.mode) {
                 await self.discoverConnection(showSheet: true)
             }
             await self.checkForUpdatesIfNeeded()
         }
+    }
+
+    deinit {
+        activeRefreshTask?.cancel()
+        automaticRefreshTask?.cancel()
+        periodicRefreshTask?.cancel()
+        systemProxyMonitorTask?.cancel()
+        networkMonitor?.cancel()
     }
 
     func openConnectionSetup() {
@@ -214,20 +195,28 @@ final class ProxyModel: ObservableObject {
     }
 
     func discoverConnection(showSheet: Bool = false) async {
-        guard !isDiscoveringConnection else { return }
-        isDiscoveringConnection = true
         if showSheet {
             showConnectionSetup = true
         }
+        guard !isDiscoveringConnection else { return }
+        isDiscoveringConnection = true
+        let generation = discoveryGeneration.request()
 
         let result = await execute("discover")
+        guard discoveryGeneration.accepts(generation) else {
+            isDiscoveringConnection = false
+            return
+        }
         if result.status == 0 {
             discovery = parseDiscovery(result.output)
         } else {
+            let savedEndpoint = UserDefaults.standard.string(
+                forKey: ProxyGaugePreferences.selectedEndpointKey
+            ).flatMap(LocalEndpointPolicy.normalize) ?? "127.0.0.1:7890"
             discovery = ProxyDiscovery(
                 found: false,
                 client: "未发现代理客户端",
-                endpoint: "127.0.0.1:7890",
+                endpoint: savedEndpoint,
                 mode: "未开启",
                 source: "请手动设置",
                 active: false
@@ -237,8 +226,8 @@ final class ProxyModel: ObservableObject {
     }
 
     func confirmConnection(endpoint: String) {
-        guard ProxyGaugePreferences.validLocalEndpoint(endpoint) else { return }
-        UserDefaults.standard.set(endpoint, forKey: ProxyGaugePreferences.selectedEndpointKey)
+        guard let normalizedEndpoint = LocalEndpointPolicy.normalize(endpoint) else { return }
+        UserDefaults.standard.set(normalizedEndpoint, forKey: ProxyGaugePreferences.selectedEndpointKey)
         UserDefaults.standard.set(true, forKey: ProxyGaugePreferences.setupCompletedKey)
         showConnectionSetup = false
         Task { [weak self] in
@@ -251,35 +240,287 @@ final class ProxyModel: ObservableObject {
     }
 
     func refresh() async {
-        guard !isRefreshing else { return }
+        // A direct/manual refresh supersedes a pending debounced refresh. The
+        // scheduled task clears this property before calling us, so it never
+        // cancels itself and accidentally marks the new exit lookup stale.
+        automaticRefreshTask?.cancel()
+        automaticRefreshTask = nil
+        lastRefreshRequestAt = Date()
+        let requestedGeneration = refreshGeneration.request()
+        let requestedDiscoveryGeneration = discoveryGeneration.request()
+        exitSummary = .checking
+
+        if isRefreshing {
+            refreshQueued = true
+            activeRefreshTask?.cancel()
+            await withCheckedContinuation { continuation in
+                refreshWaiters.append(continuation)
+            }
+            return
+        }
+
         isRefreshing = true
+        var generation = requestedGeneration
+        var activeDiscoveryGeneration = requestedDiscoveryGeneration
+        repeat {
+            refreshQueued = false
+            let workGeneration = generation
+            let workDiscoveryGeneration = activeDiscoveryGeneration
+            let work = Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.performRefresh(
+                    generation: workGeneration,
+                    discoveryGeneration: workDiscoveryGeneration
+                )
+            }
+            activeRefreshTask = work
+            await work.value
+            activeRefreshTask = nil
+            generation = refreshGeneration.current
+            activeDiscoveryGeneration = discoveryGeneration.current
+        } while refreshQueued
+        isRefreshing = false
+        let waiters = refreshWaiters
+        refreshWaiters.removeAll(keepingCapacity: true)
+        for waiter in waiters {
+            waiter.resume()
+        }
+    }
+
+    func applicationDidBecomeActive() {
+        startPeriodicRefresh()
+        startSystemProxyMonitoring()
+        let now = Date()
+        guard RefreshLifecyclePolicy.shouldRefreshOnActivation(
+            secondsSinceLastRequest: now.timeIntervalSince(lastRefreshRequestAt),
+            hasPendingInvalidation: needsRefreshWhenActive
+        ) else { return }
+        needsRefreshWhenActive = false
+        lastRefreshRequestAt = now
+        invalidateExitSummary(
+            as: networkPathSatisfied == false ? .unavailable : .checking
+        )
+        scheduleAutomaticRefresh()
+    }
+
+    func applicationDidResignActive() {
+        if automaticRefreshTask != nil {
+            needsRefreshWhenActive = true
+        }
+        automaticRefreshTask?.cancel()
+        automaticRefreshTask = nil
+        periodicRefreshTask?.cancel()
+        periodicRefreshTask = nil
+        systemProxyMonitorTask?.cancel()
+        systemProxyMonitorTask = nil
+    }
+
+    private func performRefresh(generation: UInt64, discoveryGeneration: UInt64) async {
         async let probeResult = execute("probe")
         async let discoveryResult = execute("discover")
-        async let exitResult = execute("exit-summary")
-        let (result, discovered, exit) = await (probeResult, discoveryResult, exitResult)
-        isRefreshing = false
-
-        if discovered.status == 0 {
-            discovery = parseDiscovery(discovered.output)
+        let exit = networkPathSatisfied == false
+            ? ExitSummarySnapshot.unavailable
+            : await exitSummaryService.resolve()
+        if refreshGeneration.accepts(generation) {
+            exitSummary = exit
         }
-        if exit.status == 0 {
-            applyExitSummary(exit.output)
-        } else {
-            exitAddress = "暂时无法读取"
-            exitLocation = "请检查本地代理连接"
+
+        let (result, discovered) = await (probeResult, discoveryResult)
+        guard refreshGeneration.accepts(generation) else { return }
+
+        if self.discoveryGeneration.accepts(discoveryGeneration) {
+            if discovered.status == 0 {
+                discovery = parseDiscovery(discovered.output)
+            } else {
+                discovery = ProxyDiscovery(
+                    found: false,
+                    client: "未识别",
+                    endpoint: UserDefaults.standard.string(
+                        forKey: ProxyGaugePreferences.selectedEndpointKey
+                    ).flatMap(LocalEndpointPolicy.normalize) ?? "未配置",
+                    mode: "状态不可用",
+                    source: "自动检测失败",
+                    active: false
+                )
+            }
         }
 
         guard result.status == 0 else {
-            headline = "无法读取状态"
-            detail = result.output.isEmpty ? "后端脚本未响应" : result.output
-            overallLevel = .error
+            markProbeUnavailable(
+                detail: Self.boundedBackendFailure(result.output)
+            )
             return
         }
         applyProbe(result.output)
     }
 
-    func checkForUpdates(silent: Bool = false) async {
-        guard !isCheckingUpdate && !isInstallingUpdate else { return }
+    private func startNetworkMonitoring() {
+        let monitor = NWPathMonitor()
+        networkMonitor = monitor
+        monitor.pathUpdateHandler = { [weak self] path in
+            let isSatisfied = path.status == .satisfied
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let isInitialPath = !self.receivedInitialNetworkPath
+                self.receivedInitialNetworkPath = true
+                self.networkPathSatisfied = isSatisfied
+                let shouldSchedule = RefreshLifecyclePolicy.shouldSchedulePathRefresh(
+                    isSatisfied: isSatisfied,
+                    isInitialPath: isInitialPath,
+                    isApplicationActive: NSApplication.shared.isActive
+                )
+                if !NSApplication.shared.isActive {
+                    self.needsRefreshWhenActive = true
+                }
+                if !isSatisfied {
+                    self.automaticRefreshTask?.cancel()
+                    self.invalidateExitSummary(as: .unavailable)
+                    if shouldSchedule {
+                        self.scheduleAutomaticRefresh()
+                    }
+                    return
+                }
+                if isInitialPath { return }
+                self.invalidateExitSummary(as: .checking)
+                if shouldSchedule {
+                    self.scheduleAutomaticRefresh()
+                }
+            }
+        }
+        monitor.start(queue: networkMonitorQueue)
+    }
+
+    private func invalidateExitSummary(as snapshot: ExitSummarySnapshot) {
+        _ = refreshGeneration.request()
+        exitSummary = snapshot
+        activeRefreshTask?.cancel()
+    }
+
+    private func startSystemProxyMonitoring() {
+        detectSystemProxyChange()
+        systemProxyMonitorTask?.cancel()
+        systemProxyMonitorTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .seconds(2))
+                } catch {
+                    return
+                }
+                guard let self else { return }
+                guard NSApplication.shared.isActive else { continue }
+                self.detectSystemProxyChange()
+                await self.detectLocalStateChange()
+            }
+        }
+    }
+
+    private func detectSystemProxyChange() {
+        let current = Self.systemProxyFingerprint()
+        defer { lastSystemProxyFingerprint = current }
+        guard let previous = lastSystemProxyFingerprint,
+              previous != current else { return }
+        invalidateExitSummary(as: networkPathSatisfied == false ? .unavailable : .checking)
+        guard networkPathSatisfied != false else { return }
+        scheduleAutomaticRefresh()
+    }
+
+    private static func systemProxyFingerprint() -> String {
+        guard let settings = CFNetworkCopySystemProxySettings()?.takeRetainedValue() as? [String: Any] else {
+            return "unavailable"
+        }
+        let relevantKeys = [
+            "HTTPEnable", "HTTPProxy", "HTTPPort",
+            "HTTPSEnable", "HTTPSProxy", "HTTPSPort",
+            "SOCKSEnable", "SOCKSProxy", "SOCKSPort",
+            "ProxyAutoConfigEnable", "ProxyAutoConfigURLString",
+            "ProxyAutoDiscoveryEnable", "ExceptionsList", "ExcludeSimpleHostnames"
+        ]
+        let relevantSettings = relevantKeys.reduce(into: [String: Any]()) { result, key in
+            if let value = settings[key] {
+                result[key] = value
+            }
+        }
+        let digest = SHA256.hash(data: Data(stableDescription(relevantSettings).utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func detectLocalStateChange() async {
+        let result = await execute("fingerprint")
+        guard result.status == 0 else { return }
+        let current = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !current.isEmpty else { return }
+        defer { lastLocalStateFingerprint = current }
+        guard let previous = lastLocalStateFingerprint,
+              previous != current else { return }
+        invalidateExitSummary(as: networkPathSatisfied == false ? .unavailable : .checking)
+        guard networkPathSatisfied != false else { return }
+        scheduleAutomaticRefresh()
+    }
+
+    private static func stableDescription(_ value: Any) -> String {
+        if let dictionary = value as? [String: Any] {
+            return dictionary.keys.sorted().map { key in
+                "\(key)=\(stableDescription(dictionary[key] as Any))"
+            }.joined(separator: "\u{1F}")
+        }
+        if let dictionary = value as? NSDictionary {
+            let bridged = dictionary.reduce(into: [String: Any]()) { result, entry in
+                result[String(describing: entry.key)] = entry.value
+            }
+            return stableDescription(bridged)
+        }
+        if let array = value as? [Any] {
+            return array.map(stableDescription).joined(separator: "\u{1E}")
+        }
+        if let optional = value as? AnyHashable {
+            return String(describing: optional)
+        }
+        return String(describing: value)
+    }
+
+    private static func hasDetectedSystemPath(_ mode: String) -> Bool {
+        mode.contains("TUN") || mode.contains("VPN") || mode.contains("系统代理") || mode.contains("PAC")
+    }
+
+    private func scheduleAutomaticRefresh() {
+        automaticRefreshTask?.cancel()
+        automaticRefreshTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(750))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            guard let self else { return }
+            self.automaticRefreshTask = nil
+            guard NSApplication.shared.isActive else {
+                self.needsRefreshWhenActive = true
+                return
+            }
+            await self.refresh()
+        }
+    }
+
+    private func startPeriodicRefresh() {
+        periodicRefreshTask?.cancel()
+        periodicRefreshTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .seconds(5 * 60))
+                } catch {
+                    return
+                }
+                guard let self else { return }
+                guard NSApplication.shared.isActive,
+                      self.networkPathSatisfied != false else { continue }
+                await self.refresh()
+            }
+        }
+    }
+
+    @discardableResult
+    func checkForUpdates(silent: Bool = false) async -> Bool {
+        guard !isCheckingUpdate && !isInstallingUpdate else { return false }
         isCheckingUpdate = true
         defer { isCheckingUpdate = false }
         do {
@@ -287,14 +528,21 @@ final class ProxyModel: ObservableObject {
                 availableUpdate = release
                 showUpdatePrompt = true
             } else if !silent {
+                availableUpdate = nil
+                showUpdatePrompt = false
                 updateMessage = "当前 v\(currentVersion) 已是最新版。"
                 showUpdateResult = true
+            } else {
+                availableUpdate = nil
+                showUpdatePrompt = false
             }
+            return true
         } catch {
             if !silent {
                 updateMessage = "暂时无法完成更新检查。\n\n\(error.localizedDescription)"
                 showUpdateResult = true
             }
+            return false
         }
     }
 
@@ -306,7 +554,7 @@ final class ProxyModel: ObservableObject {
             guard let self else { return }
             do {
                 let downloaded = try await self.updateService.download(release)
-                try self.updateService.installDownloadedUpdate(
+                try await self.updateService.installDownloadedUpdate(
                     release,
                     archive: downloaded.archive,
                     checksum: downloaded.checksum
@@ -323,24 +571,14 @@ final class ProxyModel: ObservableObject {
     private func checkForUpdatesIfNeeded() async {
         let key = "proxygauge.lastUpdateCheck.v1"
         let lastCheck = UserDefaults.standard.object(forKey: key) as? Date ?? .distantPast
-        guard Date().timeIntervalSince(lastCheck) >= 24 * 60 * 60 else { return }
-        UserDefaults.standard.set(Date(), forKey: key)
-        await checkForUpdates(silent: true)
+        guard UpdateCheckSchedule.shouldCheck(lastSuccessfulCheck: lastCheck) else { return }
+        if await checkForUpdates(silent: true) {
+            UserDefaults.standard.set(Date(), forKey: key)
+        }
     }
 
     func runHealthCheck() {
         runAction("health", title: "代理链路检测", busy: "正在检测代理链路…")
-    }
-
-    func resolveDefaultExitIP() async -> String? {
-        let result = await execute("exit-ip")
-        let value = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard result.status == 0,
-              value.range(
-                of: #"^[0-9]{1,3}(\.[0-9]{1,3}){3}$"#,
-                options: .regularExpression
-              ) != nil else { return nil }
-        return value
     }
 
     func saveHealthPlan(_ plan: HealthCheckPlan) {
@@ -392,27 +630,41 @@ final class ProxyModel: ObservableObject {
                 kind: isHealth ? .health : .standard,
                 title: isHealth ? title : (succeeded ? title : "操作失败"),
                 output: displayedOutput,
-                success: succeeded
+                success: succeeded,
+                status: result.status
             )
             await self.refresh()
         }
     }
 
     private func applyProbe(_ output: String) {
-        var parsed: [String: [String]] = [:]
-        for line in output.split(separator: "\n") {
-            let fields = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
-            guard let key = fields.first else { continue }
-            parsed[key] = Array(fields.dropFirst())
+        guard let parsed = ProbeOutputParser.parse(output),
+              let overall = HealthLevel(rawValue: parsed.overallLevel),
+              let coreLevel = HealthLevel(rawValue: parsed.core.level),
+              let portLevel = HealthLevel(rawValue: parsed.port.level),
+              let entryLevel = HealthLevel(rawValue: parsed.entry.level),
+              let killSwitchLevel = HealthLevel(rawValue: parsed.killSwitch.level),
+              let entryTitle = parsed.entry.title,
+              let entrySymbol = parsed.entry.symbol else {
+            markProbeUnavailable(detail: "状态检测返回不完整或格式无效，请重新安装或刷新。")
+            return
         }
 
-        overallLevel = HealthLevel(rawValue: parsed["overall"]?.first ?? "") ?? .idle
-        headline = parsed["headline"]?.first ?? "状态未知"
-        detail = parsed["detail"]?.first ?? "请刷新后重试"
-        updateMetric(&core, from: parsed["core"])
-        updateMetric(&port, from: parsed["port"])
-        updateMetric(&entry, from: parsed["entry"] ?? parsed["tun"])
-        updateMetric(&killSwitch, from: parsed["kill"])
+        overallLevel = overall
+        headline = parsed.headline
+        detail = parsed.detail
+        core.value = parsed.core.value
+        core.level = coreLevel
+        port.value = parsed.port.value
+        port.level = portLevel
+        entry = MetricState(
+            title: entryTitle,
+            symbol: entrySymbol,
+            value: parsed.entry.value,
+            level: entryLevel
+        )
+        killSwitch.value = parsed.killSwitch.value
+        killSwitch.level = killSwitchLevel
     }
 
     private func parseDiscovery(_ output: String) -> ProxyDiscovery {
@@ -423,9 +675,13 @@ final class ProxyModel: ObservableObject {
             fields[String(parts[0])] = String(parts[1])
         }
 
-        let endpoint = fields["endpoint"] ?? "127.0.0.1:7890"
+        let endpoint = LocalEndpointPolicy.normalize(fields["endpoint"] ?? "")
+            ?? UserDefaults.standard.string(
+                forKey: ProxyGaugePreferences.selectedEndpointKey
+            ).flatMap(LocalEndpointPolicy.normalize)
+            ?? "127.0.0.1:7890"
         return ProxyDiscovery(
-            found: fields["found"] == "1" && ProxyGaugePreferences.validLocalEndpoint(endpoint),
+            found: fields["found"] == "1",
             client: fields["client"] ?? "未识别",
             endpoint: endpoint,
             mode: fields["mode"] ?? "未开启",
@@ -435,71 +691,104 @@ final class ProxyModel: ObservableObject {
         )
     }
 
-    private func applyExitSummary(_ output: String) {
-        var fields: [String: String] = [:]
-        for line in output.split(separator: "\n") {
-            let parts = line.split(separator: "\t", maxSplits: 1, omittingEmptySubsequences: false)
-            guard parts.count == 2 else { continue }
-            fields[String(parts[0])] = String(parts[1])
-        }
-        exitAddress = fields["ip"] ?? "暂时无法读取"
-        exitLocation = fields["location"] ?? "位置未知"
+    private func markProbeUnavailable(detail message: String) {
+        headline = "无法读取状态"
+        detail = message
+        overallLevel = .error
+        core = MetricState(
+            title: "代理核心",
+            symbol: CloudSymbols.core,
+            value: "状态不可用",
+            level: .error
+        )
+        port = MetricState(
+            title: "本地端口",
+            symbol: CloudSymbols.localPort,
+            value: "状态不可用",
+            level: .error
+        )
+        entry = MetricState(
+            title: "流量入口",
+            symbol: CloudSymbols.entryInactive,
+            value: "状态不可用",
+            level: .error
+        )
+        killSwitch = MetricState(
+            title: "Kill Switch",
+            symbol: CloudSymbols.killSwitch,
+            value: "状态不可用",
+            level: .error
+        )
     }
 
-    private func updateMetric(_ metric: inout MetricState, from fields: [String]?) {
-        guard let fields, fields.count >= 2 else { return }
-        metric.value = fields[0]
-        metric.level = HealthLevel(rawValue: fields[1]) ?? .idle
-        if fields.count >= 4 {
-            metric.title = fields[2]
-            metric.symbol = fields[3]
-        }
+    private static func boundedBackendFailure(_ rawOutput: String) -> String {
+        let normalized = rawOutput
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+        guard !normalized.isEmpty else { return "后端脚本未响应" }
+        return String(normalized.prefix(512))
     }
 
     private func execute(
         _ action: String,
         arguments: [String] = []
     ) async -> (status: Int32, output: String) {
-        let path = backendPath
+        if action == "kill-on" || action == "kill-off" {
+            return await KillSwitchAdminService.run(
+                action: action == "kill-on" ? "on" : "off"
+            )
+        }
+        guard let path = backendPath else {
+            return (1, "应用内缺少状态检测组件，请从正式渠道重新安装。")
+        }
+        do {
+            try BundledResourceIntegrity.validateRegularFile(
+                at: URL(fileURLWithPath: path),
+                expectedSHA256: BundledResourceIntegrity.backendSHA256
+            )
+        } catch {
+            return (1, error.localizedDescription)
+        }
         let healthPlan = healthPlan
         let selectedEndpoint = UserDefaults.standard.string(forKey: ProxyGaugePreferences.selectedEndpointKey)
-        let validSelectedEndpoint = selectedEndpoint.flatMap {
-            ProxyGaugePreferences.validLocalEndpoint($0) ? $0 : nil
+        let validSelectedEndpoint = selectedEndpoint.flatMap(LocalEndpointPolicy.normalize)
+        let timeoutSeconds: TimeInterval?
+        if action == "fingerprint" {
+            timeoutSeconds = 5
+        } else if ["probe", "discover"].contains(action) {
+            timeoutSeconds = 15
+        } else if action == "health" {
+            // The supported 30-second per-request setting can cover nine
+            // retried web probes plus three bounded controller reads.
+            timeoutSeconds = 15 * 60
+        } else {
+            timeoutSeconds = nil
         }
-        return await Task.detached(priority: .userInitiated) {
-            let process = Process()
-            let pipe = Pipe()
-            process.executableURL = URL(fileURLWithPath: "/bin/bash")
-            process.arguments = [path, action] + arguments
-            process.standardOutput = pipe
-            process.standardError = pipe
-            if let validSelectedEndpoint {
-                var environment = ProcessInfo.processInfo.environment
-                environment["PROXYGAUGE_MIXED"] = validSelectedEndpoint
-                process.environment = environment
-            }
-            var environment = process.environment ?? ProcessInfo.processInfo.environment
-            environment["PROXYGAUGE_SECONDARY_ENABLED"] = healthPlan.secondaryEnabled ? "1" : "0"
-            environment["PROXYGAUGE_SECONDARY_LABEL"] = healthPlan.secondaryLabel
-            environment["PROXYGAUGE_SECONDARY_GROUP"] = healthPlan.secondaryGroup
-            environment["PROXYGAUGE_DEFAULT_GROUP"] = healthPlan.defaultGroup
-            environment["PROXYGAUGE_SECONDARY_MIXED"] = healthPlan.secondaryEndpoint
-            environment["PROXYGAUGE_SECONDARY_DOMAINS"] = healthPlan.normalizedDomains.joined(separator: ",")
-            process.environment = environment
-
-            do {
-                try process.run()
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                process.waitUntilExit()
-                // A process command line or third-party response can contain a stray
-                // non-UTF-8 byte. Preserve the rest of the health report instead of
-                // discarding the complete buffer when that happens.
-                let output = String(decoding: data, as: UTF8.self)
-                return (process.terminationStatus, output)
-            } catch {
-                return (1, error.localizedDescription)
-            }
-        }.value
+        let userName = NSUserName()
+        var environment = [
+            "HOME": FileManager.default.homeDirectoryForCurrentUser.path,
+            "USER": userName,
+            "LOGNAME": userName,
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "TMPDIR": "/private/tmp",
+            "LC_ALL": "C"
+        ]
+        if let validSelectedEndpoint {
+            environment["PROXYGAUGE_MIXED"] = validSelectedEndpoint
+        }
+        environment["PROXYGAUGE_SECONDARY_ENABLED"] = healthPlan.secondaryEnabled ? "1" : "0"
+        environment["PROXYGAUGE_SECONDARY_LABEL"] = healthPlan.secondaryLabel
+        environment["PROXYGAUGE_SECONDARY_GROUP"] = healthPlan.secondaryGroup
+        environment["PROXYGAUGE_DEFAULT_GROUP"] = healthPlan.defaultGroup
+        environment["PROXYGAUGE_SECONDARY_MIXED"] = healthPlan.secondaryEndpoint
+        environment["PROXYGAUGE_SECONDARY_DOMAINS"] = healthPlan.normalizedDomains.joined(separator: ",")
+        return await BackendCommandRunner.run(
+            scriptPath: path,
+            action: action,
+            arguments: arguments,
+            environment: environment,
+            timeoutSeconds: timeoutSeconds
+        )
     }
 }
 
@@ -1058,8 +1347,22 @@ struct ResultView: View {
         HealthReport(output: result.output)
     }
 
+    private var healthExecutionIncomplete: Bool {
+        result.status == BackendCommandRunner.timeoutStatus ||
+            result.status == BackendCommandRunner.cancelledStatus ||
+            (result.status != 0 && report.failCount == 0)
+    }
+
+    private var displayedHealthScore: Int {
+        healthExecutionIncomplete ? min(report.score, 49) : report.score
+    }
+
+    private var displayedHealthScoreLabel: String {
+        healthExecutionIncomplete ? "未完成" : report.scoreLabel
+    }
+
     private var healthColor: Color {
-        if report.failCount > 0 || (!result.success && report.sections.isEmpty) {
+        if healthExecutionIncomplete || report.failCount > 0 || (!result.success && report.sections.isEmpty) {
             return Color(red: 0.91, green: 0.31, blue: 0.29)
         }
         if report.warningCount > 0 { return .orange }
@@ -1068,14 +1371,16 @@ struct ResultView: View {
 
     private var healthTitle: String {
         if report.sections.isEmpty { return "未收到检查详情" }
+        if healthExecutionIncomplete { return "检测未完成" }
         if report.failCount > 0 { return "发现 \(report.failCount) 项问题" }
         if report.warningCount > 0 { return "网络可用，仍有 \(report.warningCount) 项提示" }
         return "网络检测通过"
     }
 
     private var scoreColor: Color {
-        if report.score >= 90 { return Color(red: 0.17, green: 0.66, blue: 0.43) }
-        if report.score >= 50 { return .orange }
+        if healthExecutionIncomplete { return Color(red: 0.91, green: 0.31, blue: 0.29) }
+        if displayedHealthScore >= 90 { return Color(red: 0.17, green: 0.66, blue: 0.43) }
+        if displayedHealthScore >= 50 { return .orange }
         return Color(red: 0.91, green: 0.31, blue: 0.29)
     }
 
@@ -1117,15 +1422,15 @@ struct ResultView: View {
                         Circle()
                             .stroke(scoreColor.opacity(0.14), lineWidth: 5)
                         Circle()
-                            .trim(from: 0, to: Double(report.score) / 100)
+                            .trim(from: 0, to: Double(displayedHealthScore) / 100)
                             .stroke(scoreColor, style: StrokeStyle(lineWidth: 5, lineCap: .round))
                             .rotationEffect(.degrees(-90))
-                        Text("\(report.score)")
+                        Text("\(displayedHealthScore)")
                             .font(.system(size: 17, weight: .bold, design: .rounded))
                             .foregroundStyle(scoreColor)
                     }
                     .frame(width: 50, height: 50)
-                    Text("链路分 · \(report.scoreLabel)")
+                    Text("链路分 · \(displayedHealthScoreLabel)")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(scoreColor)
                 }
@@ -1143,6 +1448,12 @@ struct ResultView: View {
                     summaryBadge("\(report.warningCount) 提示", color: .orange)
                 }
                 summaryBadge("\(report.failCount) 失败", color: report.failCount == 0 ? .secondary : healthColor)
+            }
+
+            if healthExecutionIncomplete {
+                Label("检测进程未完整结束；以下仅为已返回的部分结果。", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(healthColor)
             }
 
             ScrollView {
@@ -1571,26 +1882,6 @@ private struct HealthActionCard: View {
     }
 }
 
-struct AdvancedCheckCard: View {
-    let isPreparing: Bool
-    let action: () -> Void
-
-    var body: some View {
-        DashboardActionCard(
-            title: "IP 纯净度",
-            detail: isPreparing ? "正在读取当前出口 IP…" : "在默认浏览器中人工复核 6 个网站",
-            symbol: CloudSymbols.advanced,
-            actionLabel: isPreparing ? "准备中" : "浏览器",
-            actionSymbol: CloudSymbols.open,
-            tint: CloudPalette.reviewCyan,
-            action: action
-        )
-        .accessibilityLabel("确认后在默认浏览器打开 IP 纯净度复核网站")
-        .help("点击后会先询问并经当前本地代理读取出口 IP，再用默认浏览器打开 6 个网站")
-        .allowsHitTesting(!isPreparing)
-    }
-}
-
 struct RulePackCard: View {
     let action: () -> Void
 
@@ -1923,7 +2214,9 @@ struct ConnectionSetupView: View {
     private var modeColor: Color {
         switch discovery.mode {
         case "TUN", "系统代理": return CloudPalette.statusGreen
-        case "双重入口": return CloudPalette.statusOrange
+        case "双重入口", "系统代理 + 其他 VPN / TUN",
+             "PAC / 自动代理 + Mihomo TUN", "系统代理路径 + Mihomo TUN":
+            return CloudPalette.statusOrange
         default: return CloudPalette.statusGray
         }
     }
@@ -1932,7 +2225,9 @@ struct ConnectionSetupView: View {
         switch discovery.mode {
         case "TUN": return "arrow.triangle.2.circlepath"
         case "系统代理": return "network"
-        case "双重入口": return "exclamationmark.triangle.fill"
+        case "双重入口", "系统代理 + 其他 VPN / TUN",
+             "PAC / 自动代理 + Mihomo TUN", "系统代理路径 + Mihomo TUN":
+            return "exclamationmark.triangle.fill"
         default: return "arrow.triangle.branch"
         }
     }
@@ -2182,6 +2477,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        BackendCommandRunner.cancelAll()
         if singletonLockFD >= 0 {
             flock(singletonLockFD, LOCK_UN)
             Darwin.close(singletonLockFD)
