@@ -21,7 +21,7 @@ Kill Switch，防止代理失效后回退直连。
 - 提供需要用户确认的 IP 纯净度、隐私泄露与浏览器测速入口
 - 内置不含订阅或节点的 Clash Verge Rev / Mihomo Merge 规则包
 - macOS 使用 SwiftUI 与 PF anchor；Windows 使用 WPF 与持久 WFP 规则
-- 跟随系统浅色/深色外观，Windows 同时支持 High Contrast
+- 支持手动切换浅色/深色外观，Windows 同时支持 High Contrast
 
 ## 支持平台
 

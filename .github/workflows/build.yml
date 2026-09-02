@@ -103,7 +103,7 @@ jobs:
           $InstallerSource = Get-Content "Scripts/install-release-windows.ps1" -Raw
           $EmbeddedScripts = [regex]::Matches(
             $InstallerSource,
-            '(?ms)^\$(ArchitectureCommand|ElevatedWorker|ElevatedBootstrap)\s*=\s*@''\r?\n(.*?)\r?\n''@\s*$'
+            '(?ms)^[ \t]*\$(ArchitectureCommand|ElevatedWorker|ElevatedBootstrap)\s*=\s*@''\r?\n(.*?)\r?\n''@\s*$'
           )
           if ($EmbeddedScripts.Count -ne 3) {
             throw "Windows release installer must contain all embedded worker scripts."

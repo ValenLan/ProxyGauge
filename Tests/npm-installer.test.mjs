@@ -94,6 +94,21 @@ test("standalone Windows installer crosses UAC with a protected hash-checked wor
   assert.doesNotMatch(installer, /GetCurrentProcess\(\)\.MainModule\.FileName/);
   assert.doesNotMatch(installer, /WriteAllText\(\$ResultPath/);
   assert.doesNotMatch(installer, /-FilePath "msiexec\.exe"|Get-FileHash|Invoke-WebRequest/);
+
+  // Exercise the workflow's actual extraction expression, including the indented
+  // worker definition. Parsing the outer file alone does not parse here-string code.
+  const workflow = readFileSync(resolve(projectRoot, ".github/workflows/build.yml"), "utf8");
+  const quotedExpression = workflow.match(/^\s*'(\(\?ms\).+)'\r?$/m)?.[1];
+  assert.ok(quotedExpression, "workflow must expose its embedded-script extraction check");
+  const expression = quotedExpression.replaceAll("''", "'").replace(/^\(\?ms\)/, "");
+  for (const newline of ["\n", "\r\n"]) {
+    const source = installer.replace(/\r?\n/g, newline);
+    const embedded = [...source.matchAll(new RegExp(expression, "gms"))];
+    assert.deepEqual(embedded.map(match => match[1]), [
+      "ArchitectureCommand", "ElevatedWorker", "ElevatedBootstrap"
+    ]);
+    assert.ok(embedded.every(match => match[2].trim().length > 0));
+  }
 });
 
 test("npm package version matches both native applications", () => {
