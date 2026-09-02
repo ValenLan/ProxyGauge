@@ -1,7 +1,7 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
   <Package Name="ProxyGauge"
-           Manufacturer="Valen Lan"
+           Manufacturer="ProxyGauge"
            Version="$(ProductVersion)"
            UpgradeCode="820C3E68-02BB-43F8-9583-09AB23BE314F"
            Scope="perMachine"
