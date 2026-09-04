@@ -1032,14 +1032,27 @@ var wpfThread = new Thread(() =>
 
         var applyGuard = typeof(ProxyGauge.ViewModels.MainViewModel).GetMethod(
             "ApplyGuard", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var applyProxy = typeof(ProxyGauge.ViewModels.MainViewModel).GetMethod(
+            "Apply", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("The deterministic WPF test could not locate Apply.");
+        applyProxy.Invoke(mainViewModel, [TestSnapshot(7890) with
+        {
+            SystemProxyEnabled = false,
+            TunDetected = true,
+            DetectedClientName = "Clash Verge Rev"
+        }]);
         applyGuard.Invoke(mainViewModel, [new GuardStatus(GuardStatusKind.Enabled, true, 17)
             { AutomaticSelection = true, ProxyExecutablePath = @"C:\Clash\verge-mihomo.exe" }]);
-        applyExit.Invoke(mainViewModel, [ExitSummary.Disconnected()]);
-        RenderPixels(mainRoot, 820, 550, Artifact("main-disconnected-guard-on.png"));
-        Require(mainViewModel.ExitAddress == "已断开网络连接" && ipVersionBorder.Visibility == Visibility.Collapsed &&
+        RenderPixels(mainRoot, 820, 550, Artifact("main-guard-on.png"));
+        Require(mainViewModel.ConnectionValue == "虚拟网卡" &&
                 mainViewModel.ConnectionDetail == "Clash Verge Rev · verge-mihomo" &&
                 mainViewModel.GuardApplicationLabel == "切换代理",
             "The proxy card must show the client and core while the guard card keeps a short switch action.");
+        applyExit.Invoke(mainViewModel, [ExitSummary.Disconnected()]);
+        RenderPixels(mainRoot, 820, 550, Artifact("main-disconnected-guard-on.png"));
+        Require(mainViewModel.ExitAddress == "已断开网络连接" && ipVersionBorder.Visibility == Visibility.Collapsed &&
+                mainViewModel.ConnectionDetail == "请检查网络连接",
+            "A disconnected network must replace the proxy subtitle with a direct recovery hint.");
         applyGuard.Invoke(mainViewModel, [new GuardStatus(GuardStatusKind.Enabled, true, 17)
             { AutomaticSelection = true, ProxyExecutablePath = @"C:\Clash\verge-mihomo.exe", SelectionRequired = true }]);
         RenderPixels(mainRoot, 820, 550, Artifact("main-disconnected-selection-required.png"));
