@@ -145,7 +145,15 @@ internal readonly record struct BestRouteLookup(
 internal readonly record struct RoutedAdapterEvidence(
     TunnelKind Kind,
     int? Ipv4Index,
-    int? Ipv6Index);
+    int? Ipv6Index,
+    string? ClientName = null);
+
+internal sealed record RouteDetection(
+    TunnelKind Coverage,
+    bool MihomoDetected,
+    bool OtherTunnelDetected,
+    bool LookupUnknown = false,
+    string? ClientName = null);
 
 public sealed class ProxyProbeService
 {
@@ -194,7 +202,8 @@ public sealed class ProxyProbeService
     [
         "verge-mihomo",
         "mihomo",
-        "clash-meta"
+        "clash-meta",
+        "clash"
     ];
 
     private static readonly string[] MihomoTunKeywords =
@@ -232,8 +241,45 @@ public sealed class ProxyProbeService
             coreProcessIds,
             config.TimeoutSeconds,
             cancellationToken);
-        var tunTask = DetectTunnelKindAsync(cancellationToken);
+        var tunTask = DetectRouteAsync(cancellationToken);
         var systemProxy = ReadSystemProxyConfiguration();
+        await Task.WhenAll(portAttributionTask, tunTask);
+        var detection = await tunTask;
+        return CreateSnapshot(
+            config,
+            coreCount,
+            await portAttributionTask,
+            systemProxy,
+            detection,
+            detection.ClientName ?? DetectRunningProxyClientName());
+    }
+
+    internal static ProxySnapshot CreateSnapshot(AppConfig config, int coreCount,
+        TcpListenerAttribution portAttribution, SystemProxyConfiguration systemProxy, RouteDetection detection,
+        string? detectedClientName = null)
+    {
+        var snapshot = BuildSnapshot(config, coreCount, portAttribution, systemProxy, detection);
+        return snapshot with
+        {
+            SplitTunnelDetected = detection.Coverage == TunnelKind.Split,
+            RouteLookupUnknown = detection.LookupUnknown || detection.Coverage == TunnelKind.Unknown,
+            VirtualNetworkDetected = detection.Coverage != TunnelKind.None,
+            DetectedClientName = detectedClientName ?? detection.ClientName
+                ?? (coreCount > 0 ? "Clash / Mihomo" : null),
+            ConnectionLabel = coreCount > 1 ? null : detection.OtherTunnelDetected ? "VPN 已检测"
+                : detection.MihomoDetected && (detection.Coverage == TunnelKind.Split || detection.LookupUnknown)
+                    ? "TUN 已检测" : null,
+            ConnectionSummary = detection.OtherTunnelDetected
+                ? detection.LookupUnknown ? "VPN / TUN · 部分路由未确认"
+                    : detection.Coverage == TunnelKind.Split ? "VPN / TUN · 路由分流"
+                    : "VPN / TUN · 系统路径"
+                : null
+        };
+    }
+
+    private static ProxySnapshot BuildSnapshot(AppConfig config, int coreCount,
+        TcpListenerAttribution portAttribution, SystemProxyConfiguration systemProxy, RouteDetection detection)
+    {
         var systemProxyEnabled = systemProxy.Enabled;
         var explicitMismatch = systemProxy.ExplicitEnabled && !systemProxy.UsesDynamicResolution && !systemProxy.Matches(
             config.MixedHost,
@@ -245,20 +291,20 @@ public sealed class ProxyProbeService
         var environmentManaged = systemProxy.EnvironmentProxyEnabled;
         var bypassManaged = systemProxy.MayBypassExitLookup;
 
-        await Task.WhenAll(portAttributionTask, tunTask);
-        var portAttribution = await portAttributionTask;
-        var tunnelKind = await tunTask;
-        var tunDetected = tunnelKind == TunnelKind.Mihomo;
-        var otherTunnelDetected = tunnelKind == TunnelKind.Other;
+        var tunnelKind = detection.Coverage;
+        var tunDetected = detection.MihomoDetected;
+        var otherTunnelDetected = detection.OtherTunnelDetected;
         var virtualNetworkDetected = tunnelKind == TunnelKind.VirtualNetwork;
         var splitTunnelDetected = tunnelKind == TunnelKind.Split;
-        var routeLookupUnknown = tunnelKind == TunnelKind.Unknown;
+        var routeLookupUnknown = detection.LookupUnknown || tunnelKind == TunnelKind.Unknown;
         var anyTunnelDetected = tunnelKind != TunnelKind.None;
         var routeActive = systemProxyEnabled || anyTunnelDetected;
 
         var core = coreCount switch
         {
-            0 => new MetricSnapshot("代理核心", "未运行", "未发现 Mihomo 进程", "核", HealthLevel.Error),
+            0 when otherTunnelDetected => new MetricSnapshot("代理核心", "VPN / TUN 已检测",
+                "已确认活动 VPN 路由；该客户端不要求使用 Mihomo 或保存的 mixed 端口", "核", HealthLevel.Warning),
+            0 => new MetricSnapshot("代理核心", "未运行", "未发现 Clash / Mihomo 进程或活动 VPN 路由", "核", HealthLevel.Error),
             1 => new MetricSnapshot("代理核心", "运行中", "检测到一个核心进程", "核", HealthLevel.Ok),
             _ => new MetricSnapshot("代理核心", $"{coreCount} 个进程", "可能存在双核心冲突", "核", HealthLevel.Warning)
         };
@@ -267,14 +313,15 @@ public sealed class ProxyProbeService
         var configuredEndpointOwnedByMihomo =
             portAttribution == TcpListenerAttribution.MihomoOwned;
         var localMihomoHealthy = mihomoCoreHealthy && configuredEndpointOwnedByMihomo;
-        var mihomoTunHealthy = mihomoCoreHealthy && tunDetected;
+        var mihomoTunHealthy = mihomoCoreHealthy && tunnelKind == TunnelKind.Mihomo && !routeLookupUnknown;
         var configuredPortConflict = portAttribution == TcpListenerAttribution.OtherOrUnknown;
         var port = DescribeLocalPort(
             config.MixedHost,
             config.MixedPort,
             portAttribution,
             mihomoTunHealthy,
-            alternateSystemPath: otherTunnelDetected || pacManaged || autoManaged || environmentManaged);
+            alternateSystemPath: otherTunnelDetected || (tunDetected && !mihomoTunHealthy) ||
+                pacManaged || autoManaged || environmentManaged);
         MetricSnapshot route;
         if (anyTunnelDetected && systemProxyEnabled)
         {
@@ -287,6 +334,14 @@ public sealed class ProxyProbeService
                 virtualNetworkDetected,
                 splitTunnelDetected,
                 routeLookupUnknown);
+        }
+        else if (routeLookupUnknown)
+        {
+            route = DescribeUnknownRoute();
+        }
+        else if (splitTunnelDetected)
+        {
+            route = DescribeSplitTunnelRoute();
         }
         else if (tunDetected)
         {
@@ -309,14 +364,6 @@ public sealed class ProxyProbeService
                 "系统最佳路由由虚拟 Ethernet 承载；仅凭虚拟网卡不能判定为 VPN/TUN",
                 "入",
                 HealthLevel.Warning);
-        }
-        else if (splitTunnelDetected)
-        {
-            route = DescribeSplitTunnelRoute();
-        }
-        else if (routeLookupUnknown)
-        {
-            route = DescribeUnknownRoute();
         }
         else if (systemProxyEnabled)
         {
@@ -640,7 +687,7 @@ public sealed class ProxyProbeService
     internal static MetricSnapshot DescribeSplitTunnelRoute() => new(
         "路由分流",
         "路径不一致",
-        "所检查的公网前缀在同一协议族内走不同接口，或 IPv4 / IPv6 未由同一路径承载；不能排除直连泄漏",
+        "不同公网目标或 IPv4 / IPv6 使用不同接口，可能是代理的规则分流；这不表示代理已关闭，也不能证明全部流量经过代理。断网保护状态请单独查看",
         "入",
         HealthLevel.Warning);
 
@@ -671,7 +718,7 @@ public sealed class ProxyProbeService
         {
             return (
                 "系统路由存在分流",
-                "代表性公网前缀在同一协议族内走不同接口，或 IPv4 / IPv6 路径不一致；可能存在直连泄漏");
+                "不同公网目标或 IPv4 / IPv6 使用不同接口，可能是规则分流；不能据此判定代理已关闭或已发生直连泄漏。断网保护状态独立显示");
         }
         if (virtualNetworkDetected)
         {
@@ -772,6 +819,42 @@ public sealed class ProxyProbeService
     }
 
     public int CountProxyCores() => GetProxyCoreProcessIds().Count;
+
+    internal static string? DetectClientName(IEnumerable<string> processOrAdapterNames)
+    {
+        var labels = processOrAdapterNames.Select(value =>
+        {
+            if (value.Contains("v2rayn", StringComparison.OrdinalIgnoreCase)) return "v2rayN";
+            if (value.Contains("ikuuu", StringComparison.OrdinalIgnoreCase)) return "iKuuuVPN";
+            if (value.Contains("clash verge", StringComparison.OrdinalIgnoreCase) ||
+                value.Contains("verge-mihomo", StringComparison.OrdinalIgnoreCase)) return "Clash Verge Rev";
+            if (value.Contains("mihomo", StringComparison.OrdinalIgnoreCase) ||
+                value.Contains("clash", StringComparison.OrdinalIgnoreCase)) return "Clash / Mihomo";
+            if (value.Contains("sing-box", StringComparison.OrdinalIgnoreCase) ||
+                value.Contains("singbox", StringComparison.OrdinalIgnoreCase)) return "sing-box";
+            if (value.Contains("xray", StringComparison.OrdinalIgnoreCase)) return "Xray";
+            if (value.Contains("v2ray", StringComparison.OrdinalIgnoreCase)) return "V2Ray";
+            if (value.Contains("wireguard", StringComparison.OrdinalIgnoreCase)) return "WireGuard";
+            if (value.Contains("openvpn", StringComparison.OrdinalIgnoreCase)) return "OpenVPN";
+            if (value.Contains("tailscale", StringComparison.OrdinalIgnoreCase)) return "Tailscale";
+            return null;
+        }).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        return labels.Length == 1 ? labels[0] : null;
+    }
+
+    internal static string? DetectRunningProxyClientName()
+    {
+        var processNames = new List<string>();
+        foreach (var process in Process.GetProcesses())
+        {
+            using (process)
+            {
+                try { processNames.Add(process.ProcessName); }
+                catch { }
+            }
+        }
+        return DetectClientName(processNames);
+    }
 
     public async Task<bool> CanConnectAsync(
         string host,
@@ -953,7 +1036,7 @@ public sealed class ProxyProbeService
     }
 
     public async Task<bool> DetectTunAsync(CancellationToken cancellationToken = default)
-        => await DetectTunnelKindAsync(cancellationToken) == TunnelKind.Mihomo;
+        => (await DetectRouteAsync(cancellationToken)).MihomoDetected;
 
     internal static TunnelKind ClassifyTunnelAdapter(
         string name,
@@ -1083,16 +1166,20 @@ public sealed class ProxyProbeService
         (ipv4Index is > 0 && bestRoutes.Ipv4 == (uint)ipv4Index.Value) ||
         (ipv6Index is > 0 && bestRoutes.Ipv6 == (uint)ipv6Index.Value);
 
-    internal Task<TunnelKind> DetectTunnelKindAsync(
+    internal async Task<TunnelKind> DetectTunnelKindAsync(CancellationToken cancellationToken = default) =>
+        (await DetectRouteAsync(cancellationToken)).Coverage;
+
+    internal Task<RouteDetection> DetectRouteAsync(
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (!OperatingSystem.IsWindows())
         {
-            return Task.FromResult(TunnelKind.None);
+            return Task.FromResult(new RouteDetection(TunnelKind.None, false, false));
         }
 
-        var bestRoutes = GetBestRouteInterfaceIndexes();
+        var ipv4 = BestRouteProbeIpv4.Select(LookupBestRouteInterface).ToArray();
+        var ipv6 = BestRouteProbeIpv6.Select(LookupBestRouteInterface).ToArray();
         cancellationToken.ThrowIfCancellationRequested();
         var evidence = new List<RoutedAdapterEvidence>();
         try
@@ -1107,16 +1194,19 @@ public sealed class ProxyProbeService
                 }
 
                 var (ipv4Index, ipv6Index) = ReadInterfaceIndexes(adapter);
-                var carriesBestRoute = InterfaceCarriesBestRoute(
-                    ipv4Index,
-                    ipv6Index,
-                    bestRoutes);
+                var carriesBestRoute =
+                    (ipv4Index is > 0 && ipv4.Any(route => route.InterfaceIndex == (uint)ipv4Index)) ||
+                    (ipv6Index is > 0 && ipv6.Any(route => route.InterfaceIndex == (uint)ipv6Index));
                 var adapterKind = ClassifyTunnelAdapter(
                     adapter.Name,
                     adapter.Description,
                     adapter.NetworkInterfaceType,
                     registryVirtual: carriesBestRoute && IsRegistryVirtualAdapter(adapter.Id));
-                evidence.Add(new RoutedAdapterEvidence(adapterKind, ipv4Index, ipv6Index));
+                evidence.Add(new RoutedAdapterEvidence(
+                    adapterKind,
+                    ipv4Index,
+                    ipv6Index,
+                    DetectClientName([adapter.Name, adapter.Description])));
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -1125,10 +1215,40 @@ public sealed class ProxyProbeService
         }
         catch
         {
-            return Task.FromResult(TunnelKind.Unknown);
+            return Task.FromResult(new RouteDetection(TunnelKind.Unknown, false, false, true));
         }
 
-        return Task.FromResult(ClassifyRoutedAdapterEvidence(bestRoutes, evidence));
+        return Task.FromResult(AnalyzeRoutes(ipv4, ipv6, evidence));
+    }
+
+    internal static RouteDetection AnalyzeRoutes(IReadOnlyList<BestRouteLookup> ipv4,
+        IReadOnlyList<BestRouteLookup> ipv6, IEnumerable<RoutedAdapterEvidence> adapters)
+    {
+        var evidence = adapters.ToArray();
+        var bestRoutes = BuildBestRouteIndexes(ipv4, ipv6);
+        // Use individual successful lookups, not the aggregate's null index on
+        // split/partial failure. An idle adapter is never evidence of a VPN path.
+        var routed = evidence.Where(adapter =>
+            (adapter.Ipv4Index is > 0 && ipv4.Any(route => route.InterfaceIndex == (uint)adapter.Ipv4Index)) ||
+            (adapter.Ipv6Index is > 0 && ipv6.Any(route => route.InterfaceIndex == (uint)adapter.Ipv6Index))).ToArray();
+        var unmapped = ipv4.Any(route => route.InterfaceIndex is { } index &&
+            !evidence.Any(adapter => adapter.Ipv4Index == index)) ||
+            ipv6.Any(route => route.InterfaceIndex is { } index &&
+            !evidence.Any(adapter => adapter.Ipv6Index == index));
+        return new RouteDetection(ClassifyRoutedAdapterEvidence(bestRoutes, evidence),
+            routed.Any(adapter => adapter.Kind == TunnelKind.Mihomo),
+            routed.Any(adapter => adapter.Kind == TunnelKind.Other),
+            bestRoutes.Ipv4Unknown || bestRoutes.Ipv6Unknown || unmapped,
+            DetectClientName(routed.Select(adapter => adapter.ClientName ?? string.Empty)));
+    }
+
+    private static BestRouteInterfaceIndexes BuildBestRouteIndexes(
+        IEnumerable<BestRouteLookup> ipv4Lookups, IEnumerable<BestRouteLookup> ipv6Lookups)
+    {
+        var ipv4 = AggregateBestRouteLookups(ipv4Lookups);
+        var ipv6 = AggregateBestRouteLookups(ipv6Lookups);
+        return new BestRouteInterfaceIndexes(ipv4.InterfaceIndex, ipv6.InterfaceIndex,
+            ipv4.Unknown, ipv6.Unknown, ipv4.Split, ipv6.Split);
     }
 
     internal static BestRouteInterfaceIndexes GetBestRouteInterfaceIndexes()

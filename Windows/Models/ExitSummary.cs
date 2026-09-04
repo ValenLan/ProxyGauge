@@ -3,10 +3,13 @@ using System.Net.Sockets;
 
 namespace ProxyGauge.Models;
 
+public enum ExitSummaryState { Available, Checking, Disconnected, Unavailable }
+
 public sealed record ExitSummary(
     string Address,
     string Location)
 {
+    public ExitSummaryState State { get; init; } = ExitSummaryState.Available;
     public string? IpVersion => ParseIpVersion(Address);
     public bool HasIpVersion => IpVersion is not null;
 
@@ -163,8 +166,14 @@ public sealed record ExitSummary(
     }
 
     public static ExitSummary Unavailable() =>
-        new("暂时无法读取", "请检查当前网络连接");
+        new("暂时无法读取", "出口查询未能确认，稍后重试") { State = ExitSummaryState.Unavailable };
+
+    public static ExitSummary Disconnected() =>
+        new("已断开网络连接", "当前互联网路径不可用；局域网可能仍可用") { State = ExitSummaryState.Disconnected };
+
+    public static ExitSummary Waiting() =>
+        new("等待重新检测", "网络路径已变化，旧出口已清除") { State = ExitSummaryState.Unavailable };
 
     public static ExitSummary Checking() =>
-        new("正在检测", "正在确认系统实际出口");
+        new("正在检测", "正在确认系统实际出口") { State = ExitSummaryState.Checking };
 }

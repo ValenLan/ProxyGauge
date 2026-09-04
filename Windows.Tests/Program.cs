@@ -13,12 +13,48 @@ using ProxyGauge.Models;
 using ProxyGauge.Services;
 using ProxyGauge.ViewModels;
 
+if (args.Length >= 2 && args[0] == "--runtime-probe")
+{
+    await RuntimeDiagnostics.RunAsync(args);
+    return;
+}
+if (args.Length is 7 or 8 && args[0] == "--handover-probe")
+{
+    await GuardHandoverDiagnostics.RunAsync(args);
+    return;
+}
+
 static void Require(bool condition, string message)
 {
     if (!condition) throw new InvalidOperationException(message);
 }
 
 static HealthCheckItem Item(HealthLevel level) => new("test", "test", level);
+
+await GuardActivationAssertions.RunAsync();
+await NetworkStateAssertions.RunAsync();
+
+Require(GuardProtocol.CreateApplicationEnableRequest("") == "ENABLE_APP\tCLASH",
+    "The default guard selection must resolve Clash/Mihomo, without a mixed-port prerequisite.");
+const string chosenCore = @"E:\代理工具\iKuuuVPNCore.exe";
+Require(GuardProtocol.ParseApplications($"OK\tAPPLICATIONS\t{chosenCore}\t{chosenCore}")
+        is [{ ExecutablePath: chosenCore }],
+    "Read-only Guard discovery must preserve a SYSTEM core's exact path and deduplicate it without granting a permit.");
+var invalidApplicationResponseRejected = false;
+try { GuardProtocol.ParseApplications("OK\tAPPLICATIONS\t\\\\host\\clash.exe"); }
+catch (GuardCommandException) { invalidApplicationResponseRejected = true; }
+Require(invalidApplicationResponseRejected, "Guard application discovery must reject nonlocal executable paths.");
+Require(GuardProtocol.CreateApplicationEnableRequest($" {chosenCore} ") == $"ENABLE_APP\t{chosenCore}" &&
+        new AppConfig { ProxyExecutablePath = chosenCore }.Clone().ProxyExecutablePath == chosenCore,
+    "The exact selected executable must survive normalization, cloning, and the pipe protocol.");
+foreach (var badPath in new string?[] { null, "clash.exe", @"\\host\share\clash.exe", @"C:\a.exe --help",
+             "C:\\a.exe\tDISABLE", @"C:\a\..\b.exe", @"C:\a.exe:stream.exe", @"C:/a.exe" })
+{
+    var rejected = false;
+    try { ProxyApplicationSelection.NormalizePath(badPath); }
+    catch (InvalidDataException) { rejected = true; }
+    Require(rejected, $"A proxy choice must reject remote paths, arguments, traversal, and protocol injection: {badPath}");
+}
 
 static HttpResponseMessage TextResponse(HttpStatusCode status, string content) => new(status)
 {
@@ -929,8 +965,13 @@ var wpfThread = new Thread(() =>
         var dashboardScroller = (ScrollViewer)mainWindow.FindName("DashboardScrollViewer");
         Require(dashboardScroller.VerticalScrollBarVisibility == ScrollBarVisibility.Hidden,
             "The dashboard must remain wheel-scrollable without showing a stray side scrollbar.");
-        Require(mainWindow.FindName("ProductIntroduction") is TextBlock,
-            "The page header must expose the concise product introduction without a second product title.");
+        Require(mainWindow.FindName("ProductTitle") is TextBlock { Text: "ProxyGauge" } &&
+                mainWindow.FindName("ProductIntroduction") is TextBlock { Text: "监控代理连接、出口 IP 与浏览器隐私" },
+            "The page must retain its title and subtitle while the native caption stays unbranded.");
+        Require(mainRoot.BorderThickness == new Thickness(0) &&
+                mainWindow.Background is SolidColorBrush { Color.A: 255 },
+            "The main frame must not cut a square WPF outline into disconnected rounded edges.");
+        NativeFrameAssertions.Check(mainWindow);
         var locationChip = (TextBlock)mainWindow.FindName("ExitLocationChip");
         Require(mainWindow.FindName("ExitCardTitle") is TextBlock { Text: "系统实际出口" },
             "The main card must name the operating-system route instead of implying a configured proxy-port result.");
@@ -988,6 +1029,25 @@ var wpfThread = new Thread(() =>
                 copyFront.Visibility == Visibility.Visible,
             "Changing the exit address must immediately cancel and reset stale copy-success feedback.");
         var lightPixels = RenderPixels(mainRoot, 820, 550, Artifact("main-light.png"));
+
+        var applyGuard = typeof(ProxyGauge.ViewModels.MainViewModel).GetMethod(
+            "ApplyGuard", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        applyGuard.Invoke(mainViewModel, [new GuardStatus(GuardStatusKind.Enabled, true, 17)
+            { AutomaticSelection = true, ProxyExecutablePath = @"C:\Clash\verge-mihomo.exe" }]);
+        applyExit.Invoke(mainViewModel, [ExitSummary.Disconnected()]);
+        RenderPixels(mainRoot, 820, 550, Artifact("main-disconnected-guard-on.png"));
+        Require(mainViewModel.ExitAddress == "已断开网络连接" && ipVersionBorder.Visibility == Visibility.Collapsed &&
+                mainViewModel.GuardApplicationLabel.Contains("verge-mihomo"),
+            "Offline IP and current-core switch must remain visible together while protection is ON.");
+        applyGuard.Invoke(mainViewModel, [new GuardStatus(GuardStatusKind.Enabled, true, 17)
+            { AutomaticSelection = true, ProxyExecutablePath = @"C:\Clash\verge-mihomo.exe", SelectionRequired = true }]);
+        RenderPixels(mainRoot, 820, 550, Artifact("main-disconnected-selection-required.png"));
+        Require(mainViewModel.ExitAddress == "已断开网络连接" && ipVersionBorder.Visibility == Visibility.Collapsed &&
+                mainViewModel.GuardApplicationLabel == "需要选择当前代理…" &&
+                mainViewModel.GuardDetail.Contains("保护继续生效"),
+            "An ambiguous entry must visibly request a selection while keeping protection and offline state visible.");
+        applyGuard.Invoke(mainViewModel, [new GuardStatus(GuardStatusKind.Disabled, true, 0)]);
+        applyExit.Invoke(mainViewModel, [new ExitSummary("1.1.1.1", "澳大利亚 · 悉尼")]);
         Require(RequireSolidColor(mainRoot.Background,
                     "The main window root must use a solid canvas brush in light mode.") == Colors.White,
             "The already-created main window must resolve the light canvas to white.");
@@ -1028,10 +1088,26 @@ var wpfThread = new Thread(() =>
         var discoveryService = new ConnectionDiscoveryService(probeService, controllerService);
         updateService = new UpdateService();
         Console.WriteLine("WPF validation: rendering runtime-dark settings.");
+        var guardPicker = new GuardApplicationWindow(new GuardApplicationRequest("PROXY_AMBIGUOUS",
+            [new("iKuuu", chosenCore), new("Mihomo", @"C:\Clash\mihomo.exe")], ""));
+        Require(guardPicker.FindName("PortTextBox") is null && guardPicker.FindName("HostTextBox") is null &&
+            guardPicker.FindName("ApplicationList") is ListBox { Items.Count: 2, SelectedIndex: -1 } &&
+            guardPicker.FindName("EnableButton") is Button { IsEnabled: false },
+            "The fallback picker must contain applications only, with no endpoint fields or implicit selection.");
+        RenderPixels((Border)guardPicker.Content, 560, 350, Artifact("guard-picker-dark.png"));
+        Require(!guardPicker.IsVisible, "Picker validation must use an offscreen render, not GUI automation.");
+        guardPicker.Close();
         settingsWindow = new SettingsWindow(
             new AppConfig(),
             discoveryService,
             updateService);
+        var proxyChoice = (ComboBox)settingsWindow.FindName("ProxyApplicationComboBox");
+        Require(proxyChoice.SelectedItem is ProxyApplicationChoice { ExecutablePath: "" },
+            "Settings must default to automatic Clash/Mihomo selection.");
+        typeof(SettingsWindow).GetMethod("LoadProxyApplications", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(settingsWindow, [chosenCore, Array.Empty<ProxyApplicationChoice>()]);
+        Require(proxyChoice.SelectedItem is ProxyApplicationChoice selected && selected.ExecutablePath == chosenCore,
+            "Settings must retain an explicitly chosen core even when that executable is stopped.");
         Require(settingsWindow.FindName("VersionText") is TextBlock
                 { Text: var settingsVersionText } &&
                 settingsVersionText == $"当前版本 v{expectedProductVersion}",
@@ -1399,6 +1475,44 @@ Require(ProxyProbeService.AggregateBestRouteLookups(
     "Only unanimous representative destinations may resolve or prove a family unavailable.");
 var withinFamilySplit = ProxyProbeService.AggregateBestRouteLookups(
     [BestRouteLookup.Resolved(17), BestRouteLookup.Resolved(31)]);
+var vpnAdapters = new[]
+{
+    new RoutedAdapterEvidence(TunnelKind.Other, 47, 47, "iKuuuVPN"),
+    new RoutedAdapterEvidence(TunnelKind.None, 13, 13)
+};
+var splitVpn = ProxyProbeService.AnalyzeRoutes(
+    [BestRouteLookup.Resolved(47), BestRouteLookup.Resolved(13)],
+    [BestRouteLookup.Unavailable()], vpnAdapters);
+Require(splitVpn.OtherTunnelDetected && splitVpn.Coverage == TunnelKind.Split && !splitVpn.MihomoDetected,
+    "Within-family split routing must retain the confirmed third-party VPN interface.");
+var partialVpn = ProxyProbeService.AnalyzeRoutes(
+    [BestRouteLookup.Resolved(47), BestRouteLookup.Failed()],
+    [BestRouteLookup.Unavailable()], vpnAdapters);
+Require(partialVpn.OtherTunnelDetected && partialVpn.LookupUnknown,
+    "A failed route query must not discard the VPN evidence from successful queries.");
+var idleVpn = ProxyProbeService.AnalyzeRoutes(
+    [BestRouteLookup.Resolved(13)], [BestRouteLookup.Resolved(13)], vpnAdapters);
+Require(!idleVpn.OtherTunnelDetected && idleVpn.Coverage == TunnelKind.None,
+    "An idle VPN adapter must not become proof of an active VPN path.");
+var crossFamilyVpn = ProxyProbeService.AnalyzeRoutes(
+    [BestRouteLookup.Resolved(47)], [BestRouteLookup.Resolved(13)], vpnAdapters);
+Require(crossFamilyVpn.OtherTunnelDetected && crossFamilyVpn.Coverage == TunnelKind.Split,
+    "IPv4 VPN with IPv6 physical routing must retain both VPN presence and incomplete coverage.");
+var vpnSnapshot = ProxyProbeService.CreateSnapshot(new AppConfig { MixedPort = 7897 }, 0,
+    TcpListenerAttribution.Closed, ProxyProbeService.ParseSystemProxyConfiguration(0, null, null), splitVpn);
+Require(vpnSnapshot.OtherTunnelDetected && vpnSnapshot.VirtualNetworkDetected &&
+        vpnSnapshot.DetectedClientName == "iKuuuVPN" && vpnSnapshot.ConnectionLabel == "VPN 已检测" &&
+        vpnSnapshot.ConnectionSummary?.Contains("分流") == true &&
+        vpnSnapshot.Port.Level != HealthLevel.Error && vpnSnapshot.Core.Level != HealthLevel.Error &&
+        HealthCheckService.SelectPrimaryExitRoute(vpnSnapshot) == HealthExitRoute.SystemRoute,
+    "iKuuu split routing and a stale closed Mihomo port must still expose the real system VPN path.");
+var splitMihomo = ProxyProbeService.CreateSnapshot(new AppConfig(), 1, TcpListenerAttribution.Closed,
+    ProxyProbeService.ParseSystemProxyConfiguration(0, null, null),
+    new RouteDetection(TunnelKind.Split, true, false));
+Require(!HealthCheckService.ShouldUseTunOnlySystemRoute(splitMihomo) &&
+        HealthCheckService.SelectPrimaryExitRoute(splitMihomo) == HealthExitRoute.SystemRoute &&
+        !splitMihomo.Port.Detail.Contains("已确认 Mihomo 代表性 TUN 路由", StringComparison.Ordinal),
+    "Retaining partial Mihomo evidence must not upgrade it into a fully confirmed TUN-only path.");
 var singleTargetHijack = ProxyProbeService.AggregateBestRouteLookups(
     [
         BestRouteLookup.Resolved(17),
@@ -1474,35 +1588,40 @@ var systemProxyFallback = ProxyProbeService.DescribeDetectedSystemRoute(
     routeDetail: "test");
 Require(systemProxyFallback?.Headline == "检测到系统代理路径",
     "An active proxy from another client must remain visible when the configured Mihomo port is unavailable.");
-Require(MainViewModel.BuildConnectionDetail(
-        "PAC 代理", "按脚本决定", HealthLevel.Error, HealthLevel.Error, "127.0.0.1:7890") ==
-        "系统路径 · PAC",
-    "A third-party PAC path must not be labelled as Mihomo or display the configured Mihomo endpoint.");
-Require(MainViewModel.BuildConnectionDetail(
-        "系统代理", "已启用", HealthLevel.Ok, HealthLevel.Ok, "127.0.0.1:7890") ==
-        "Mihomo · 系统代理 · 127.0.0.1:7890",
-    "A matched system proxy with a healthy core and port may be attributed to Mihomo.");
-Require(MainViewModel.BuildConnectionDetail(
-        "系统代理", "入口不匹配", HealthLevel.Error, HealthLevel.Error, "127.0.0.1:7890") ==
-        "系统路径 · 系统代理",
-    "An unmatched system proxy must not inherit the ProxyGauge-configured endpoint.");
-Require(MainViewModel.BuildConnectionDetail(
-        "TUN 路由", "代表性路由已确认", HealthLevel.Ok, HealthLevel.Idle, "127.0.0.1:7890") ==
-        "Mihomo · TUN-only" &&
-        MainViewModel.BuildConnectionDetail(
-            "TUN 路由", "代表性路由已确认", HealthLevel.Ok, HealthLevel.Ok, "127.0.0.1:7890") ==
-        "Mihomo · TUN · 127.0.0.1:7890" &&
-        MainViewModel.BuildConnectionDetail(
-            "TUN 路由", "检测到但未确认", HealthLevel.Error, HealthLevel.Ok, "127.0.0.1:7890") ==
-        "系统路径 · TUN",
-    "A confirmed TUN-only path needs one Mihomo core but must not require a mixed listener.");
-Require(MainViewModel.BuildConnectionDetail(
-        "双重入口", "同时开启", HealthLevel.Ok, HealthLevel.Ok, "127.0.0.1:7890") ==
-        "Mihomo · 系统代理 + TUN · 127.0.0.1:7890" &&
-        MainViewModel.BuildConnectionDetail(
-            "系统代理 + TUN", "路径需确认", HealthLevel.Ok, HealthLevel.Ok, "127.0.0.1:7890") ==
-        "系统路径 · 系统代理 + TUN",
-    "An uncertain combined route must not render the configured Mihomo endpoint as its fixed path.");
+var systemProxyStatus = MainViewModel.BuildConnectionStatus(
+    true, false, false, true, HealthLevel.Error, "ignored");
+var virtualAdapterStatus = MainViewModel.BuildConnectionStatus(
+    false, true, false, true, HealthLevel.Warning, "ignored");
+var combinedStatus = MainViewModel.BuildConnectionStatus(
+    true, true, false, true, HealthLevel.Ok, "ignored");
+var directStatus = MainViewModel.BuildConnectionStatus(
+    false, false, false, true, HealthLevel.Error, "ignored");
+var offlineStatus = MainViewModel.BuildConnectionStatus(
+    true, true, true, true, HealthLevel.Ok, "ignored");
+Require(systemProxyStatus == ("系统代理", HealthLevel.Ok) &&
+        virtualAdapterStatus == ("虚拟网卡", HealthLevel.Ok) &&
+        combinedStatus == ("系统代理 + 虚拟网卡", HealthLevel.Warning) &&
+        directStatus == ("未检测到代理", HealthLevel.Idle) &&
+        offlineStatus == ("无网络连接", HealthLevel.Error),
+    "The connection card must distinguish system proxy, virtual adapter, dual path, direct network, and no network.");
+Require(MainViewModel.BuildConnectionClientDetail(
+            @"C:\Program Files\v2rayN\v2rayN.exe", null, false, true, false, true) == "v2rayN" &&
+        MainViewModel.BuildConnectionClientDetail(
+            null, null, false, true, false, true) == "其他 VPN 已连接" &&
+        MainViewModel.BuildConnectionClientDetail(
+            null, null, true, false, false, true) == "其他系统代理已启用" &&
+        MainViewModel.BuildConnectionClientDetail(
+            null, null, true, true, false, true) == "其他 VPN / 代理已连接" &&
+        MainViewModel.BuildConnectionClientDetail(
+            @"C:\Program Files\Clash Verge\verge-mihomo.exe", "Clash Verge Rev",
+            false, false, false, true) == "当前使用直连网络" &&
+        MainViewModel.BuildConnectionClientDetail(
+            null, null, true, true, true, true) == "请检查网络连接",
+    "The connection subtitle must name one active client and use neutral fallbacks without stale attribution.");
+Require(ProxyProbeService.DetectClientName(["v2rayN", "unrelated"]) == "v2rayN" &&
+        ProxyProbeService.DetectClientName(["Clash Verge", "v2rayN"]) is null &&
+        ProxyProbeService.DetectClientName(["Wintun Userspace Tunnel", "iKuuu VPN"]) == "iKuuuVPN",
+    "Client detection must support common Windows clients and fail closed when attribution is ambiguous.");
 Require(new ConnectionDiscoveryResult(
         false,
         "127.0.0.1",
@@ -1560,7 +1679,7 @@ var foundSplitDiscovery = new ConnectionDiscoveryResult(
     SplitTunnelDetected: true);
 var missingSplitDiscovery = foundSplitDiscovery with { Found = false };
 Require(foundSplitDiscovery.Endpoint == "[::1]:7890" &&
-        foundSplitDiscovery.TrafficMode.Contains("直连泄漏", StringComparison.Ordinal) &&
+        foundSplitDiscovery.TrafficMode.Contains("分流", StringComparison.Ordinal) &&
         foundSplitDiscovery.RouteWarning?.Contains("直连泄漏", StringComparison.Ordinal) == true &&
         missingSplitDiscovery.RouteWarning == foundSplitDiscovery.RouteWarning,
     "Found and missing mixed endpoints must both preserve the split-route leak warning.");
@@ -1700,6 +1819,11 @@ Require(HealthCheckService.CalculateOverallTimeout(3) == TimeSpan.FromSeconds(30
     "Windows health checks must have a bounded overall deadline derived from the supported timeout.");
 
 var enabledGuard = GuardProtocol.ParseStatus("OK\tSTATUS\tENABLED\tHEALTHY\t8\tOWNED\0");
+var automaticGuard = GuardProtocol.ParseStatus("OK\tSTATUS\tENABLED\tHEALTHY\t17\tOWNED\tAUTO\tC:\\Clash\\mihomo.exe\tCHOOSE\0");
+Require(automaticGuard.IsHealthy && automaticGuard.AutomaticSelection && automaticGuard.SelectionRequired &&
+        automaticGuard.ProxyExecutablePath == @"C:\Clash\mihomo.exe", "Extended status must expose the native core and selection mode.");
+try { GuardProtocol.ParseStatus("OK\tSTATUS\tENABLED\tHEALTHY\t17\tOWNED\tAUTO\t\\\\host\\mihomo.exe\tREADY"); throw new Exception("Unsafe status path accepted"); }
+catch (GuardCommandException exception) when (exception.Code == "INVALID_RESPONSE") { }
 Require(enabledGuard.Kind == GuardStatusKind.Enabled, "Healthy Guard filters must report enabled.");
 Require(enabledGuard.OwnedByCurrentUser, "The enabling user must retain control of Guard.");
 Require(enabledGuard.FilterCount == 8, "Guard status must preserve the WFP filter count.");
@@ -1806,12 +1930,25 @@ try
     Require(savedConfig.MixedHost == "127.0.0.1", "Saved loopback hosts must normalize.");
     Require(savedConfig.MixedPort == 7788, "Saved ports must round-trip.");
     Require(savedConfig.TimeoutSeconds == 9, "Saved timeouts must round-trip.");
+    Require(savedConfig.ProxyExecutablePath == string.Empty,
+        "A new configuration must default to automatic Clash/Mihomo selection.");
     Require(!Directory.EnumerateFiles(configTestDirectory, "*.tmp").Any(),
         "Atomic saves must not leave temporary files behind.");
 
     var validConfigJson = File.ReadAllText(configPath);
+    var legacyJson = System.Text.Json.Nodes.JsonNode.Parse(validConfigJson)!.AsObject();
+    Require(legacyJson.Remove("ProxyExecutablePath"), "The new schema must persist the proxy selection.");
+    File.WriteAllText(configPath, legacyJson.ToJsonString());
+    Require(configService.HasValidConfig && configService.Load().ProxyExecutablePath == string.Empty,
+        "Existing configs without a proxy selection must migrate to the default without losing settings.");
+    savedConfig.ProxyExecutablePath = chosenCore;
+    configService.Save(savedConfig);
+    Require(configService.Load().ProxyExecutablePath == chosenCore,
+        "An explicitly selected non-Clash executable must round-trip without needing to run during save.");
+    File.WriteAllText(configPath, validConfigJson);
     var configMutations = new[]
     {
+        validConfigJson.Replace("\"ProxyExecutablePath\": \"\"", "\"ProxyExecutablePath\": null"),
         validConfigJson.Replace("\"MixedHost\": \"127.0.0.1\"", "\"MixedHost\": \"0.0.0.0\""),
         validConfigJson.Replace("\"MixedPort\": 7788", "\"MixedPort\": 70000"),
         validConfigJson.Replace("\"TimeoutSeconds\": 9", "\"TimeoutSeconds\": 2"),
@@ -1904,7 +2041,7 @@ try
     await oldRequestStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
 
     viewModel.SaveConfig(new AppConfig { MixedPort = 7891, TimeoutSeconds = 3 });
-    Require(viewModel.ExitAddress == "正在检测",
+    Require(viewModel.ExitAddress == "等待重新检测",
         "Saving settings during a refresh must keep the stale IP invalidated.");
     _ = viewModel.RefreshAsync();
     releaseOldRequest.TrySetResult(true);
@@ -1915,7 +2052,7 @@ try
 
     applyExit.Invoke(viewModel, [new ExitSummary("8.8.8.8", "United States")]);
     viewModel.InvalidateExitSummary();
-    Require(viewModel.ExitAddress == "正在检测" && !viewModel.HasExitIpVersion,
+    Require(viewModel.ExitAddress == "等待重新检测" && !viewModel.HasExitIpVersion,
         "A network-change invalidation must clear the old address before the debounce elapses.");
 }
 finally

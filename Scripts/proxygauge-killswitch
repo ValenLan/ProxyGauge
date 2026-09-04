@@ -56,6 +56,15 @@ if [ "$TEST_MODE" -eq 0 ] && [ ! -r "$PF_TEMPLATE" ]; then
 fi
 
 ACTION="${1:-status}"
+SELECTION_REQUEST="${2:-}"
+SELECTION_FILE="$PERSIST_STATE_DIR/selection"
+SELECTION_RUNTIME="${RUNTIME_STATE%.state}.selection"
+BACKUP_DIR=/var/backups/proxygauge
+[ "$TEST_MODE" -eq 0 ] || BACKUP_DIR="$TEST_ROOT/backups-only"
+SELECTED_CORE_PATH=""
+SELECTION_AMBIGUOUS=0
+SELECTION_MODE=AUTO
+QUALIFIED_TUNNELS=lo0
 BOOTSTRAP_DEFAULT=0
 
 unsupported_rules_present() {
@@ -187,63 +196,181 @@ EOF
   done
 }
 
-detect_tunnel_interfaces() {
-  local detected interfaces
-  if [ "$TEST_MODE" -eq 1 ] && [ -n "${PROXYGAUGE_KILLSWITCH_TEST_TUN_INTERFACES:-}" ]; then
-    detected="$PROXYGAUGE_KILLSWITCH_TEST_TUN_INTERFACES"
-  else
-    detected=$(/sbin/ifconfig -l 2>/dev/null \
-      | /usr/bin/tr ' ' '\n' \
-      | /usr/bin/grep -E '^utun[0-9]+$' \
-      | /usr/bin/sort -u \
-      | /usr/bin/paste -sd ' ' -)
-  fi
-  interfaces=lo0
-  [ -z "$detected" ] || interfaces="$interfaces $detected"
-  valid_tunnel_interfaces "$interfaces" || return 1
-  /usr/bin/printf '%s\n' "$interfaces"
+known_core_name() {
+  case "$1" in verge-mihomo|mihomo|clash-meta|clash|sing-box|singbox|xray|v2ray|iKuuuVPNCore|ikuuuvpncore) return 0 ;; *) return 1 ;; esac
+}
+
+valid_core_path() {
+  case "$1" in /*) ;; *) return 1 ;; esac
+  case "$1" in *$'\n'*|*$'\r'*|*$'\t'*|*:*|*/../*|*/./*|*//*|*/..|*/.) return 1 ;; esac
+  [ "${#1}" -le 4096 ]
 }
 
 proxy_core_records() {
-  local process_name pids pid uid
   if [ "$TEST_MODE" -eq 1 ]; then
     /usr/bin/printf '%s\n' "${PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS-verge-mihomo:1001:0}"
     return 0
   fi
-  for process_name in verge-mihomo mihomo clash-meta; do
-    pids=$(/usr/bin/pgrep -x "$process_name" 2>/dev/null || true)
-    for pid in $pids; do
-      uid=$(/bin/ps -o uid= -p "$pid" 2>/dev/null | /usr/bin/tr -d '[:space:]')
-      [ -n "$uid" ] || continue
-      /usr/bin/printf '%s:%s:%s\n' "$process_name" "$pid" "$uid"
-    done
+  # comm contains the executable path, never process arguments or subscription data.
+  /bin/ps -axo pid=,uid=,comm= | while read -r pid uid path; do
+    [ -n "$path" ] || continue
+    name="${path##*/}"
+    if known_core_name "$name" || { [ "$SELECTION_MODE" != AUTO ] && [ "$path" = "$SELECTION_MODE" ]; }; then
+      valid_core_path "$path" || continue
+      /usr/bin/printf '%s:%s:%s:%s\n' "$name" "$pid" "$uid" "$path"
+    fi
   done
 }
 
-proxy_core_runs_as_root() {
-  local records process_name pid uid extra count non_root
+public_route_tunnels() {
+  if [ "$TEST_MODE" -eq 1 ]; then
+    /usr/bin/printf '%s\n' "${PROXYGAUGE_KILLSWITCH_TEST_TUN_INTERFACES-utun0}"
+    return
+  fi
+  for destination in 1.1.1.1 8.8.8.8 223.5.5.5 2606:4700:4700::1111 2001:4860:4860::8888; do
+    family=inet
+    case "$destination" in *:*) family=inet6 ;; esac
+    /sbin/route -n get "-$family" "$destination" 2>/dev/null | /usr/bin/awk '/interface:/ && $2 ~ /^utun[0-9]+$/ {print $2}'
+  done | /usr/bin/sort -u
+}
+
+verified_clash_tun() {
+  local pid socket_path json enabled device
+  pid="$1"
+  if [ "$TEST_MODE" -eq 1 ]; then
+    [ "${PROXYGAUGE_KILLSWITCH_TEST_ACTIVE_PID:-}" = "$pid" ] || return 1
+    /usr/bin/printf '%s\n' "${PROXYGAUGE_KILLSWITCH_TEST_ACTIVE_DEVICE-utun0}"
+    return
+  fi
+  for socket_path in /private/tmp/verge/verge-mihomo.sock /tmp/verge/verge-mihomo.sock /private/tmp/mihomo.sock /tmp/mihomo.sock /var/run/mihomo.sock; do
+    [ -S "$socket_path" ] && [ ! -L "$socket_path" ] || continue
+    # Only accept a local controller actually held by this known root core.
+    /usr/sbin/lsof -nP -a -p "$pid" -U -Fn 2>/dev/null | /usr/bin/grep -Fxq "n$socket_path" || continue
+    json=$(/usr/bin/curl --disable --proxy "" -fsS --connect-timeout 1 --max-time 1 \
+      --max-filesize 65536 --unix-socket "$socket_path" http://localhost/configs 2>/dev/null) || continue
+    enabled=$(/usr/bin/printf '%s' "$json" | /usr/bin/plutil -extract tun.enable raw -o - -- - 2>/dev/null) || continue
+    [ "$enabled" = true ] || [ "$enabled" = 1 ] || continue
+    device=$(/usr/bin/printf '%s' "$json" | /usr/bin/plutil -extract tun.device raw -o - -- - 2>/dev/null) || continue
+    /usr/bin/printf '%s\n' "$device" | /usr/bin/grep -Eq '^utun[0-9]+$' || continue
+    /usr/bin/printf '%s\n' "$device"
+    return 0
+  done
+  return 1
+}
+
+system_proxy_pid() {
+  local configuration enabled host port
+  if [ "$TEST_MODE" -eq 1 ]; then
+    /usr/bin/printf '%s\n' "${PROXYGAUGE_KILLSWITCH_TEST_SYSTEM_PID:-}"
+    return
+  fi
+  configuration=$(/usr/sbin/scutil --proxy)
+  enabled=$(/usr/bin/awk '$1 == "HTTPSEnable" {print $3;exit}' <<< "$configuration")
+  [ "$enabled" = 1 ] || return 1
+  host=$(/usr/bin/awk '$1 == "HTTPSProxy" {print $3;exit}' <<< "$configuration")
+  case "$host" in 127.0.0.1|localhost|::1) ;; *) return 1 ;; esac
+  port=$(/usr/bin/awk '$1 == "HTTPSPort" {print $3;exit}' <<< "$configuration")
+  case "$port" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$port" -ge 1 ] && [ "$port" -le 65535 ] || return 1
+  /usr/sbin/lsof -nP -t -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | /usr/bin/sort -u
+}
+
+resolve_core_selection() {
+  local records name pid uid path extra previous root_count root_paths root_pids
+  local routed active_paths active_devices system_pid system_path chosen_device non_root
+  if [ -n "$SELECTION_REQUEST" ]; then
+    SELECTION_MODE="$SELECTION_REQUEST"
+  elif [ -r "$SELECTION_FILE" ]; then
+    SELECTION_MODE=$(/usr/bin/head -1 "$SELECTION_FILE")
+  fi
+  [ "$SELECTION_MODE" = AUTO ] || valid_core_path "$SELECTION_MODE" || {
+    echo 'INVALID_PROXY_PATH：请选择本机正在运行的代理核心。'; return 2;
+  }
+  previous=""
+  [ ! -r "$SELECTION_RUNTIME" ] || previous=$(/usr/bin/sed -n '2p' "$SELECTION_RUNTIME")
   records=$(proxy_core_records) || return 1
-  count=0
-  non_root=0
-  while IFS=: read -r process_name pid uid extra; do
-    [ -n "$process_name$pid$uid$extra" ] || continue
-    case "$process_name" in verge-mihomo|mihomo|clash-meta) ;; *) return 1 ;; esac
-    case "$pid" in ''|*[!0-9]*) return 1 ;; esac
-    case "$uid" in ''|*[!0-9]*) return 1 ;; esac
-    [ -z "$extra" ] || return 1
-    count=$((count + 1))
-    [ "$uid" = 0 ] || non_root=1
+  routed=$(public_route_tunnels)
+  root_count=0; root_paths=""; root_pids=""; active_paths=""; active_devices=""; non_root=0
+  system_pid=$(system_proxy_pid 2>/dev/null || true); system_path=""
+  while IFS=: read -r name pid uid path extra; do
+    [ -n "$name$pid$uid$path$extra" ] || continue
+    case "$pid:$uid" in *[!0-9:]*|:*) return 1 ;; esac
+    [ -n "$pid" ] && [ -n "$uid" ] && [ -z "$extra" ] || return 1
+    [ -n "$path" ] || path="/Applications/$name"
+    valid_core_path "$path" || return 1
+    if [ "$uid" != 0 ]; then non_root=1; continue; fi
+    root_count=$((root_count + 1)); root_paths="$root_paths$path"$'\n'; root_pids="$root_pids$pid"$'\n'
+    if [ "$pid" = "$system_pid" ]; then system_path="$path"; fi
+    case "$name" in verge-mihomo|mihomo|clash-meta|clash)
+      chosen_device=$(verified_clash_tun "$pid" 2>/dev/null || true)
+      if [ -n "$chosen_device" ] && /usr/bin/grep -Fxq "$chosen_device" <<< "$routed"; then
+        active_paths="$active_paths$path"$'\n'; active_devices="$active_devices$chosen_device"$'\n'
+      fi ;;
+    esac
   done <<EOF
 $records
 EOF
-  if [ "$count" -ne 1 ]; then
-    echo "❌ 必须恰好运行一个 Mihomo 代理核心，未开启 Kill Switch"
-    return 1
+  SELECTION_AMBIGUOUS=0
+  if [ "$SELECTION_MODE" != AUTO ]; then
+    SELECTED_CORE_PATH="$SELECTION_MODE"
+    if ! /usr/bin/grep -Fxq "$SELECTED_CORE_PATH" <<< "$root_paths"; then
+      [ "$ACTION" = restore ] || { echo 'PROXY_NOT_ROOT：所选核心未以 root 系统服务运行。'; return 1; }
+    fi
+  elif [ -n "$system_path" ]; then
+    SELECTED_CORE_PATH="$system_path"
+  elif [ "$(/usr/bin/awk 'NF {n++} END {print n+0}' <<< "$active_paths")" = 1 ]; then
+    SELECTED_CORE_PATH=$(/usr/bin/awk 'NF {print;exit}' <<< "$active_paths")
+  elif [ "$root_count" = 1 ]; then
+    SELECTED_CORE_PATH=$(/usr/bin/awk 'NF {print;exit}' <<< "$root_paths")
+  elif [ "$root_count" -gt 1 ]; then
+    SELECTION_AMBIGUOUS=1
+    [ "$ACTION" = restore ] || { echo 'PROXY_AMBIGUOUS：多个代理核心仍在运行，请选择当前使用的代理。'; return 3; }
+    if [ -n "$previous" ] && /usr/bin/grep -Fxq "$previous" <<< "$root_paths"; then SELECTED_CORE_PATH="$previous"
+    elif [ "$ACTION" != restore ]; then echo 'PROXY_AMBIGUOUS：多个代理核心仍在运行，请选择当前使用的代理。'; return 3; fi
+  elif [ "$ACTION" != restore ]; then
+    echo 'PROXY_NOT_ROOT：请先开启代理客户端的系统服务或 VPN/TUN。'; return 1
   fi
-  if [ "$non_root" -ne 0 ]; then
-    echo "❌ 当前代理核心不是以 root 系统服务运行，未开启 Kill Switch"
-    return 1
-  fi
+  QUALIFIED_TUNNELS=lo0
+  # A selected Clash core needs runtime controller evidence, not just an existing utun.
+  name="${SELECTED_CORE_PATH##*/}"
+  case "$name" in
+    verge-mihomo|mihomo|clash-meta|clash)
+      while IFS=: read -r name pid uid path extra; do
+        [ -n "$path" ] || path="/Applications/$name"
+        [ "$path" = "$SELECTED_CORE_PATH" ] && [ "$uid" = 0 ] || continue
+        chosen_device=$(verified_clash_tun "$pid" 2>/dev/null || true)
+        if [ -n "$chosen_device" ] && /usr/bin/grep -Fxq "$chosen_device" <<< "$routed"; then QUALIFIED_TUNNELS="lo0 $chosen_device"; fi
+      done <<EOF
+$records
+EOF
+      ;;
+    *)
+      # Other VPNs retain the accepted OS-tunnel trust boundary. Only interfaces
+      # currently selected by public routes qualify; dormant utuns never do.
+      if [ -n "$SELECTED_CORE_PATH" ] && /usr/bin/grep -Fxq "$SELECTED_CORE_PATH" <<< "$root_paths"; then
+        for chosen_device in $routed; do
+          /usr/bin/grep -Eq '^utun[0-9]+$' <<< "$chosen_device" || continue
+          QUALIFIED_TUNNELS="$QUALIFIED_TUNNELS $chosen_device"
+        done
+      fi ;;
+  esac
+  valid_tunnel_interfaces "$QUALIFIED_TUNNELS"
+}
+
+proxy_core_runs_as_root() { resolve_core_selection; }
+detect_tunnel_interfaces() { /usr/bin/printf '%s\n' "$QUALIFIED_TUNNELS"; }
+
+persist_selection() {
+  local temp
+  /bin/mkdir -p "$PERSIST_STATE_DIR" || return 1
+  temp=$(/usr/bin/mktemp /tmp/proxygauge-selection.XXXXXX) || return 1
+  /usr/bin/printf '%s\n' "$SELECTION_MODE" > "$temp"
+  install_private_file "$temp" "$SELECTION_FILE" 600 || { /bin/rm -f "$temp"; return 1; }
+  /usr/bin/printf '%s\n' "$SELECTION_MODE" "$SELECTED_CORE_PATH" "$SELECTION_AMBIGUOUS" "$QUALIFIED_TUNNELS" > "$temp"
+  install_private_file "$temp" "$SELECTION_RUNTIME" 644
+  local result=$?
+  /bin/rm -f "$temp"
+  return "$result"
 }
 
 install_config_file() {
@@ -329,7 +456,7 @@ install_persistence_infrastructure() {
     '  <key>RunAtLoad</key>' \
     '  <true/>' \
     '  <key>StartInterval</key>' \
-    '  <integer>15</integer>' \
+    '  <integer>2</integer>' \
     '  <key>ProcessType</key>' \
     '  <string>Background</string>' \
     '</dict>' \
@@ -373,6 +500,24 @@ persist_managed_anchor_hash() {
     return 1
   fi
   /bin/rm -f "$marker_source"
+}
+
+adopt_legacy_managed_anchor() {
+  # Migrate only the exact shipped 1.5.x rule shape. Custom administrator rules
+  # remain outside automatic management, even when the filename is ours.
+  [ -e "$ANCHOR_CONF" ] && [ ! -r "$MANAGED_MARKER" ] || return 0
+  local actual interfaces expected
+  actual=$(/usr/bin/awk '!/^[[:space:]]*#/ && NF {print}' "$ANCHOR_CONF")
+  interfaces=$(/usr/bin/sed -n 's/^phys = "{ \(.*\) }"$/\1/p' "$ANCHOR_CONF")
+  valid_interfaces "$interfaces" || return 0
+  expected=$(/usr/bin/printf '%s\n' \
+    'table <proxygauge_lan> persist { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 224.0.0.0/4, 255.255.255.255/32, fe80::/10, ff02::/16 }' \
+    "phys = \"{ $interfaces }\"" \
+    'pass quick on lo0 all' \
+    'pass out quick on $phys from any to <proxygauge_lan>' \
+    'pass out quick on $phys all user = 0' \
+    'block return out on $phys all')
+  [ "$actual" != "$expected" ] || persist_managed_anchor_hash
 }
 
 managed_anchor_unchanged() {
@@ -486,7 +631,12 @@ write_main_config_with_safe_anchor() {
 
 runtime_anchor_registration_is_safe() {
   local first_rule
-  first_rule=$("$PFCTL" -sr 2>/dev/null | /usr/bin/awk 'NF { print; exit }')
+  # macOS pfctl -sr prints packet-normalization rules before filter rules.
+  # They cannot grant traffic; still reject any earlier pass/block/other rule.
+  first_rule=$("$PFCTL" -sr 2>/dev/null | /usr/bin/awk '
+    /^[[:space:]]*scrub(-anchor)?[[:space:]]/ { next }
+    NF { sub(/^[[:space:]]*/, ""); print; exit }
+  ')
   case "$first_rule" in
     'anchor "proxygauge" quick'|'anchor "proxygauge" quick all') return 0 ;;
     *) return 1 ;;
@@ -618,7 +768,10 @@ install_rules() {
     return 1
   fi
 
-  backup_path="$MAIN_CONF.proxygauge.bak"
+  backup_path="$BACKUP_DIR/pf.conf-before-install"
+  /bin/mkdir -p "$BACKUP_DIR" || return 1
+  /bin/chmod 700 "$BACKUP_DIR" || return 1
+  /usr/bin/printf "%s\n" "仅备份、非权威来源" > "$BACKUP_DIR/BACKUP-ONLY.txt"
   if [ ! -e "$backup_path" ]; then
     /bin/cp -p "$MAIN_CONF" "$backup_path" || {
       /bin/rm -rf "$temp_dir"
@@ -736,7 +889,10 @@ ensure_existing_anchor_registered() {
     return 1
   fi
 
-  backup_path="$MAIN_CONF.proxygauge-entry.bak"
+  backup_path="$BACKUP_DIR/pf.conf-before-entry-repair"
+  /bin/mkdir -p "$BACKUP_DIR" || return 1
+  /bin/chmod 700 "$BACKUP_DIR" || return 1
+  /usr/bin/printf "%s\n" "仅备份、非权威来源" > "$BACKUP_DIR/BACKUP-ONLY.txt"
   if [ ! -e "$backup_path" ]; then
     /bin/cp -p "$MAIN_CONF" "$backup_path" || {
       /bin/rm -rf "$temp_dir"
@@ -832,91 +988,277 @@ ensure_pf_reference() {
 }
 
 enable_rules() {
-  local full_state_reset
-  full_state_reset=0
-  if [ "$BOOTSTRAP_DEFAULT" -eq 1 ]; then
-    install_rules || return 1
-  fi
-  if [ "$ACTION" = "on" ]; then
-    full_state_reset=1
-  elif [ -r "$MANAGED_MARKER" ] && managed_anchor_unchanged \
-    && ! managed_anchor_has_interface_bound_states; then
-    full_state_reset=1
-  fi
+  local reset_public prior_hash final_hash
+  reset_public=0
+  if [ "$BOOTSTRAP_DEFAULT" -eq 1 ]; then reset_public=1; install_rules || return 1; fi
+  if ! anchor_enabled || ! managed_anchor_has_interface_bound_states; then reset_public=1; fi
   validate_anchor_ownership || return 1
   ensure_existing_anchor_registered || return 1
-  if ! load_fail_closed_transition; then
-    echo "❌ 无法加载全出口临时阻断规则，保护未重新加载"
-    return 1
+  prior_hash=$(file_sha256 "$ANCHOR_CONF")
+  if [ "$reset_public" -eq 1 ]; then
+    load_fail_closed_transition || return 1
+    ensure_pf_reference || return 1
+    clear_existing_physical_states || { echo '❌ 无法清理旧公网状态；阻断规则保持生效'; return 1; }
   fi
   ensure_pf_reference || return 1
-  if [ "$full_state_reset" -eq 1 ]; then
-    if ! clear_all_states; then
-      echo "❌ 无法清理旧版浮动连接状态；全出口阻断规则保持生效"
-      return 1
-    fi
-  elif ! clear_existing_physical_states; then
-    echo "❌ 无法清理既有物理出口连接；全出口阻断规则保持生效"
-    return 1
-  fi
-  refresh_managed_rules || {
-    echo "❌ 无法刷新可信 TUN 接口规则；全出口阻断规则保持生效"
-    return 1
-  }
+  refresh_managed_rules || return 1
   validate_anchor_ownership || return 1
-  if ! "$PFCTL" -a "$ANCHOR" -nf "$ANCHOR_CONF" >/dev/null 2>&1; then
-    echo "❌ $ANCHOR_CONF 语法校验失败；全出口阻断规则保持生效"
-    return 1
-  fi
-  if ! "$PFCTL" -a "$ANCHOR" -f "$ANCHOR_CONF" >/dev/null 2>&1; then
-    echo "❌ Kill Switch anchor 加载失败；全出口阻断规则保持生效"
-    return 1
-  fi
-  if ! clear_existing_physical_states; then
-    echo "❌ 无法完成最终连接状态清理；阻断规则保持生效"
-    return 1
-  fi
-
-  if anchor_enabled; then
-    echo "🛡️ Kill Switch 已开启 — 仅 $ANCHOR anchor 生效，不会覆盖其他 PF 规则"
-  else
-    release_owned_reference
-    echo "❌ Kill Switch 启用后验证失败"
-    return 1
-  fi
-}
-
-clear_all_states() {
-  "$PFCTL" -F states >/dev/null 2>&1
+  final_hash=$(file_sha256 "$ANCHOR_CONF")
+  # Existing if-bound states cannot migrate from a TUN to a physical interface.
+  # Atomically replace only this anchor; never flush LAN sessions on handover.
+  "$PFCTL" -a "$ANCHOR" -nf "$ANCHOR_CONF" >/dev/null 2>&1 || return 1
+  "$PFCTL" -a "$ANCHOR" -f "$ANCHOR_CONF" >/dev/null 2>&1 || return 1
+  anchor_enabled || { echo '❌ Kill Switch 启用后验证失败'; return 1; }
+  echo '🛡️ Kill Switch 已开启 — 保留局域网，root 系统进程仍豁免'
 }
 
 clear_existing_physical_states() {
-  local interfaces interface_name address addresses failed
-  interfaces=$(detect_physical_interfaces) || return 1
+  local network family failed
   failed=0
-  for interface_name in $interfaces; do
-    if [ "$TEST_MODE" -eq 1 ] && [ -n "${PROXYGAUGE_KILLSWITCH_TEST_STATE_ADDRESSES:-}" ]; then
-      addresses="$PROXYGAUGE_KILLSWITCH_TEST_STATE_ADDRESSES"
-    else
-      addresses=$(/sbin/ifconfig "$interface_name" 2>/dev/null | /usr/bin/awk '
-        $1 == "inet" { print $2 }
-        $1 == "inet6" {
-          address = $2
-          sub(/%.*/, "", address)
-          print address
-        }
-      ')
-    fi
-    for address in $addresses; do
-      case "$address" in
-        *[!0-9A-Fa-f:.]*) failed=1; continue ;;
-      esac
-      "$PFCTL" -k "$address" >/dev/null 2>&1 || failed=1
-    done
-  done
-  if [ "$failed" -ne 0 ]; then
-    "$PFCTL" -F states >/dev/null 2>&1 || return 1
-  fi
+  # Exact complement of loopback/LAN destinations, including IPv6 ULA. This
+  # purges pre-existing public states while retaining established LAN sessions.
+  while read -r network; do
+    case "$network" in *:*) family=::/0 ;; *) family=0.0.0.0/0 ;; esac
+    "$PFCTL" -k "$family" -k "$network" >/dev/null 2>&1 || failed=1
+  done <<'PUBLIC_NETWORKS'
+0.0.0.0/5
+8.0.0.0/7
+11.0.0.0/8
+12.0.0.0/6
+16.0.0.0/4
+32.0.0.0/3
+64.0.0.0/3
+96.0.0.0/4
+112.0.0.0/5
+120.0.0.0/6
+124.0.0.0/7
+126.0.0.0/8
+128.0.0.0/3
+160.0.0.0/5
+168.0.0.0/8
+169.0.0.0/9
+169.128.0.0/10
+169.192.0.0/11
+169.224.0.0/12
+169.240.0.0/13
+169.248.0.0/14
+169.252.0.0/15
+169.255.0.0/16
+170.0.0.0/7
+172.0.0.0/12
+172.32.0.0/11
+172.64.0.0/10
+172.128.0.0/9
+173.0.0.0/8
+174.0.0.0/7
+176.0.0.0/4
+192.0.0.0/9
+192.128.0.0/11
+192.160.0.0/13
+192.169.0.0/16
+192.170.0.0/15
+192.172.0.0/14
+192.176.0.0/12
+192.192.0.0/10
+193.0.0.0/8
+194.0.0.0/7
+196.0.0.0/6
+200.0.0.0/5
+208.0.0.0/4
+224.0.1.0/24
+224.0.2.0/23
+224.0.4.0/22
+224.0.8.0/21
+224.0.16.0/20
+224.0.32.0/19
+224.0.64.0/18
+224.0.128.0/17
+224.1.0.0/16
+224.2.0.0/15
+224.4.0.0/14
+224.8.0.0/13
+224.16.0.0/12
+224.32.0.0/11
+224.64.0.0/10
+224.128.0.0/9
+225.0.0.0/8
+226.0.0.0/7
+228.0.0.0/6
+232.0.0.0/6
+236.0.0.0/7
+238.0.0.0/8
+240.0.0.0/5
+248.0.0.0/6
+252.0.0.0/7
+254.0.0.0/8
+255.0.0.0/9
+255.128.0.0/10
+255.192.0.0/11
+255.224.0.0/12
+255.240.0.0/13
+255.248.0.0/14
+255.252.0.0/15
+255.254.0.0/16
+255.255.0.0/17
+255.255.128.0/18
+255.255.192.0/19
+255.255.224.0/20
+255.255.240.0/21
+255.255.248.0/22
+255.255.252.0/23
+255.255.254.0/24
+255.255.255.0/25
+255.255.255.128/26
+255.255.255.192/27
+255.255.255.224/28
+255.255.255.240/29
+255.255.255.248/30
+255.255.255.252/31
+255.255.255.254/32
+::/128
+::2/127
+::4/126
+::8/125
+::10/124
+::20/123
+::40/122
+::80/121
+::100/120
+::200/119
+::400/118
+::800/117
+::1000/116
+::2000/115
+::4000/114
+::8000/113
+::1:0/112
+::2:0/111
+::4:0/110
+::8:0/109
+::10:0/108
+::20:0/107
+::40:0/106
+::80:0/105
+::100:0/104
+::200:0/103
+::400:0/102
+::800:0/101
+::1000:0/100
+::2000:0/99
+::4000:0/98
+::8000:0/97
+::1:0:0/96
+::2:0:0/95
+::4:0:0/94
+::8:0:0/93
+::10:0:0/92
+::20:0:0/91
+::40:0:0/90
+::80:0:0/89
+::100:0:0/88
+::200:0:0/87
+::400:0:0/86
+::800:0:0/85
+::1000:0:0/84
+::2000:0:0/83
+::4000:0:0/82
+::8000:0:0/81
+::1:0:0:0/80
+::2:0:0:0/79
+::4:0:0:0/78
+::8:0:0:0/77
+::10:0:0:0/76
+::20:0:0:0/75
+::40:0:0:0/74
+::80:0:0:0/73
+::100:0:0:0/72
+::200:0:0:0/71
+::400:0:0:0/70
+::800:0:0:0/69
+::1000:0:0:0/68
+::2000:0:0:0/67
+::4000:0:0:0/66
+::8000:0:0:0/65
+0:0:0:1::/64
+0:0:0:2::/63
+0:0:0:4::/62
+0:0:0:8::/61
+0:0:0:10::/60
+0:0:0:20::/59
+0:0:0:40::/58
+0:0:0:80::/57
+0:0:0:100::/56
+0:0:0:200::/55
+0:0:0:400::/54
+0:0:0:800::/53
+0:0:0:1000::/52
+0:0:0:2000::/51
+0:0:0:4000::/50
+0:0:0:8000::/49
+0:0:1::/48
+0:0:2::/47
+0:0:4::/46
+0:0:8::/45
+0:0:10::/44
+0:0:20::/43
+0:0:40::/42
+0:0:80::/41
+0:0:100::/40
+0:0:200::/39
+0:0:400::/38
+0:0:800::/37
+0:0:1000::/36
+0:0:2000::/35
+0:0:4000::/34
+0:0:8000::/33
+0:1::/32
+0:2::/31
+0:4::/30
+0:8::/29
+0:10::/28
+0:20::/27
+0:40::/26
+0:80::/25
+0:100::/24
+0:200::/23
+0:400::/22
+0:800::/21
+0:1000::/20
+0:2000::/19
+0:4000::/18
+0:8000::/17
+1::/16
+2::/15
+4::/14
+8::/13
+10::/12
+20::/11
+40::/10
+80::/9
+100::/8
+200::/7
+400::/6
+800::/5
+1000::/4
+2000::/3
+4000::/2
+8000::/2
+c000::/3
+e000::/4
+f000::/5
+f800::/6
+fe00::/9
+fec0::/10
+ff00::/15
+ff03::/16
+ff04::/14
+ff08::/13
+ff10::/12
+ff20::/11
+ff40::/10
+ff80::/9
+PUBLIC_NETWORKS
+  [ "$failed" -eq 0 ]
 }
 
 case "$ACTION" in
@@ -939,13 +1281,15 @@ case "$ACTION" in
     ;;
 
   on)
-    if [ "$#" -ne 1 ]; then
-      echo "用法: proxygauge-killswitch on"
+    if [ "$#" -gt 2 ]; then
+      echo "用法: proxygauge-killswitch on [AUTO|绝对核心路径]"
       exit 2
     fi
     proxy_core_runs_as_root || exit 1
     install_persistence_infrastructure || exit 1
+    adopt_legacy_managed_anchor || exit 1
     enable_rules || exit 1
+    persist_selection || exit 1
     if ! persist_enabled_intent; then
       "$PFCTL" -a "$ANCHOR" -F rules >/dev/null 2>&1 || true
       release_owned_reference
@@ -998,7 +1342,9 @@ case "$ACTION" in
       echo "Kill Switch 未设置为开机恢复，保持关闭"
       exit 0
     fi
+    resolve_core_selection || { write_runtime_state fault selection-failed; exit 1; }
     if enable_rules; then
+      persist_selection || exit 1
       write_runtime_state enabled || exit 1
     else
       write_runtime_state fault restore-failed || true

@@ -62,7 +62,7 @@ irm https://raw.githubusercontent.com/ValenLan/ProxyGauge/main/Scripts/install-r
 安装器会使用同一 Release 中的 `SHA256SUMS.txt` 校验安装包，不会下载源码构建，也不会安装
 代理客户端、订阅或节点。运行远程脚本前应先检查内容并确认仓库所有者是 `ValenLan`。
 macOS 正式安装会把应用本体放到受 root 保护的
-`/Library/Application Support/ProxyGauge/ProxyGauge.app`，并在 `/Applications` 创建固定链接；
+`/Applications/ProxyGauge.app` 的真实应用包；旧的受保护目录安装会在升级时迁移并清理，因此 Finder 不再显示替身箭头；
 这是 Kill Switch 管理员操作校验应用与内置组件完整性的安全边界。
 macOS 重新安装前请先退出 ProxyGauge；安装器会在下载和替换前检查旧实例，发现仍在运行时停止并提示重试。
 

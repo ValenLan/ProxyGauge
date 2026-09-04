@@ -31,6 +31,7 @@ public partial class MainWindow : Window
     private CancellationTokenSource? _copyFeedbackCancellation;
     private bool _networkMonitoringAttached;
     private bool _initialRefreshCompleted;
+    private bool _localStatusBusy;
     private bool _isClosed;
 
     private static readonly string[] ManualReviewDirectUrls =
@@ -52,7 +53,7 @@ public partial class MainWindow : Window
     public MainWindow(ThemeService themeService)
     {
         InitializeComponent();
-        WindowCornerRounding.Apply(this, 10);
+        WindowCornerRounding.ApplyMainWindow(this);
 
         _themeService = themeService;
         _updateService = new UpdateService();
@@ -155,6 +156,7 @@ public partial class MainWindow : Window
         }
         AttachNetworkMonitoring();
         _initialRefreshCompleted = true;
+        _proxyConfigurationTimer.Start();
         if (IsActive)
         {
             _periodicRefreshTimer.Start();
@@ -180,14 +182,18 @@ public partial class MainWindow : Window
     {
         _refreshDebounceTimer.Stop();
         _periodicRefreshTimer.Stop();
-        _proxyConfigurationTimer.Stop();
+        // Keep local-only service/proxy observations active; public-IP queries remain foreground-only.
     }
 
     private void NetworkAddressChanged(object? sender, EventArgs e) =>
         DispatchNetworkRefresh();
 
-    private void NetworkAvailabilityChanged(object? sender, NetworkAvailabilityEventArgs e) =>
+    private void NetworkAvailabilityChanged(object? sender, NetworkAvailabilityEventArgs e)
+    {
+        if (!e.IsAvailable && !_isClosed && !Dispatcher.HasShutdownStarted)
+            _ = Dispatcher.BeginInvoke(new Action(_viewModel.NotifyNetworkUnavailable));
         DispatchNetworkRefresh();
+    }
 
     private void DispatchNetworkRefresh()
     {
@@ -215,8 +221,9 @@ public partial class MainWindow : Window
             return;
         }
 
+        // A burst of route notifications must not postpone the first refresh forever.
+        if (_refreshDebounceTimer.IsEnabled) return;
         _viewModel.InvalidateExitSummary();
-        _refreshDebounceTimer.Stop();
         if (!CanStartAutomaticRefresh(_isClosed, IsLoaded, IsActive))
         {
             return;
@@ -243,8 +250,20 @@ public partial class MainWindow : Window
     private void PeriodicRefreshTimer_Tick(object? sender, EventArgs e) =>
         ScheduleDebouncedRefresh();
 
-    private void ProxyConfigurationTimer_Tick(object? sender, EventArgs e) =>
-        DetectProxyConfigurationChange();
+    private async void ProxyConfigurationTimer_Tick(object? sender, EventArgs e)
+    {
+        if (_isClosed || _localStatusBusy || _viewModel.IsGuardBusy) return;
+        _localStatusBusy = true;
+        try
+        {
+            DetectProxyConfigurationChange();
+            var before = _viewModel.GuardPathFingerprint;
+            await _viewModel.RefreshGuardStatusAsync(_lifetimeCancellation.Token);
+            if (!_isClosed && before != _viewModel.GuardPathFingerprint) ScheduleDebouncedRefresh();
+        }
+        catch (OperationCanceledException) when (_lifetimeCancellation.IsCancellationRequested) { }
+        finally { _localStatusBusy = false; }
+    }
 
     private void DetectProxyConfigurationChange()
     {
@@ -598,7 +617,7 @@ public partial class MainWindow : Window
             {
                 if (sender is CheckBox toggle)
                 {
-                    toggle.IsChecked = true;
+                    toggle.GetBindingExpression(CheckBox.IsCheckedProperty)?.UpdateTarget();
                 }
                 return;
             }
@@ -606,7 +625,7 @@ public partial class MainWindow : Window
 
         try
         {
-            await _viewModel.ToggleGuardAsync();
+            await _viewModel.ToggleGuardAsync(ChooseGuardApplicationAsync);
         }
         catch (GuardCommandException exception)
         {
@@ -616,7 +635,7 @@ public partial class MainWindow : Window
                 "ProxyGauge 系统保护",
                 exception.Message,
                 kind: BubbleDialogKind.Warning);
-            await _viewModel.RefreshAsync();
+            await _viewModel.RefreshGuardStatusAsync(_lifetimeCancellation.Token);
         }
         catch (Exception exception)
         {
@@ -626,7 +645,28 @@ public partial class MainWindow : Window
                 "ProxyGauge 系统保护",
                 $"系统保护操作没有完成。\n\n{exception.Message}",
                 kind: BubbleDialogKind.Warning);
-            await _viewModel.RefreshAsync();
+            await _viewModel.RefreshGuardStatusAsync(_lifetimeCancellation.Token);
+        }
+        finally
+        {
+            // Restore the one-way binding after WPF's click toggles its current value.
+            if (sender is CheckBox toggle) toggle.GetBindingExpression(CheckBox.IsCheckedProperty)?.UpdateTarget();
+        }
+    }
+
+    private Task<string?> ChooseGuardApplicationAsync(GuardApplicationRequest request)
+    {
+        if (_isClosed) return Task.FromResult<string?>(null);
+        var selection = new GuardApplicationWindow(request) { Owner = this };
+        return Task.FromResult(selection.ShowDialog() == true ? selection.SelectedPath : null);
+    }
+
+    private async void GuardApplicationButton_Click(object sender, RoutedEventArgs e)
+    {
+        try { await _viewModel.SwitchGuardApplicationAsync(ChooseGuardApplicationAsync); }
+        catch (Exception exception)
+        {
+            if (!_isClosed) BubbleDialogWindow.Show(this, "切换代理未完成", exception.Message, kind: BubbleDialogKind.Warning);
         }
     }
 

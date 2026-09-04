@@ -9,7 +9,7 @@ enum BundledResourceIntegrity {
     static let killSwitchHelperSHA256 = "__UPDATE_KILLSWITCH_SHA256__"
     static let killSwitchTemplateSHA256 = "__UPDATE_KILLSWITCH_TEMPLATE_SHA256__"
     static let updaterSHA256 = "__UPDATE_UPDATER_SHA256__"
-    static let trustedBundlePath = "/Library/Application Support/ProxyGauge/ProxyGauge.app"
+    static let trustedBundlePath = "/Applications/ProxyGauge.app"
 
     static func validatePrivilegedBundle(_ bundle: Bundle) throws {
         let resolvedBundle = bundle.bundleURL.resolvingSymlinksInPath().standardizedFileURL
@@ -19,10 +19,10 @@ enum BundledResourceIntegrity {
         guard let executable = bundle.executableURL?.resolvingSymlinksInPath() else {
             throw IntegrityError.untrustedInstallLocation
         }
+        try validateApplicationsDirectory(
+            URL(fileURLWithPath: "/Applications", isDirectory: true)
+        )
         let paths = [
-            URL(fileURLWithPath: "/Library", isDirectory: true),
-            URL(fileURLWithPath: "/Library/Application Support", isDirectory: true),
-            URL(fileURLWithPath: "/Library/Application Support/ProxyGauge", isDirectory: true),
             resolvedBundle,
             resolvedBundle.appendingPathComponent("Contents", isDirectory: true),
             resolvedBundle.appendingPathComponent("Contents/MacOS", isDirectory: true),
@@ -31,6 +31,17 @@ enum BundledResourceIntegrity {
         ]
         for url in paths {
             try validateRootOwnedPath(url)
+        }
+    }
+
+    private static func validateApplicationsDirectory(_ url: URL) throws {
+        var metadata = stat()
+        guard lstat(url.path, &metadata) == 0,
+              (metadata.st_mode & S_IFMT) == S_IFDIR,
+              metadata.st_uid == 0,
+              metadata.st_mode & 0o002 == 0,
+              !hasExtendedACL(url.path) else {
+            throw IntegrityError.insecureOwnership(url.lastPathComponent)
         }
     }
 

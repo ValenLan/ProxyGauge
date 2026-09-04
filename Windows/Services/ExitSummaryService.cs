@@ -3,6 +3,8 @@ using System.Globalization;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Net.NetworkInformation;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using ProxyGauge.Models;
@@ -29,6 +31,7 @@ public static class ExitSummaryService
         AppConfig config,
         CancellationToken cancellationToken = default)
     {
+        if (!NetworkInterface.GetIsNetworkAvailable()) return ExitSummary.Disconnected();
         var requestTimeout = TimeSpan.FromSeconds(Math.Clamp(config.TimeoutSeconds, 3, 30));
         using var client = CreateSystemRouteClient(requestTimeout);
         return await ResolveWithClientAsync(client, cancellationToken, requestTimeout);
@@ -40,24 +43,28 @@ public static class ExitSummaryService
         TimeSpan? requestTimeout = null,
         TimeSpan? totalTimeout = null)
     {
+        var evidence = new ConnectivityEvidence();
         var deadline = NormalizeRequestTimeout(requestTimeout ?? client.Timeout);
         using var totalDeadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         totalDeadline.CancelAfter(NormalizeResolveTimeout(totalTimeout ?? DefaultResolveTimeout));
         try
         {
-            return await ResolveRequestsAsync(client, deadline, totalDeadline.Token);
+            var result = await ResolveRequestsAsync(client, deadline, totalDeadline.Token, evidence);
+            return result.State == ExitSummaryState.Unavailable && evidence.IsDisconnected
+                ? ExitSummary.Disconnected() : result;
         }
         catch (OperationCanceledException) when (
             !cancellationToken.IsCancellationRequested && totalDeadline.IsCancellationRequested)
         {
-            return ExitSummary.Unavailable();
+            return evidence.IsDisconnected ? ExitSummary.Disconnected() : ExitSummary.Unavailable();
         }
     }
 
     private static async Task<ExitSummary> ResolveRequestsAsync(
         HttpClient client,
         TimeSpan requestTimeout,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ConnectivityEvidence evidence)
     {
         // Always confirm the primary summary with an independent address service. Starting both
         // together prevents a healthy refresh from consuming two serial request timeouts.
@@ -65,12 +72,12 @@ public static class ExitSummaryService
             client,
             "https://ipapi.co/json/",
             requestTimeout,
-            cancellationToken);
+            cancellationToken, evidence);
         var verifierTask = TryResolvePublicAddressAsync(
             client,
             IpServices[0].Url,
             requestTimeout,
-            cancellationToken);
+            cancellationToken, evidence);
 
         var primaryCandidate = await primaryTask;
         var verifierAddress = await verifierTask;
@@ -89,7 +96,7 @@ public static class ExitSummaryService
                     client,
                     SecondarySummaryUrl,
                     requestTimeout,
-                    cancellationToken);
+                    cancellationToken, evidence);
                 cancellationToken.ThrowIfCancellationRequested();
                 if (secondary is { HasCountry: true } &&
                     secondary.Summary.Address == primaryCandidate.Summary.Address)
@@ -104,10 +111,10 @@ public static class ExitSummaryService
             client,
             SecondarySummaryUrl,
             requestTimeout,
-            cancellationToken);
+            cancellationToken, evidence);
         // ipify was already queried as the verifier, so do not count the same source twice.
         var addressTasks = IpServices.Skip(1).Select(service =>
-            TryResolvePublicAddressAsync(client, service.Url, requestTimeout, cancellationToken)).ToArray();
+            TryResolvePublicAddressAsync(client, service.Url, requestTimeout, cancellationToken, evidence)).ToArray();
         var results = await Task.WhenAll(addressTasks);
         var secondaryCandidate = await secondarySummaryTask;
         var candidates = new[] { primaryCandidate, secondaryCandidate }
@@ -213,7 +220,8 @@ public static class ExitSummaryService
         HttpClient client,
         string url,
         TimeSpan requestTimeout,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action? responseReceived = null)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(NormalizeRequestTimeout(requestTimeout));
@@ -231,6 +239,7 @@ public static class ExitSummaryService
             request,
             HttpCompletionOption.ResponseHeadersRead,
             requestCancellation);
+        responseReceived?.Invoke();
         if (!Equals(response.RequestMessage?.RequestUri, request.RequestUri))
         {
             throw new HttpRequestException("IP 查询响应来自非预期地址。");
@@ -283,7 +292,8 @@ public static class ExitSummaryService
         HttpClient client,
         string url,
         TimeSpan requestTimeout,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ConnectivityEvidence evidence)
     {
         try
         {
@@ -291,7 +301,7 @@ public static class ExitSummaryService
                 client,
                 url,
                 requestTimeout,
-                cancellationToken)).Trim();
+                cancellationToken, evidence.ResponseReceived)).Trim();
             return ExitSummary.TryNormalizePublicAddress(value, out var normalized)
                 ? normalized
                 : null;
@@ -300,6 +310,7 @@ public static class ExitSummaryService
             !cancellationToken.IsCancellationRequested &&
             exception is HttpRequestException or OperationCanceledException or IOException or DecoderFallbackException)
         {
+            evidence.Observe(exception);
             return null;
         }
     }
@@ -308,7 +319,8 @@ public static class ExitSummaryService
         HttpClient client,
         string url,
         TimeSpan requestTimeout,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ConnectivityEvidence evidence)
     {
         try
         {
@@ -316,7 +328,7 @@ public static class ExitSummaryService
                 client,
                 url,
                 requestTimeout,
-                cancellationToken);
+                cancellationToken, evidence.ResponseReceived);
             return ParseCandidate(value);
         }
         catch (Exception exception) when (
@@ -324,7 +336,24 @@ public static class ExitSummaryService
             exception is HttpRequestException or OperationCanceledException or IOException or
                 JsonException or InvalidOperationException or DecoderFallbackException)
         {
+            evidence.Observe(exception);
             return null;
+        }
+    }
+
+    private sealed class ConnectivityEvidence
+    {
+        private int _responseReceived;
+        private int _pathUnavailable;
+        public bool IsDisconnected => Volatile.Read(ref _pathUnavailable) != 0 && Volatile.Read(ref _responseReceived) == 0;
+        public void ResponseReceived() => Interlocked.Exchange(ref _responseReceived, 1);
+        public void Observe(Exception exception)
+        {
+            for (Exception? current = exception; current is not null; current = current.InnerException)
+                if (current is SocketException socket && socket.SocketErrorCode is SocketError.AccessDenied or
+                    SocketError.NetworkDown or SocketError.NetworkUnreachable or SocketError.HostUnreachable or SocketError.ConnectionRefused)
+                    Interlocked.Exchange(ref _pathUnavailable, 1);
+            // Timeouts, DNS/HTTP failures, bad JSON and inconsistent IPs alone are not proof of disconnection.
         }
     }
 

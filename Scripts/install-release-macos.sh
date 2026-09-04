@@ -3,9 +3,8 @@ set -euo pipefail
 
 REPOSITORY="ValenLan/ProxyGauge"
 MINIMUM_MACOS_MAJOR=26
-INSTALL_DIR="/Library/Application Support/ProxyGauge"
+INSTALL_DIR="/Applications"
 DESTINATION="$INSTALL_DIR/ProxyGauge.app"
-APPLICATION_LINK="/Applications/ProxyGauge.app"
 LEGACY_HOME_APP="$HOME/Applications/ProxyGauge.app"
 
 OS_CHECK_ONLY=${PROXYGAUGE_INSTALLER_OS_CHECK_ONLY:-0}
@@ -221,9 +220,9 @@ archive_source=${1:-}
 archive_expected=${2:-}
 version=${3:-}
 installing_user_id=${4:-}
-install_dir='/Library/Application Support/ProxyGauge'
+install_dir=/Applications
 destination="$install_dir/ProxyGauge.app"
-application_link=/Applications/ProxyGauge.app
+legacy_system_app='/Library/Application Support/ProxyGauge/ProxyGauge.app'
 
 [ "${#archive_expected}" -eq 64 ] || exit 2
 case "$archive_expected" in *[!0-9A-Fa-f]*) exit 2 ;; esac
@@ -234,49 +233,36 @@ case "$version" in ''|*[!0-9.]*|.*|*..*|*.) exit 2 ;; esac
 proxygauge_assert_no_running_instances "$installing_user_id"
 
 stage=$(/usr/bin/mktemp -d /private/var/tmp/com.valenlan.proxygauge-install.XXXXXX)
-install_stage=
-backup_app=
-previous_link="$stage/ProxyGauge.previous-link.app"
+backup_app="$stage/ProxyGauge.previous.app"
+backup_legacy_app="$stage/ProxyGauge.previous-protected.app"
 had_destination=0
-had_application_link=0
 app_transaction_started=0
-link_transaction_started=0
 committed=0
 cleanup_root() {
   status=$?
   preserve_stage=0
-  preserve_install_stage=0
   trap - EXIT HUP INT TERM
   if [ "$committed" -ne 1 ]; then
-    if [ -e "$previous_link" ] || [ -L "$previous_link" ]; then
-      if ! /bin/rm -rf "$application_link" \
-        || ! /bin/mv "$previous_link" "$application_link"; then
-        status=1
-        preserve_stage=1
-      fi
-    elif [ "$link_transaction_started" -eq 1 ] && [ "$had_application_link" -eq 0 ]; then
-      /bin/rm -rf "$application_link" || status=1
-    fi
-    if [ -n "$backup_app" ] && { [ -e "$backup_app" ] || [ -L "$backup_app" ]; }; then
+    if [ -e "$backup_app" ] || [ -L "$backup_app" ]; then
       if ! /bin/rm -rf "$destination" \
         || ! /bin/mv "$backup_app" "$destination"; then
         status=1
-        preserve_install_stage=1
+        preserve_stage=1
       fi
     elif [ "$app_transaction_started" -eq 1 ] && [ "$had_destination" -eq 0 ]; then
       /bin/rm -rf "$destination" || status=1
     fi
-  fi
-  if [ -n "$install_stage" ]; then
-    if [ "$preserve_install_stage" -eq 1 ] \
-      || { [ -n "$backup_app" ] && { [ -e "$backup_app" ] || [ -L "$backup_app" ]; }; }; then
-      echo "旧版本恢复失败；可恢复副本保留在受保护目录：$install_stage" >&2
-    else
-      /bin/rm -rf "$install_stage" || status=1
+    if [ -e "$backup_legacy_app" ] || [ -L "$backup_legacy_app" ]; then
+      if ! /bin/mkdir -p "$(/usr/bin/dirname "$legacy_system_app")" \
+        || ! /bin/mv "$backup_legacy_app" "$legacy_system_app"; then
+        status=1
+        preserve_stage=1
+      fi
     fi
   fi
-  if [ "$preserve_stage" -eq 1 ] || [ -e "$previous_link" ] || [ -L "$previous_link" ]; then
-    echo "旧应用入口恢复失败；可恢复副本保留在受保护目录：$stage" >&2
+  if [ "$preserve_stage" -eq 1 ] || [ -e "$backup_app" ] || [ -L "$backup_app" ] \
+    || [ -e "$backup_legacy_app" ] || [ -L "$backup_legacy_app" ]; then
+    echo "旧版本恢复失败；可恢复副本保留在隔离目录：$stage" >&2
   else
     /bin/rm -rf "$stage" || status=1
   fi
@@ -307,24 +293,15 @@ if /usr/bin/find "$extracted_app" -type l -print -quit | /usr/bin/grep -q .; the
   exit 1
 fi
 
-for parent in /Library '/Library/Application Support'; do
+for parent in /Applications; do
   [ -d "$parent" ] && [ ! -L "$parent" ] || exit 1
   [ "$(/usr/bin/stat -f '%u' "$parent")" = 0 ] || exit 1
   parent_mode=$(/usr/bin/stat -f '%Lp' "$parent")
-  [ $((8#$parent_mode & 022)) -eq 0 ] || exit 1
+  [ $((8#$parent_mode & 002)) -eq 0 ] || exit 1
   parent_acl=$(/bin/ls -lde "$parent" | /usr/bin/awk 'NR == 1 { print $1 }')
   case "$parent_acl" in *+*) echo '正式安装父目录包含扩展 ACL，安装已停止。' >&2; exit 1 ;; esac
 done
-if [ ! -e "$install_dir" ]; then
-  /usr/bin/install -d -o root -g wheel -m 755 "$install_dir"
-fi
-[ -d "$install_dir" ] && [ ! -L "$install_dir" ] || exit 1
-/bin/chmod -N "$install_dir"
-/usr/sbin/chown root:wheel "$install_dir"
-/bin/chmod 755 "$install_dir"
-
-install_stage=$(/usr/bin/mktemp -d "$install_dir/.install.XXXXXX")
-staged_app="$install_stage/ProxyGauge.app"
+staged_app="$stage/ProxyGauge.staged.app"
 /usr/bin/ditto "$extracted_app" "$staged_app"
 /bin/chmod -RN "$staged_app"
 /usr/sbin/chown -R root:wheel "$staged_app"
@@ -332,26 +309,28 @@ staged_app="$install_stage/ProxyGauge.app"
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$staged_app"
 
 proxygauge_assert_no_running_instances "$installing_user_id"
-backup_app="$install_stage/ProxyGauge.previous.app"
 if [ -e "$destination" ] || [ -L "$destination" ]; then
   had_destination=1
-  [ ! -L "$destination" ] && [ -d "$destination" ] || exit 1
+  if [ -L "$destination" ]; then
+    [ "$(/usr/bin/readlink "$destination")" = "$legacy_system_app" ] || exit 1
+  else
+    [ -d "$destination" ] || exit 1
+    [ "$(/usr/bin/plutil -extract CFBundleIdentifier raw "$destination/Contents/Info.plist" 2>/dev/null)" = com.valenlan.proxygauge ] || exit 1
+  fi
   /bin/mv "$destination" "$backup_app"
+fi
+if [ -e "$legacy_system_app" ] || [ -L "$legacy_system_app" ]; then
+  [ -d "$legacy_system_app" ] && [ ! -L "$legacy_system_app" ] || exit 1
+  [ "$(/usr/bin/plutil -extract CFBundleIdentifier raw "$legacy_system_app/Contents/Info.plist" 2>/dev/null)" = com.valenlan.proxygauge ] || exit 1
+  /bin/mv "$legacy_system_app" "$backup_legacy_app"
 fi
 app_transaction_started=1
 /bin/mv "$staged_app" "$destination"
+[ -d "$destination" ] && [ ! -L "$destination" ] || exit 1
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$destination"
-
-if [ -e "$application_link" ] || [ -L "$application_link" ]; then
-  had_application_link=1
-  /bin/mv "$application_link" "$previous_link"
-fi
-link_transaction_started=1
-/bin/ln -s "$destination" "$application_link"
-[ "$(/usr/bin/readlink "$application_link")" = "$destination" ] || exit 1
 committed=1
-/bin/rm -rf "$backup_app" "$previous_link" "$install_stage"
-install_stage=
+/bin/rm -rf "$backup_app" "$backup_legacy_app"
+/bin/rmdir "$(/usr/bin/dirname "$legacy_system_app")" 2>/dev/null || true
 ROOT_INSTALL
 ROOT_INSTALL_SCRIPT="$(builtin declare -f proxygauge_running_pids_from_process_table)
 $(builtin declare -f proxygauge_assert_no_running_instances)
@@ -384,8 +363,8 @@ if [ -e "$LEGACY_HOME_APP" ] || [ -L "$LEGACY_HOME_APP" ]; then
   /bin/mv "$LEGACY_HOME_APP" "$TEMP_DIR/ProxyGauge.legacy-home.app"
 fi
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
-  -f "$APPLICATION_LINK" >/dev/null 2>&1 || true
+  -f "$DESTINATION" >/dev/null 2>&1 || true
 
 echo "已安装 ProxyGauge $TAG：$DESTINATION"
-echo "可从 $APPLICATION_LINK 打开；应用本体位于受保护的系统目录。"
+echo "可从 $DESTINATION 打开；这是无替身角标的受保护应用本体。"
 echo "当前正式版采用 ad-hoc 签名且尚未公证；脚本不会绕过 macOS 安全检查。"

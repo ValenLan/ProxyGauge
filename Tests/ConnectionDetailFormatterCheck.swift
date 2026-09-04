@@ -46,7 +46,7 @@ struct ConnectionDetailFormatterCheck {
             entryTitle: "PAC / 自动代理",
             entryValue: "按目标动态决定",
             entryHealthy: false
-        ) == "系统路径 · PAC / 自动代理", "PAC must not display a fabricated Mihomo endpoint.")
+        ) == "其他系统代理已启用", "PAC must show an unattributed system-proxy label.")
 
         require(detail(
             mode: "系统代理",
@@ -54,21 +54,21 @@ struct ConnectionDetailFormatterCheck {
             entryTitle: "系统代理",
             entryValue: "入口不匹配",
             entryHealthy: false
-        ) == "系统路径 · 系统代理 · 入口不匹配", "A mismatched proxy must remain a system path.")
+        ) == "Clash Verge Rev", "The status detail must show the detected client name.")
 
         require(detail(
             mode: "系统代理",
             entryTitle: "系统代理",
             entryValue: "已启用",
             entryHealthy: true
-        ) == "Clash Verge Rev · 系统代理 · 127.0.0.1:7890", "A fully verified Mihomo route may show its endpoint.")
+        ) == "Clash Verge Rev", "A system proxy must keep technical route details out of the status subtitle.")
 
         require(detail(
             mode: "双重入口",
             entryTitle: "双重入口",
             entryValue: "同时开启",
             entryHealthy: false
-        ) == "Clash Verge Rev · 双重入口 · 127.0.0.1:7890", "A fully verified dual route may show its endpoint.")
+        ) == "Clash Verge Rev", "A combined path must show the client name in the subtitle.")
 
         require(detail(
             mode: "TUN",
@@ -78,21 +78,21 @@ struct ConnectionDetailFormatterCheck {
             entryTitle: "TUN 路由",
             entryValue: "代表性路由已确认",
             entryHealthy: true
-        ) == "Clash Verge Rev · TUN", "A confirmed TUN-only path must not depend on or fabricate a mixed-port endpoint.")
+        ) == "Clash Verge Rev", "A TUN-only path must show the client name.")
 
         require(detail(
             mode: "TUN",
             entryTitle: "TUN 路由",
             entryValue: "代表性路由已确认",
             entryHealthy: true
-        ) == "Clash Verge Rev · TUN · 127.0.0.1:7890", "A confirmed TUN path may include a separately verified local listener.")
+        ) == "Clash Verge Rev", "A confirmed TUN path must keep its endpoint out of the subtitle.")
 
         require(detail(
             mode: "系统代理路径 + Mihomo TUN",
             entryTitle: "系统代理路径 + Mihomo TUN",
             entryValue: "入口不匹配",
             entryHealthy: false
-        ) == "系统路径 · 系统代理路径 + Mihomo TUN · 入口不匹配", "An uncertain system half of a TUN combination must not show an endpoint.")
+        ) == "Clash Verge Rev", "A combined path must keep its diagnostic state outside the subtitle.")
 
         require(detail(
             client: "未识别",
@@ -104,7 +104,19 @@ struct ConnectionDetailFormatterCheck {
             entryTitle: "其他 VPN / TUN",
             entryValue: "已检测",
             entryHealthy: false
-        ) == "其他 VPN / TUN · 系统路径", "Another VPN must not be attributed to Mihomo.")
+        ) == "其他 VPN 已连接", "An unidentified virtual adapter must use a neutral connected-VPN label.")
+
+        require(detail(
+            client: "未识别",
+            mode: "系统代理 + 其他 VPN / TUN",
+            found: false,
+            active: false,
+            coreHealthy: false,
+            portHealthy: false,
+            entryTitle: "系统代理 + 其他 VPN / TUN",
+            entryValue: "同时检测",
+            entryHealthy: false
+        ) == "其他 VPN / 代理已连接", "An unidentified combined path must use a neutral connected label.")
 
         require(detail(
             client: "未识别",
@@ -116,7 +128,19 @@ struct ConnectionDetailFormatterCheck {
             entryTitle: "流量入口",
             entryValue: "未启用",
             entryHealthy: false
-        ) == "系统路径 · 未检测到代理入口", "An inactive route must not show the default port as active evidence.")
+        ) == "未检测到代理客户端", "An inactive route must not fabricate a client.")
+
+        require(detail(
+            client: "Clash Verge Rev",
+            mode: "未开启",
+            found: true,
+            active: false,
+            coreHealthy: true,
+            portHealthy: true,
+            entryTitle: "流量入口",
+            entryValue: "未启用",
+            entryHealthy: false
+        ) == "未检测到代理客户端", "A stale client process must not be shown without an active proxy path.")
 
         print("ProxyGauge connection detail formatter tests passed.")
     }

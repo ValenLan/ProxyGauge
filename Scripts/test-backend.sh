@@ -18,6 +18,7 @@ if [ "$(/usr/bin/grep -Fc 'socket_owned_by_mihomo "$socket_path" || return 1' "$
   echo 'Both controller reads must verify that the Unix socket belongs to a detected Mihomo PID.' >&2
   exit 1
 fi
+/usr/bin/grep -Fq "grep -Fq 'not in table'" "$BACKEND"
 TEST_PF_CONF="$TEMP_DIR/pf.conf"
 /usr/bin/printf '%s\n' 'anchor "proxygauge"' > "$TEST_PF_CONF"
 export PROXYGAUGE_PF_CONF="$TEST_PF_CONF"
@@ -181,6 +182,49 @@ matched_mihomo_route_entry=$(PROXYGAUGE_SYSTEM_PROXY_ACTIVE=0 \
   PROXYGAUGE_ROUTE_LOOKUP_RESULTS="$ROUTES_UTUN7_V4" \
   /bin/bash "$BACKEND" probe | /usr/bin/awk -F '\t' '$1 == "entry" { print $2 "\t" $3 "\t" $4 }')
 [ "$matched_mihomo_route_entry" = $'代表性路由已确认\tok\tTUN 路由' ]
+
+trusted_guard_route=$(PROXYGAUGE_CORE_PIDS=41001 \
+  PROXYGAUGE_MIXED=127.0.0.1:53010 \
+  PROXYGAUGE_DISCOVERY_PORT_ACTIVE=0 \
+  PROXYGAUGE_SYSTEM_PROXY_ACTIVE=0 \
+  PROXYGAUGE_TUN_ROUTE_TABLE=$'198.18/15 link#24 UCS utun7' \
+  PROXYGAUGE_DISCOVERY_SOCKET="$TEMP_DIR/missing.sock" \
+  PROXYGAUGE_TRUSTED_MIHOMO_TUNS='utun7' \
+  PROXYGAUGE_ROUTE_LOOKUP_RESULTS="$ROUTES_UTUN7_V4" \
+  /bin/bash "$BACKEND" probe)
+[ "$(/usr/bin/awk -F '\t' '$1 == "overall" { print $2 }' <<< "$trusted_guard_route")" = ok ]
+[ "$(/usr/bin/awk -F '\t' '$1 == "headline" { print $2 }' <<< "$trusted_guard_route")" = '代理路径已确认' ]
+[ "$(/usr/bin/awk -F '\t' '$1 == "detail" { print $2 }' <<< "$trusted_guard_route")" = 'Mihomo TUN 的可用公网路由已确认' ]
+[ "$(/usr/bin/awk -F '\t' '$1 == "entry" { print $2 "\t" $3 "\t" $4 }' <<< "$trusted_guard_route")" = $'代表性路由已确认\tok\tTUN 路由' ]
+
+trusted_guard_discovery=$(PROXYGAUGE_CORE_PIDS=41001 \
+  PROXYGAUGE_DISCOVERY_CLIENT='Clash Verge Rev' \
+  PROXYGAUGE_DISCOVERY_CONFIG="$TEMP_DIR/clash-verge.yaml" \
+  PROXYGAUGE_DISCOVERY_PORT_ACTIVE=0 \
+  PROXYGAUGE_SYSTEM_PROXY_ACTIVE=0 \
+  PROXYGAUGE_TUN_ROUTE_TABLE=$'198.18/15 link#24 UCS utun7' \
+  PROXYGAUGE_DISCOVERY_SOCKET="$TEMP_DIR/missing.sock" \
+  PROXYGAUGE_TRUSTED_MIHOMO_TUNS='utun7' \
+  PROXYGAUGE_ROUTE_LOOKUP_RESULTS="$ROUTES_UTUN7_V4" \
+  /bin/bash "$BACKEND" discover)
+/usr/bin/grep -Fq $'mode\tTUN' <<< "$trusted_guard_discovery"
+/usr/bin/grep -Fq $'client\tClash Verge Rev' <<< "$trusted_guard_discovery"
+
+malformed_trusted_route=$(PROXYGAUGE_SYSTEM_PROXY_ACTIVE=0 \
+  PROXYGAUGE_TUN_ROUTE_TABLE=$'198.18/15 link#24 UCS utun7' \
+  PROXYGAUGE_DISCOVERY_SOCKET="$TEMP_DIR/missing.sock" \
+  PROXYGAUGE_TRUSTED_MIHOMO_TUNS='utun7 en0' \
+  PROXYGAUGE_ROUTE_LOOKUP_RESULTS="$ROUTES_UTUN7_V4" \
+  /bin/bash "$BACKEND" probe | /usr/bin/awk -F '\t' '$1 == "entry" { print $2 "\t" $3 "\t" $4 }')
+[ "$malformed_trusted_route" = $'已检测\twarning\t其他 VPN / TUN' ]
+
+mismatched_trusted_route=$(PROXYGAUGE_SYSTEM_PROXY_ACTIVE=0 \
+  PROXYGAUGE_TUN_ROUTE_TABLE=$'198.18/15 link#24 UCS utun7' \
+  PROXYGAUGE_DISCOVERY_SOCKET="$TEMP_DIR/missing.sock" \
+  PROXYGAUGE_TRUSTED_MIHOMO_TUNS='utun8' \
+  PROXYGAUGE_ROUTE_LOOKUP_RESULTS="$ROUTES_UTUN7_V4" \
+  /bin/bash "$BACKEND" probe | /usr/bin/awk -F '\t' '$1 == "entry" { print $2 "\t" $3 "\t" $4 }')
+[ "$mismatched_trusted_route" = $'代表性路由不一致\twarning\tMihomo TUN' ]
 
 mismatched_mihomo_route_entry=$(PROXYGAUGE_SYSTEM_PROXY_ACTIVE=0 \
   PROXYGAUGE_TUN_ROUTE_TABLE=$'default            10.0.0.1           UGScg                 utun7' \
@@ -393,6 +437,17 @@ assert_discovery $'endpoint\t127.0.0.1:7897' \
   PROXYGAUGE_DISCOVERY_CLIENT='Clash Verge Rev' \
   PROXYGAUGE_DISCOVERY_CONFIG="$TEMP_DIR/clash-verge.yaml" \
   PROXYGAUGE_DISCOVERY_PORT_ACTIVE=1
+
+stale_clash_config_with_other_vpn=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_DISCOVERY_CLIENT='未识别' \
+  PROXYGAUGE_DISCOVERY_CONFIG="$TEMP_DIR/clash-verge.yaml" \
+  PROXYGAUGE_DISCOVERY_PORT_ACTIVE=0 \
+  PROXYGAUGE_SYSTEM_PROXY_ACTIVE=0 \
+  PROXYGAUGE_TUN_ACTIVE=1 \
+  PROXYGAUGE_TUN_KIND=other \
+  /bin/bash "$BACKEND" discover)
+/usr/bin/printf '%s\n' "$stale_clash_config_with_other_vpn" | /usr/bin/grep -Fq $'client\t未识别'
+/usr/bin/printf '%s\n' "$stale_clash_config_with_other_vpn" | /usr/bin/grep -Fq $'mode\t其他 VPN / TUN'
 
 assert_discovery $'source\tMihomo 运行状态' \
   PROXYGAUGE_DISCOVERY_SOCKET_JSON="$TEMP_DIR/mihomo-configs.json" \

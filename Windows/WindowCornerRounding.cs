@@ -12,11 +12,40 @@ namespace ProxyGauge;
 /// </summary>
 public static class WindowCornerRounding
 {
+    // Windows 11 owns both the rounded outline and its border. Cutting a square
+    // WPF border with SetWindowRgn removes the border only at the four corners.
+    public static void ApplyMainWindow(Window window)
+    {
+        window.SourceInitialized += (_, _) => UpdateMainWindowFrame(window);
+        window.SizeChanged += (_, _) => UpdateMainWindowFrame(window);
+        window.Activated += (_, _) => UpdateMainWindowFrame(window);
+        window.StateChanged += (_, _) => UpdateMainWindowFrame(window);
+    }
+
+    internal static int UpdateMainWindowFrame(Window window)
+    {
+        var hwnd = new WindowInteropHelper(window).Handle;
+        if (hwnd == IntPtr.Zero) return unchecked((int)0x80070006);
+        // Do not mix a custom region with DWM's corner policy.
+        SetWindowRgn(hwnd, IntPtr.Zero, true);
+        uint corner = window.WindowState == WindowState.Maximized ? 1u : 2u;
+        uint noBorder = 0xFFFFFFFE; // DWMWA_COLOR_NONE: no disconnected dark outline.
+        var cornerResult = DwmSetWindowAttribute(hwnd, 33, ref corner, sizeof(uint));
+        var borderResult = DwmSetWindowAttribute(hwnd, 34, ref noBorder, sizeof(uint));
+        return cornerResult != 0 ? cornerResult : borderResult;
+    }
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref uint value, int size);
+
     [DllImport("gdi32.dll")]
     private static extern IntPtr CreateRoundRectRgn(int x1, int y1, int x2, int y2, int w, int h);
 
     [DllImport("user32.dll")]
     private static extern int SetWindowRgn(IntPtr hWnd, IntPtr hRgn, bool redraw);
+
+    [DllImport("gdi32.dll")]
+    private static extern bool DeleteObject(IntPtr handle);
 
     public static void Apply(Window window, double radiusDip)
     {
@@ -49,6 +78,9 @@ public static class WindowCornerRounding
 
         var radius = (int)Math.Round(radiusDip * 2 * transform.M11);
         var region = CreateRoundRectRgn(0, 0, width + 1, height + 1, radius, radius);
-        SetWindowRgn(hwnd, region, true);
+        if (SetWindowRgn(hwnd, region, true) == 0)
+        {
+            DeleteObject(region); // Ownership transfers to Windows only on success.
+        }
     }
 }

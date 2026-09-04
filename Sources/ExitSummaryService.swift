@@ -10,6 +10,11 @@ struct ExitSummarySnapshot: Equatable, Sendable {
         location: "正在确认实际网络出口"
     )
 
+    static let disconnected = ExitSummarySnapshot(
+        address: "已断开网络连接",
+        location: "当前互联网连接不可用；局域网可能仍可用"
+    )
+
     static let unavailable = ExitSummarySnapshot(
         address: "暂时无法读取",
         location: "请检查当前网络连接"

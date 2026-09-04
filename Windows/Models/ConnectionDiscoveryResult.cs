@@ -22,13 +22,16 @@ public sealed record ConnectionDiscoveryResult(
         {
             if (RouteLookupUnknown)
             {
+                if (OtherTunnelDetected || TunDetected) return "VPN/TUN · 部分路由未确认";
                 return SystemProxyEnabled ? "系统代理；路由状态无法确认" : "路由状态无法确认";
             }
             if (SplitTunnelDetected)
             {
+                if (OtherTunnelDetected || TunDetected)
+                    return SystemProxyEnabled ? "系统代理与 VPN/TUN · 规则分流" : "VPN/TUN · 规则分流";
                 return SystemProxyEnabled
                     ? "系统代理与路由分流"
-                    : "路由分流（可能直连泄漏）";
+                    : "路由分流（未确认代理路径）";
             }
             if (VirtualNetworkDetected)
             {
@@ -60,7 +63,7 @@ public sealed record ConnectionDiscoveryResult(
             }
             else if (SplitTunnelDetected)
             {
-                routeWarning = "代表性公网前缀在同一协议族内走不同接口，或 IPv4 / IPv6 路径不一致，存在直连泄漏风险。";
+                routeWarning = "不同公网目标或 IPv4 / IPv6 使用不同接口，可能是规则分流；不能据此判定代理已关闭或已发生直连泄漏，也不代表全部流量经过代理。";
             }
             else if (VirtualNetworkDetected)
             {

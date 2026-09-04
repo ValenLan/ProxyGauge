@@ -288,3 +288,182 @@ enum UpdateCheckSchedule {
         return elapsed < 0 || elapsed >= interval
     }
 }
+
+
+struct GuardApplicationChoice: Identifiable, Equatable, Sendable {
+    let path: String
+    let uid: Int
+    var id: String { path }
+    var name: String { URL(fileURLWithPath: path).lastPathComponent }
+}
+
+struct GuardSelectionSnapshot: Equatable, Sendable {
+    let mode: String
+    let path: String
+    let ambiguous: Bool
+    let tunnels: [String]
+
+    static func parse(_ text: String) -> GuardSelectionSnapshot? {
+        guard text.utf8.count <= 8192 else { return nil }
+        let lines = text.components(separatedBy: "\n")
+        guard lines.count == 5, lines[4].isEmpty,
+              lines[0] == "AUTO" || GuardApplicationPolicy.validPath(lines[0]),
+              lines[1].isEmpty || GuardApplicationPolicy.validPath(lines[1]),
+              ["0", "1"].contains(lines[2]) else { return nil }
+        let tunnels = lines[3].split(separator: " ").map(String.init)
+        guard tunnels.first == "lo0", tunnels.count <= 64,
+              tunnels.dropFirst().allSatisfy({ $0.range(of: #"^utun[0-9]+$"#, options: .regularExpression) != nil }) else { return nil }
+        return .init(mode: lines[0], path: lines[1], ambiguous: lines[2] == "1", tunnels: tunnels)
+    }
+
+    static func read() -> GuardSelectionSnapshot? {
+        let path = "/var/run/proxygauge-killswitch.selection"
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+              attributes[.type] as? FileAttributeType == .typeRegular,
+              (attributes[.ownerAccountID] as? NSNumber)?.intValue == 0,
+              let permissions = attributes[.posixPermissions] as? NSNumber,
+              permissions.intValue & 0o022 == 0,
+              ((attributes[.size] as? NSNumber)?.intValue ?? 8193) <= 8192,
+              let text = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
+        return parse(text)
+    }
+
+    var trustedMihomoTunnels: [String]? {
+        guard !ambiguous,
+              ["verge-mihomo", "mihomo", "clash-meta"].contains(
+                URL(fileURLWithPath: path).lastPathComponent
+              ) else { return nil }
+        let attributed = Array(tunnels.dropFirst())
+        return attributed.isEmpty ? nil : attributed
+    }
+
+    var detectedClientName: String? {
+        guard !ambiguous, !path.isEmpty else { return nil }
+        let executable = URL(fileURLWithPath: path).lastPathComponent.lowercased()
+        return switch executable {
+        case "verge-mihomo": "Clash Verge Rev"
+        case "mihomo", "clash-meta", "clash": "Clash / Mihomo"
+        case "sing-box", "singbox": "sing-box"
+        case "xray": "Xray"
+        case "v2ray": "V2Ray"
+        case "ikuuuvpncore": "iKuuuVPN"
+        default: URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
+        }
+    }
+}
+
+struct ConnectionPathPresentation: Equatable, Sendable {
+    let value: String?
+    let hasSystemProxy: Bool
+    let hasVirtualAdapter: Bool
+
+    var isActive: Bool { hasSystemProxy || hasVirtualAdapter }
+    var isCombined: Bool { hasSystemProxy && hasVirtualAdapter }
+
+    static func make(mode: String) -> ConnectionPathPresentation {
+        let isDualEntry = mode.contains("双重入口")
+        let systemProxy = isDualEntry || mode.contains("系统代理")
+            || mode.contains("PAC")
+            || mode.contains("自动代理")
+        let virtualAdapter = isDualEntry || mode.contains("TUN")
+            || mode.contains("VPN")
+            || mode.contains("虚拟网卡")
+            || mode.contains("虚拟网络")
+        let value: String? = if systemProxy && virtualAdapter {
+            "系统代理 + 虚拟网卡"
+        } else if virtualAdapter {
+            "虚拟网卡"
+        } else if systemProxy {
+            "系统代理"
+        } else {
+            nil
+        }
+        return .init(
+            value: value,
+            hasSystemProxy: systemProxy,
+            hasVirtualAdapter: virtualAdapter
+        )
+    }
+}
+
+enum ConnectionStatusTone: Equatable, Sendable {
+    case ok
+    case warning
+    case error
+    case idle
+}
+
+struct ConnectionStatusPresentation: Equatable, Sendable {
+    let value: String
+    let detailOverride: String?
+    let tone: ConnectionStatusTone
+
+    static func make(
+        mode: String,
+        networkAvailable: Bool?,
+        probeAvailable: Bool
+    ) -> ConnectionStatusPresentation? {
+        if networkAvailable == false {
+            return .init(value: "无网络连接", detailOverride: "请检查网络连接", tone: .error)
+        }
+        let path = ConnectionPathPresentation.make(mode: mode)
+        if let value = path.value {
+            return .init(
+                value: value,
+                detailOverride: nil,
+                tone: path.isCombined ? .warning : .ok
+            )
+        }
+        if networkAvailable == true && probeAvailable {
+            return .init(value: "未检测到代理", detailOverride: "当前使用直连网络", tone: .idle)
+        }
+        return nil
+    }
+}
+
+enum GuardRuntimeState {
+    static func parse(_ text: String) -> Bool {
+        text == "enabled\n"
+    }
+
+    static func isTrustedEnabled() -> Bool {
+        let path = "/var/run/proxygauge-killswitch.state"
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+              attributes[.type] as? FileAttributeType == .typeRegular,
+              (attributes[.ownerAccountID] as? NSNumber)?.intValue == 0,
+              let permissions = attributes[.posixPermissions] as? NSNumber,
+              permissions.intValue & 0o022 == 0,
+              ((attributes[.size] as? NSNumber)?.intValue ?? 129) <= 128,
+              let text = try? String(contentsOfFile: path, encoding: .utf8) else { return false }
+        return parse(text)
+    }
+}
+
+enum GuardApplicationPolicy {
+    static func validPath(_ path: String) -> Bool {
+        guard path.hasPrefix("/"), path.utf8.count <= 4096,
+              !path.contains(":"), !path.contains("//"),
+              URL(fileURLWithPath: path).standardizedFileURL.path == path else { return false }
+        return !path.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) || (0x202A...0x202E).contains($0.value) || (0x2066...0x2069).contains($0.value) }
+    }
+
+    static func parseChoices(_ text: String) -> [GuardApplicationChoice] {
+        guard text.utf8.count <= 65536 else { return [] }
+        var paths = Set<String>()
+        return text.split(separator: "\n").compactMap { line in
+            let parts = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
+            guard parts.count == 2, let uid = Int(parts[0]), uid >= 0,
+                  validPath(parts[1]), paths.insert(parts[1]).inserted else { return nil }
+            return GuardApplicationChoice(path: parts[1], uid: uid)
+        }
+    }
+}
+
+struct ExitLoadingGate {
+    private(set) var startedAt: Date?
+    mutating func begin(at now: Date) -> Bool {
+        if startedAt == nil { startedAt = now }
+        return now.timeIntervalSince(startedAt!) < 8
+    }
+    mutating func finish() { startedAt = nil }
+}

@@ -3,6 +3,10 @@ import Foundation
 @main
 struct PrivilegedBridgeCheck {
     static func main() async throws {
+        try require(
+            BundledResourceIntegrity.trustedBundlePath == "/Applications/ProxyGauge.app",
+            "The trusted macOS application must be the real /Applications bundle."
+        )
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("proxygauge-integrity-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

@@ -75,8 +75,13 @@ if /usr/bin/grep -Fq 'if (!_initialRefreshCompleted || !IsLoaded)' "$PROJECT_ROO
   exit 1
 fi
 /usr/bin/grep -Fq '_refreshGeneration' "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
-/usr/bin/grep -Fq '"其他 VPN / TUN · 系统路径";' "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
-/usr/bin/grep -Fq '"其他 VPN / TUN · 与系统代理并存"' "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
+/usr/bin/grep -Fq 'Fill="{Binding ConnectionBrush}"' "$PROJECT_ROOT/Windows/MainWindow.xaml"
+/usr/bin/grep -Fq '"虚拟网卡"' "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
+/usr/bin/grep -Fq '"系统代理 + 虚拟网卡"' "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
+/usr/bin/grep -Fq '"其他 VPN 已连接"' "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
+/usr/bin/grep -Fq '"其他系统代理已启用"' "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
+/usr/bin/grep -Fq '"无网络连接"' "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
+/usr/bin/grep -Fq '"当前使用直连网络"' "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
 /usr/bin/grep -Fq 'DescribeCombinedRoute(' "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
 /usr/bin/grep -Fq 'var fixedMihomoDualRoute = localMihomoHealthy' \
   "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
@@ -84,14 +89,9 @@ fi
 /usr/bin/grep -Fq 'DescribeMihomoTunnelRoute(mihomoCoreHealthy)' \
   "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
 /usr/bin/grep -Fq 'DescribeDetectedSystemRoute(' "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
-/usr/bin/grep -Fq 'BuildConnectionDetail(' "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
-/usr/bin/grep -Fq '系统路径 · {mode}' "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
-/usr/bin/grep -Fq 'routeTitle == "TUN 路由" &&' \
-  "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
-/usr/bin/grep -Fq 'routeValue == "代表性路由已确认"' \
-  "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
-/usr/bin/grep -Fq '"Mihomo · TUN-only"' \
-  "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
+/usr/bin/grep -Fq 'BuildConnectionStatus(' "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
+/usr/bin/grep -Fq 'BuildConnectionClientDetail(' "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
+/usr/bin/grep -Fq 'DetectClientName(' "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
 if /usr/bin/grep -Fq 'routeValue == "已接管"' \
   "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"; then
   echo 'Representative route probes must not be rendered as proof that every destination is captured.' >&2
@@ -303,7 +303,7 @@ fi
   "$PROJECT_ROOT/Windows.Tests/Program.cs"
 /usr/bin/grep -Fq 'Closing the UI must never disable protection.' \
   "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
-/usr/bin/grep -Fq '退出 ProxyGauge 后仍持续拦截直连' \
+/usr/bin/grep -Fq '持续拦截当前用户的公网直连' \
   "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
 /usr/bin/grep -Fq 'ProxyGauge.Guard.v1' \
   "$PROJECT_ROOT/Windows/Services/GuardClient.cs"

@@ -16,7 +16,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for label in '快速查看代理连接、出口 IP、城市/地区与浏览器隐私状态。' '代理状态' '断网保护' 'IP 纯净度' '隐私泄露' '浏览器测速'; do
+for label in '监控代理连接、出口 IP 与浏览器隐私' '代理状态' '断网保护' 'IP 纯净度' '隐私泄露' '浏览器测速'; do
   /usr/bin/grep -Fq "$label" "$DASHBOARD_SOURCE"
   /usr/bin/grep -Fq "$label" "$WINDOWS_MAIN"
 done
@@ -122,18 +122,20 @@ fi
 /usr/bin/grep -Fq 'source: "自动检测失败"' "$APP_SOURCE"
 /usr/bin/grep -Fq 'markProbeUnavailable(' "$APP_SOURCE"
 /usr/bin/grep -Fq 'if await checkForUpdates(silent: true)' "$APP_SOURCE"
-/usr/bin/grep -Fq '"其他 VPN / TUN · 系统路径"' "$CONNECTION_FORMATTER"
-/usr/bin/grep -Fq '"其他 VPN / TUN · 与系统代理并存"' "$CONNECTION_FORMATTER"
+/usr/bin/grep -Fq '"其他 VPN 已连接"' "$CONNECTION_FORMATTER"
+/usr/bin/grep -Fq '"其他 VPN / 代理已连接"' "$CONNECTION_FORMATTER"
+/usr/bin/grep -Fq '"其他系统代理已启用"' "$CONNECTION_FORMATTER"
+/usr/bin/grep -Fq '"无网络连接"' "$PROJECT_ROOT/Sources/AppStatePolicies.swift"
+/usr/bin/grep -Fq '"当前使用直连网络"' "$PROJECT_ROOT/Sources/AppStatePolicies.swift"
+/usr/bin/grep -Fq 'model.connectionLevel.color' "$DASHBOARD_SOURCE"
 
 if /usr/bin/grep -Eq 'exitNetwork(Type)?|ExitNetwork(Type)?|IP 类型未知|ASN 未知|IP 风险与类型' "$APP_SOURCE" "$DASHBOARD_SOURCE" "$WINDOWS_MAIN"; then
   echo 'The exit card must not restore ASN or IP network-type fields.' >&2
   exit 1
 fi
-if /usr/bin/grep -Fq 'Text("ProxyGauge")' "$DASHBOARD_SOURCE" \
-  || /usr/bin/grep -Fq '<TextBlock Text="ProxyGauge" FontFamily=' "$WINDOWS_MAIN"; then
-  echo 'The in-page product title must be replaced by the concise introduction.' >&2
-  exit 1
-fi
+/usr/bin/grep -Fq 'Text("ProxyGauge")' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq 'x:Name="ProductTitle" Text="ProxyGauge"' "$WINDOWS_MAIN"
+/usr/bin/grep -Fq 'window.titleVisibility = .hidden' "$PROJECT_ROOT/Sources/WindowCapability.swift"
 
 if /usr/bin/grep -Fq 'Text("链路检测")' "$DASHBOARD_SOURCE" \
   || /usr/bin/grep -Fq 'Text("规则管理")' "$DASHBOARD_SOURCE" \
@@ -221,6 +223,8 @@ fi
   -target arm64-apple-macosx26.0 \
   -module-cache-path "$TEMP_ROOT/module-cache" \
   -parse-as-library \
+  "$PROJECT_ROOT/Sources/LocalEndpointPolicy.swift" \
+  "$PROJECT_ROOT/Sources/AppStatePolicies.swift" \
   "$PROJECT_ROOT/Sources/ConnectionDetailFormatter.swift" \
   "$PROJECT_ROOT/Tests/ConnectionDetailFormatterCheck.swift" \
   -o "$TEMP_ROOT/connection-detail-formatter-check"
@@ -241,6 +245,8 @@ fi
   -module-cache-path "$TEMP_ROOT/module-cache" \
   -parse-as-library \
   "$PROJECT_ROOT/Sources/BundledResourceIntegrity.swift" \
+  "$PROJECT_ROOT/Sources/LocalEndpointPolicy.swift" \
+  "$PROJECT_ROOT/Sources/AppStatePolicies.swift" \
   "$PROJECT_ROOT/Sources/KillSwitchAdminService.swift" \
   "$PROJECT_ROOT/Sources/UpdateService.swift" \
   "$PROJECT_ROOT/Tests/PrivilegedBridgeCheck.swift" \

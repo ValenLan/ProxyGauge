@@ -74,6 +74,46 @@ final class ProxyModel: ObservableObject {
     @Published var showDisableConfirmation = false
     @Published var showConnectionSetup = false
     @Published var showHealthPlanSetup = false
+    @Published var showGuardApplicationSelection = false
+    @Published var guardApplications: [GuardApplicationChoice] = []
+    @Published var guardSelection = GuardSelectionSnapshot.read()
+    @Published var guardSelectionError = ""
+    private var enableAfterSelection = false
+    private var exitLoadingGate = ExitLoadingGate()
+    private var exitDeadlineTask: Task<Void, Never>?
+    private static let guardPreferenceKey = "proxygauge.guard.selectedCore.v1"
+    var guardApplicationLabel: String {
+        if guardSelection?.ambiguous == true { return "需要选择当前代理…" }
+        if let path = guardSelection?.path, !path.isEmpty { return URL(fileURLWithPath: path).lastPathComponent + " · 切换" }
+        if let path = UserDefaults.standard.string(forKey: Self.guardPreferenceKey) { return URL(fileURLWithPath: path).lastPathComponent + " · 切换" }
+        return "自动识别代理 · 选择"
+    }
+    private var disconnectedByGuard: Bool {
+        guard killSwitch.level == .ok, let guardSelection,
+              guardSelection.tunnels == ["lo0"] else { return false }
+        let proxy = CFNetworkCopySystemProxySettings()?.takeRetainedValue() as? [String: Any] ?? [:]
+        return (proxy[kCFNetworkProxiesHTTPSEnable as String] as? NSNumber)?.boolValue != true
+            && (proxy[kCFNetworkProxiesProxyAutoConfigEnable as String] as? NSNumber)?.boolValue != true
+            && (proxy[kCFNetworkProxiesSOCKSEnable as String] as? NSNumber)?.boolValue != true
+    }
+    private var unavailableExit: ExitSummarySnapshot {
+        networkPathSatisfied == false || disconnectedByGuard ? .disconnected : .unavailable
+    }
+    private func beginExitLoading() {
+        guard networkPathSatisfied != false else { exitSummary = .disconnected; return }
+        guard exitLoadingGate.begin(at: Date()) else { exitSummary = unavailableExit; return }
+        exitSummary = .checking
+        guard exitDeadlineTask == nil else { return }
+        exitDeadlineTask = Task { @MainActor [weak self] in
+            do { try await Task.sleep(for: .seconds(8)) } catch { return }
+            guard let self else { return }
+            if self.exitSummary == .checking { self.exitSummary = self.unavailableExit }
+        }
+    }
+    private func finishExitLoading(_ value: ExitSummarySnapshot) {
+        exitDeadlineTask?.cancel(); exitDeadlineTask = nil; exitLoadingGate.finish()
+        exitSummary = value == .unavailable ? unavailableExit : value
+    }
     @Published var isDiscoveringConnection = false
     @Published var discovery = ProxyDiscovery()
     @Published var healthPlan = ProxyGaugePreferences.loadHealthPlan()
@@ -99,22 +139,48 @@ final class ProxyModel: ObservableObject {
     @Published var killSwitch = MetricState(title: "Kill Switch", symbol: CloudSymbols.killSwitch, value: "检查中", level: .idle)
 
     var connectionValue: String {
+        if let value = connectionStatusPresentation?.value { return value }
         switch overallLevel {
-        case .ok: return "已连接"
+        case .ok: return "代理路径"
         case .warning: return headline
-        case .error: return "未连接"
+        case .error: return "代理状态不可用"
         case .idle: return "检查中"
         }
     }
 
+    var connectionLevel: HealthLevel {
+        if let tone = connectionStatusPresentation?.tone {
+            return switch tone {
+            case .ok: .ok
+            case .warning: .warning
+            case .error: .error
+            case .idle: .idle
+            }
+        }
+        return overallLevel
+    }
+
+    private var connectionPresentation: ConnectionPathPresentation {
+        ConnectionPathPresentation.make(mode: discovery.mode)
+    }
+
+    private var connectionStatusPresentation: ConnectionStatusPresentation? {
+        ConnectionStatusPresentation.make(
+            mode: discovery.mode,
+            networkAvailable: networkPathSatisfied,
+            probeAvailable: discovery.mode != "正在读取" && discovery.mode != "状态不可用"
+        )
+    }
+
     var connectionDetail: String {
+        if let detail = connectionStatusPresentation?.detailOverride { return detail }
         let endpoint = UserDefaults.standard.string(
             forKey: ProxyGaugePreferences.selectedEndpointKey
         ).flatMap(LocalEndpointPolicy.normalize)
             ?? LocalEndpointPolicy.normalize(discovery.endpoint)
             ?? "127.0.0.1:7890"
         return ConnectionDetailFormatter.format(
-            client: discovery.client,
+            client: guardSelection?.detectedClientName ?? discovery.client,
             endpoint: endpoint,
             mode: discovery.mode,
             discoveryFound: discovery.found,
@@ -140,7 +206,7 @@ final class ProxyModel: ObservableObject {
     private var networkMonitor: NWPathMonitor?
     private let networkMonitorQueue = DispatchQueue(label: "com.valenlan.proxygauge.network-path")
     private var receivedInitialNetworkPath = false
-    private var networkPathSatisfied: Bool?
+    @Published private var networkPathSatisfied: Bool?
     private var lastRefreshRequestAt = Date()
     private var needsRefreshWhenActive = false
     private var activeRefreshTask: Task<Void, Never>?
@@ -248,7 +314,7 @@ final class ProxyModel: ObservableObject {
         lastRefreshRequestAt = Date()
         let requestedGeneration = refreshGeneration.request()
         let requestedDiscoveryGeneration = discoveryGeneration.request()
-        exitSummary = .checking
+        beginExitLoading()
 
         if isRefreshing {
             refreshQueued = true
@@ -298,7 +364,7 @@ final class ProxyModel: ObservableObject {
         needsRefreshWhenActive = false
         lastRefreshRequestAt = now
         invalidateExitSummary(
-            as: networkPathSatisfied == false ? .unavailable : .checking
+            as: networkPathSatisfied == false ? .disconnected : .checking
         )
         scheduleAutomaticRefresh()
     }
@@ -316,13 +382,14 @@ final class ProxyModel: ObservableObject {
     }
 
     private func performRefresh(generation: UInt64, discoveryGeneration: UInt64) async {
+        guardSelection = GuardSelectionSnapshot.read()
         async let probeResult = execute("probe")
         async let discoveryResult = execute("discover")
         let exit = networkPathSatisfied == false
-            ? ExitSummarySnapshot.unavailable
+            ? ExitSummarySnapshot.disconnected
             : await exitSummaryService.resolve()
         if refreshGeneration.accepts(generation) {
-            exitSummary = exit
+            finishExitLoading(exit)
         }
 
         let (result, discovered) = await (probeResult, discoveryResult)
@@ -374,7 +441,7 @@ final class ProxyModel: ObservableObject {
                 }
                 if !isSatisfied {
                     self.automaticRefreshTask?.cancel()
-                    self.invalidateExitSummary(as: .unavailable)
+                    self.invalidateExitSummary(as: .disconnected)
                     if shouldSchedule {
                         self.scheduleAutomaticRefresh()
                     }
@@ -392,7 +459,7 @@ final class ProxyModel: ObservableObject {
 
     private func invalidateExitSummary(as snapshot: ExitSummarySnapshot) {
         _ = refreshGeneration.request()
-        exitSummary = snapshot
+        if snapshot == .checking { beginExitLoading() } else { finishExitLoading(snapshot) }
         activeRefreshTask?.cancel()
     }
 
@@ -419,7 +486,7 @@ final class ProxyModel: ObservableObject {
         defer { lastSystemProxyFingerprint = current }
         guard let previous = lastSystemProxyFingerprint,
               previous != current else { return }
-        invalidateExitSummary(as: networkPathSatisfied == false ? .unavailable : .checking)
+        invalidateExitSummary(as: networkPathSatisfied == false ? .disconnected : .checking)
         guard networkPathSatisfied != false else { return }
         scheduleAutomaticRefresh()
     }
@@ -452,7 +519,7 @@ final class ProxyModel: ObservableObject {
         defer { lastLocalStateFingerprint = current }
         guard let previous = lastLocalStateFingerprint,
               previous != current else { return }
-        invalidateExitSummary(as: networkPathSatisfied == false ? .unavailable : .checking)
+        invalidateExitSummary(as: networkPathSatisfied == false ? .disconnected : .checking)
         guard networkPathSatisfied != false else { return }
         scheduleAutomaticRefresh()
     }
@@ -588,6 +655,43 @@ final class ProxyModel: ObservableObject {
         showHealthPlanSetup = false
     }
 
+    func chooseGuardApplication() {
+        enableAfterSelection = killSwitch.level == .ok
+        guardSelectionError = ""
+        showGuardApplicationSelection = true
+        Task { [weak self] in
+            guard let self else { return }
+            let result = await self.execute("guard-applications")
+            self.guardApplications = GuardApplicationPolicy.parseChoices(result.output)
+        }
+    }
+
+    func chooseOtherGuardApplication() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        panel.message = "选择正在运行的代理客户端或核心程序"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            let result = await self.execute("guard-applications", arguments: [url.path])
+            let choices = GuardApplicationPolicy.parseChoices(result.output)
+            guard !choices.isEmpty else { self.guardSelectionError = "没有发现此应用正在运行的核心，请先开启客户端的系统服务。"; return }
+            self.guardApplications = choices
+        }
+    }
+
+    func selectGuardApplication(_ path: String?) {
+        if let path {
+            guard GuardApplicationPolicy.validPath(path) else { return }
+            UserDefaults.standard.set(path, forKey: Self.guardPreferenceKey)
+        } else { UserDefaults.standard.removeObject(forKey: Self.guardPreferenceKey) }
+        showGuardApplicationSelection = false
+        if enableAfterSelection { enableKillSwitch() }
+        else { guardSelection = nil }
+    }
+
     func enableKillSwitch() {
         runAction("kill-on", title: "已开启 Kill Switch", busy: "正在开启 Kill Switch…")
     }
@@ -626,6 +730,12 @@ final class ProxyModel: ObservableObject {
             }
             self.isBusy = false
             self.busyLabel = ""
+            if action == "kill-on" && !succeeded && cleanOutput.contains("PROXY_AMBIGUOUS") {
+                self.chooseGuardApplication()
+                self.enableAfterSelection = true
+                return
+            }
+            self.guardSelection = GuardSelectionSnapshot.read()
             self.resultSheet = ResultSheet(
                 kind: isHealth ? .health : .standard,
                 title: isHealth ? title : (succeeded ? title : "操作失败"),
@@ -735,7 +845,8 @@ final class ProxyModel: ObservableObject {
     ) async -> (status: Int32, output: String) {
         if action == "kill-on" || action == "kill-off" {
             return await KillSwitchAdminService.run(
-                action: action == "kill-on" ? "on" : "off"
+                action: action == "kill-on" ? "on" : "off",
+                selection: UserDefaults.standard.string(forKey: Self.guardPreferenceKey) ?? "AUTO"
             )
         }
         guard let path = backendPath else {
@@ -775,6 +886,10 @@ final class ProxyModel: ObservableObject {
         ]
         if let validSelectedEndpoint {
             environment["PROXYGAUGE_MIXED"] = validSelectedEndpoint
+        }
+        if GuardRuntimeState.isTrustedEnabled(),
+           let tunnels = GuardSelectionSnapshot.read()?.trustedMihomoTunnels {
+            environment["PROXYGAUGE_TRUSTED_MIHOMO_TUNS"] = tunnels.joined(separator: " ")
         }
         environment["PROXYGAUGE_SECONDARY_ENABLED"] = healthPlan.secondaryEnabled ? "1" : "0"
         environment["PROXYGAUGE_SECONDARY_LABEL"] = healthPlan.secondaryLabel

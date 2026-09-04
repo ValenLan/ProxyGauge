@@ -7,6 +7,7 @@
 #include <iphlpapi.h>
 #include <rpc.h>
 #include <sddl.h>
+#include <tlhelp32.h>
 
 #include <algorithm>
 #include <atomic>
@@ -20,6 +21,8 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include "GuardSelection.h"
+#include "GuardTunController.h"
 
 namespace
 {
@@ -36,7 +39,7 @@ constexpr GUID SubLayerKey =
 
 constexpr DWORD PipeBufferSize = 4096;
 constexpr DWORD PipeTimeoutMilliseconds = 5000;
-constexpr DWORD ReconcileIntervalMilliseconds = 5000;
+constexpr DWORD ReconcileIntervalMilliseconds = 1000;
 
 SERVICE_STATUS_HANDLE serviceStatusHandle = nullptr;
 SERVICE_STATUS serviceStatus{};
@@ -48,6 +51,8 @@ struct GuardState
 {
     bool enabled = false;
     bool valid = true;
+    bool applicationSelected = false;
+    bool automaticSelection = false;
     std::wstring ownerSid;
     std::wstring proxyPath;
     DWORD mixedPort = 0;
@@ -221,14 +226,35 @@ GuardState LoadState()
             &portType,
             reinterpret_cast<BYTE*>(&state.mixedPort),
             &portSize) != ERROR_SUCCESS ||
-        portType != REG_DWORD)
+        portType != REG_DWORD || portSize != sizeof(state.mixedPort))
     {
         state.mixedPort = 0;
+        if (state.enabled) state.valid = false;
     }
+
+    DWORD applicationSelected = 0;
+    DWORD selectionSize = sizeof(applicationSelected);
+    DWORD selectionType = 0;
+    const LONG selectionResult = RegQueryValueExW(rawKey, L"ApplicationSelected", nullptr,
+        &selectionType, reinterpret_cast<BYTE*>(&applicationSelected), &selectionSize);
+    if (selectionResult == ERROR_SUCCESS && selectionType == REG_DWORD &&
+        selectionSize == sizeof(applicationSelected) && applicationSelected <= 1)
+        state.applicationSelected = applicationSelected == 1;
+    else if (selectionResult != ERROR_FILE_NOT_FOUND && state.enabled)
+        state.valid = false;
+
+    DWORD automatic = 0;
+    DWORD automaticSize = sizeof(automatic);
+    DWORD automaticType = 0;
+    const LONG automaticResult = RegQueryValueExW(rawKey, L"AutomaticSelection", nullptr,
+        &automaticType, reinterpret_cast<BYTE*>(&automatic), &automaticSize);
+    if (automaticResult == ERROR_SUCCESS && automaticType == REG_DWORD && automaticSize == sizeof(automatic) && automatic <= 1)
+        state.automaticSelection = automatic == 1;
+    else if (automaticResult != ERROR_FILE_NOT_FOUND && state.enabled) state.valid = false;
 
     RegCloseKey(rawKey);
     if (state.enabled && (state.ownerSid.empty() || state.proxyPath.empty() ||
-        state.mixedPort == 0 || state.mixedPort > 65535))
+        state.mixedPort > 65535 || (!state.applicationSelected && state.mixedPort == 0)))
     {
         state.valid = false;
     }
@@ -293,6 +319,18 @@ DWORD SaveState(const GuardState& state)
             static_cast<DWORD>(sizeof(state.mixedPort)));
     }
 
+    if (result == ERROR_SUCCESS)
+    {
+        const DWORD applicationSelected = state.applicationSelected ? 1 : 0;
+        result = RegSetValueExW(rawKey, L"ApplicationSelected", 0, REG_DWORD,
+            reinterpret_cast<const BYTE*>(&applicationSelected), sizeof(applicationSelected));
+    }
+    if (result == ERROR_SUCCESS)
+    {
+        const DWORD automatic = state.automaticSelection ? 1 : 0;
+        result = RegSetValueExW(rawKey, L"AutomaticSelection", 0, REG_DWORD,
+            reinterpret_cast<const BYTE*>(&automatic), sizeof(automatic));
+    }
     RegCloseKey(rawKey);
     return result;
 }
@@ -371,6 +409,145 @@ std::wstring Lower(std::wstring value)
         return static_cast<wchar_t>(std::towlower(character));
     });
     return value;
+}
+
+bool IsLocalExecutablePath(const std::wstring& path)
+{
+    if (path.size() < 7 || path.size() > 1800 ||
+        !((path[0] >= L'A' && path[0] <= L'Z') || (path[0] >= L'a' && path[0] <= L'z')) ||
+        path[1] != L':' || path[2] != L'\\' ||
+        Lower(path.substr(path.size() - 4)) != L".exe")
+    {
+        return false;
+    }
+    for (size_t index = 2; index < path.size(); ++index)
+    {
+        if (path[index] < L' ' || path[index] == 0x7f ||
+            std::wstring(L":\"<>|*?/").find(path[index]) != std::wstring::npos)
+        {
+            return false;
+        }
+    }
+    return path.find(L"\\..\\") == std::wstring::npos && path.find(L"\\.\\") == std::wstring::npos;
+}
+
+std::wstring ListRunningProxyApplications()
+{
+    // Read-only discovery for desktop tokens that cannot inspect SYSTEM cores.
+    // Listing never grants permission; ENABLE_APP still validates the user's choice.
+    std::wstring response = L"OK\tAPPLICATIONS";
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) return response;
+    PROCESSENTRY32W entry{};
+    entry.dwSize = static_cast<DWORD>(sizeof(entry));
+    std::set<std::wstring> paths;
+    if (Process32FirstW(snapshot, &entry))
+    {
+        do
+        {
+            const auto name = Lower(entry.szExeFile);
+            const bool candidate = name.find(L"mihomo") != std::wstring::npos ||
+                name.find(L"clash") != std::wstring::npos || name.find(L"vpn") != std::wstring::npos ||
+                name.find(L"sing-box") != std::wstring::npos || name.find(L"singbox") != std::wstring::npos ||
+                name.find(L"wireguard") != std::wstring::npos || name == L"xray.exe" || name == L"v2ray.exe";
+            if (!candidate) continue;
+            auto path = ProcessPath(entry.th32ProcessID);
+            if (path.has_value() && IsLocalExecutablePath(*path)) paths.insert(*path);
+        } while (Process32NextW(snapshot, &entry));
+    }
+    CloseHandle(snapshot);
+    for (const auto& path : paths)
+    {
+        // Bound the UTF-16 response below the managed client's 8192-byte limit.
+        if (response.size() + path.size() + 1 > 3500) continue;
+        response += L'\t';
+        response += path;
+    }
+    return response;
+}
+
+std::optional<std::wstring> SelectRunningProxy(const std::wstring& selection, const wchar_t*& error)
+{
+    const bool automatic = selection == L"CLASH";
+    error = L"PROXY_NOT_RUNNING";
+    if (!automatic && !IsLocalExecutablePath(selection))
+    {
+        error = L"INVALID_PROXY_PATH";
+        return std::nullopt;
+    }
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) return std::nullopt;
+    PROCESSENTRY32W entry{};
+    entry.dwSize = static_cast<DWORD>(sizeof(entry));
+    std::set<std::wstring> matches;
+    if (Process32FirstW(snapshot, &entry))
+    {
+        do
+        {
+            const auto name = Lower(entry.szExeFile);
+            if (automatic && name != L"verge-mihomo.exe" && name != L"mihomo.exe" &&
+                name != L"clash-meta.exe" && name != L"clash.exe") continue;
+            const auto path = ProcessPath(entry.th32ProcessID);
+            if (path.has_value() && IsLocalExecutablePath(*path) &&
+                (automatic || Lower(*path) == Lower(selection)))
+            {
+                matches.insert(Lower(*path));
+            }
+        } while (Process32NextW(snapshot, &entry));
+    }
+    CloseHandle(snapshot);
+    if (matches.size() > 1)
+    {
+        error = L"PROXY_AMBIGUOUS";
+        return std::nullopt;
+    }
+    if (matches.empty()) return std::nullopt;
+    return *matches.begin();
+}
+
+std::set<std::wstring> RunningKnownCores()
+{
+    std::set<std::wstring> paths;
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) return paths;
+    PROCESSENTRY32W entry{};
+    entry.dwSize = sizeof(entry);
+    if (Process32FirstW(snapshot, &entry)) do
+    {
+        if (!ProxySelection::IsKnownCore(entry.szExeFile)) continue;
+        const auto path = ProcessPath(entry.th32ProcessID);
+        if (path.has_value() && IsLocalExecutablePath(*path)) paths.insert(Lower(*path));
+    } while (Process32NextW(snapshot, &entry));
+    CloseHandle(snapshot);
+    return paths;
+}
+
+std::optional<std::wstring> SystemProxyCore(const std::wstring& ownerSid)
+{
+    HKEY key = nullptr;
+    const auto subkey = ownerSid + L"\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings";
+    if (RegOpenKeyExW(HKEY_USERS, subkey.c_str(), 0, KEY_QUERY_VALUE, &key) != ERROR_SUCCESS) return std::nullopt;
+    DWORD enabled = 0, size = sizeof(enabled), type = 0;
+    std::wstring server;
+    const bool active = RegQueryValueExW(key, L"ProxyEnable", nullptr, &type,
+        reinterpret_cast<BYTE*>(&enabled), &size) == ERROR_SUCCESS && type == REG_DWORD && size == sizeof(enabled) && enabled == 1;
+    const bool found = ReadRegistryString(key, L"ProxyServer", server);
+    RegCloseKey(key);
+    if (!active || !found || server.size() > 2048) return std::nullopt;
+    std::optional<std::wstring> endpoint;
+    if (server.find(L'=') == std::wstring::npos) endpoint = server;
+    else
+    {
+        std::wistringstream entries(server);
+        std::wstring entry;
+        while (std::getline(entries, entry, L';'))
+            if (Lower(entry).starts_with(L"https=")) endpoint = entry.substr(6);
+    }
+    if (!endpoint.has_value()) return std::nullopt;
+    const auto port = ProxySelection::LoopbackProxyPort(*endpoint);
+    if (!port.has_value()) return std::nullopt;
+    const auto path = FindTcpListenerPath(*port);
+    return path.has_value() && ProxySelection::IsKnownCore(*path) ? path : std::nullopt;
 }
 
 bool HasTunKeyword(const IP_ADAPTER_ADDRESSES& adapter)
@@ -466,6 +643,55 @@ std::vector<UINT64> FindTunInterfaces()
         }
     }
     return std::vector<UINT64>(luids.begin(), luids.end());
+}
+
+std::set<std::wstring> ActiveTunnelCores(const std::set<std::wstring>& running)
+{
+    // Look up representative public routes without sending traffic or reading subscription data.
+    std::set<UINT64> routed;
+    for (const auto* target : {L"1.1.1.1", L"8.8.8.8", L"223.5.5.5", L"2606:4700:4700::1111", L"2001:4860:4860::8888"})
+    {
+        SOCKADDR_INET destination{}, source{};
+        destination.si_family = wcschr(target, L':') == nullptr ? AF_INET : AF_INET6;
+        void* address = destination.si_family == AF_INET ? static_cast<void*>(&destination.Ipv4.sin_addr)
+            : static_cast<void*>(&destination.Ipv6.sin6_addr);
+        if (InetPtonW(destination.si_family, target, address) != 1) continue;
+        MIB_IPFORWARD_ROW2 route{};
+        if (GetBestRoute2(nullptr, 0, nullptr, &destination, 0, &route, &source) == NO_ERROR)
+            routed.insert(route.InterfaceLuid.Value);
+    }
+    if (routed.empty()) return {};
+    ULONG size = 0;
+    GetAdaptersAddresses(AF_UNSPEC, 0, nullptr, nullptr, &size);
+    if (size == 0) return {};
+    std::vector<BYTE> buffer(size);
+    auto* adapters = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
+    if (GetAdaptersAddresses(AF_UNSPEC, 0, nullptr, adapters, &size) != NO_ERROR) return {};
+    std::set<std::wstring> activeNames, result;
+    bool ikuuuRouted = false;
+    for (auto* adapter = adapters; adapter != nullptr; adapter = adapter->Next)
+    {
+        if (adapter->OperStatus != IfOperStatusUp || !routed.contains(adapter->Luid.Value)) continue;
+        const std::wstring name = adapter->FriendlyName != nullptr ? Lower(adapter->FriendlyName) : L"";
+        const std::wstring description = adapter->Description != nullptr ? Lower(adapter->Description) : L"";
+        activeNames.insert(name);
+        // This adapter is branded by iKuuu's driver. Require its active route and a unique exact core.
+        if (name == L"ikuuuvpn" && description == L"ikuuuvpn tunnel") ikuuuRouted = true;
+    }
+    if (ikuuuRouted)
+    {
+        std::set<std::wstring> candidates;
+        for (const auto& path : running)
+            if (path.substr(path.find_last_of(L"\\") + 1) == L"ikuuuvpncore.exe") candidates.insert(path);
+        if (candidates.size() == 1) result.insert(*candidates.begin());
+    }
+    for (const auto* pipe : {L"\\\\.\\pipe\\verge-mihomo", L"\\\\.\\pipe\\mihomo"})
+    {
+        const auto controller = GuardTun::Read(pipe, running, ProcessPath);
+        if (controller.has_value() && controller->tun.enabled && !controller->tun.device.empty() &&
+            activeNames.contains(Lower(controller->tun.device))) result.insert(controller->path);
+    }
+    return result;
 }
 
 DWORD OpenEngine(EngineHandle& engine)
@@ -671,6 +897,53 @@ DWORD AddFilter(
     return FwpmFilterAdd0(engine, &filter, nullptr, nullptr);
 }
 
+constexpr FWP_V4_ADDR_AND_MASK LanV4[] = {
+    {0x0a000000, 0xff000000}, {0xac100000, 0xfff00000}, {0xc0a80000, 0xffff0000},
+    {0xa9fe0000, 0xffff0000}, {0xe0000000, 0xffffff00}, {0xffffffff, 0xffffffff}
+};
+constexpr UINT32 LanFilterCount = static_cast<UINT32>(std::size(LanV4) + 3);
+
+UINT32 ExpectedFilterCount(size_t tunnelCount)
+{
+    return 6 + LanFilterCount + static_cast<UINT32>(tunnelCount * 2);
+}
+
+DWORD AddLanFilters(HANDLE engine, const GUID& layer, bool ipv6,
+    const FWPM_FILTER_CONDITION0& userCondition, UINT64 weight)
+{
+    FWPM_FILTER_CONDITION0 conditions[2] = {userCondition, {}};
+    conditions[1].fieldKey = FWPM_CONDITION_IP_REMOTE_ADDRESS;
+    conditions[1].matchType = FWP_MATCH_EQUAL;
+    if (!ipv6)
+    {
+        for (const auto& subnet : LanV4)
+        {
+            FWP_V4_ADDR_AND_MASK address = subnet;
+            conditions[1].conditionValue.type = FWP_V4_ADDR_MASK;
+            conditions[1].conditionValue.v4AddrMask = &address;
+            const DWORD result = AddFilter(engine, layer, L"ProxyGauge permit LAN IPv4",
+                FWP_ACTION_PERMIT, weight, conditions, 2);
+            if (result != ERROR_SUCCESS) return result;
+        }
+    }
+    else
+    {
+        FWP_V6_ADDR_AND_MASK subnets[3]{};
+        subnets[0].addr[0] = 0xfc; subnets[0].prefixLength = 7;
+        subnets[1].addr[0] = 0xfe; subnets[1].addr[1] = 0x80; subnets[1].prefixLength = 10;
+        subnets[2].addr[0] = 0xff; subnets[2].addr[1] = 0x02; subnets[2].prefixLength = 16;
+        for (auto& subnet : subnets)
+        {
+            conditions[1].conditionValue.type = FWP_V6_ADDR_MASK;
+            conditions[1].conditionValue.v6AddrMask = &subnet;
+            const DWORD result = AddFilter(engine, layer, L"ProxyGauge permit LAN IPv6",
+                FWP_ACTION_PERMIT, weight, conditions, 2);
+            if (result != ERROR_SUCCESS) return result;
+        }
+    }
+    return ERROR_SUCCESS;
+}
+
 DWORD InstallFilters(PSID ownerSid, const std::wstring& proxyPath, const std::vector<UINT64>& tunLuids)
 {
     if (!IsValidSid(ownerSid) || proxyPath.empty())
@@ -738,6 +1011,12 @@ DWORD InstallFilters(PSID ownerSid, const std::wstring& proxyPath, const std::ve
 
     for (size_t layerIndex = 0; layerIndex < std::size(layers); ++layerIndex)
     {
+        result = AddLanFilters(engine.get(), layers[layerIndex], layerIndex == 1, userCondition, PermitWeight);
+        if (result != ERROR_SUCCESS)
+        {
+            abort();
+            return result;
+        }
         FWPM_FILTER_CONDITION0 loopbackConditions[2] = {userCondition, {}};
         loopbackConditions[1].fieldKey = FWPM_CONDITION_FLAGS;
         loopbackConditions[1].matchType = FWP_MATCH_FLAGS_ALL_SET;
@@ -988,27 +1267,32 @@ public:
         {
             return;
         }
-        auto currentPath = FindTcpListenerPath(static_cast<USHORT>(state_.mixedPort));
-        if (currentPath.has_value())
+        auto desiredPath = state_.proxyPath;
+        if (state_.automaticSelection)
         {
-            state_.proxyPath = *currentPath;
+            const auto cores = RunningKnownCores();
+            const auto choice = ProxySelection::Select(cores, SystemProxyCore(state_.ownerSid), state_.proxyPath, ActiveTunnelCores(cores));
+            selectionRequired_ = choice.ambiguous;
+            if (choice.running) desiredPath = choice.path;
         }
+        // Pinned mode never transfers trust; automatic mode only chooses verified known cores.
 
         const auto tunLuids = FindTunInterfaces();
         UINT32 filterCount = 0;
-        const UINT32 expectedFilterCount = static_cast<UINT32>(6 + tunLuids.size() * 2);
+        const UINT32 expectedFilterCount = ExpectedFilterCount(tunLuids.size());
         const bool filtersHealthy = CountProviderFilters(filterCount) == ERROR_SUCCESS &&
             filterCount == expectedFilterCount;
-        if (filtersHealthy && state_.proxyPath == lastProxyPath_ && tunLuids == lastTunLuids_)
+        if (filtersHealthy && desiredPath == lastProxyPath_ && tunLuids == lastTunLuids_)
         {
             return;
         }
 
-        if (InstallFilters(sid->data(), state_.proxyPath, tunLuids) == ERROR_SUCCESS)
+        if (InstallFilters(sid->data(), desiredPath, tunLuids) == ERROR_SUCCESS)
         {
+            state_.proxyPath = desiredPath;
             lastProxyPath_ = state_.proxyPath;
             lastTunLuids_ = tunLuids;
-            SaveState(state_);
+            if (SaveState(state_) != ERROR_SUCCESS) state_.valid = false;
         }
     }
 
@@ -1021,12 +1305,17 @@ public:
             return ResponseError(L"BAD_REQUEST");
         }
 
+        if (fields[0] == L"APPLICATIONS")
+        {
+            return fields.size() == 1 ? ListRunningProxyApplications() : ResponseError(L"BAD_REQUEST");
+        }
+
         if (fields[0] == L"STATUS")
         {
             UINT32 filterCount = 0;
             const DWORD statusError = CountProviderFilters(filterCount);
             const auto tunLuids = FindTunInterfaces();
-            const UINT32 expectedFilterCount = static_cast<UINT32>(6 + tunLuids.size() * 2);
+            const UINT32 expectedFilterCount = ExpectedFilterCount(tunLuids.size());
             const bool owned = !state_.enabled || SameSid(state_.ownerSid, identity);
             const bool healthy = state_.enabled && state_.valid &&
                 statusError == ERROR_SUCCESS && filterCount == expectedFilterCount &&
@@ -1035,31 +1324,53 @@ public:
             response << L"OK\tSTATUS\t" << (state_.enabled ? L"ENABLED" : L"DISABLED")
                      << L'\t' << (healthy ? L"HEALTHY" : state_.enabled ? L"FAULT" : L"OFF")
                      << L'\t' << filterCount
-                     << L'\t' << (owned ? L"OWNED" : L"FOREIGN");
+                     << L'\t' << (owned ? L"OWNED" : L"FOREIGN")
+                     << L'\t' << (state_.automaticSelection ? L"AUTO" : L"PINNED")
+                     << L'\t' << (owned ? state_.proxyPath : L"")
+                     << L'\t' << (selectionRequired_ ? L"CHOOSE" : L"READY");
             return response.str();
         }
 
-        if (fields[0] == L"ENABLE")
+        if (fields[0] == L"ENABLE" || fields[0] == L"ENABLE_APP" || fields[0] == L"ENABLE_AUTO")
         {
             if (fields.size() != 2)
             {
                 return ResponseError(L"BAD_REQUEST");
-            }
-            wchar_t* end = nullptr;
-            const unsigned long port = wcstoul(fields[1].c_str(), &end, 10);
-            if (end == fields[1].c_str() || *end != L'\0' || port == 0 || port > 65535)
-            {
-                return ResponseError(L"INVALID_PORT");
             }
             if (state_.enabled && !SameSid(state_.ownerSid, identity) && !identity.administrator)
             {
                 return ResponseError(L"OWNER_MISMATCH");
             }
 
-            const auto proxyPath = FindTcpListenerPath(static_cast<USHORT>(port));
+            unsigned long port = 0;
+            const wchar_t* selectionError = L"PROXY_NOT_LISTENING";
+            std::optional<std::wstring> proxyPath;
+            if (fields[0] == L"ENABLE_AUTO")
+            {
+                const auto cores = RunningKnownCores();
+                const auto seed = fields[1] == L"AUTO" ? L"" : fields[1];
+                if (!std::wstring(seed).empty() && (!IsLocalExecutablePath(seed) || !ProxySelection::IsKnownCore(seed)))
+                    return ResponseError(L"INVALID_PROXY_PATH");
+                const auto choice = ProxySelection::Select(cores, SystemProxyCore(identity.sidString), seed, ActiveTunnelCores(cores));
+                if (!choice.running) return ResponseError(choice.ambiguous ? L"PROXY_AMBIGUOUS" : L"PROXY_NOT_RUNNING");
+                proxyPath = choice.path;
+                selectionRequired_ = choice.ambiguous;
+            }
+            else if (fields[0] == L"ENABLE_APP")
+            {
+                proxyPath = SelectRunningProxy(fields[1], selectionError);
+            }
+            else
+            {
+                wchar_t* end = nullptr;
+                port = wcstoul(fields[1].c_str(), &end, 10);
+                if (end == fields[1].c_str() || *end != L'\0' || port == 0 || port > 65535)
+                    return ResponseError(L"INVALID_PORT");
+                proxyPath = FindTcpListenerPath(static_cast<USHORT>(port));
+            }
             if (!proxyPath.has_value())
             {
-                return ResponseError(L"PROXY_NOT_LISTENING");
+                return ResponseError(selectionError);
             }
 
             const auto tunLuids = FindTunInterfaces();
@@ -1074,6 +1385,9 @@ public:
 
             GuardState next;
             next.enabled = true;
+            next.applicationSelected = fields[0] != L"ENABLE";
+            next.automaticSelection = fields[0] == L"ENABLE_AUTO";
+            if (!next.automaticSelection) selectionRequired_ = false;
             next.ownerSid = identity.sidString;
             next.proxyPath = *proxyPath;
             next.mixedPort = static_cast<DWORD>(port);
@@ -1111,6 +1425,7 @@ public:
             state_ = std::move(next);
             lastProxyPath_.clear();
             lastTunLuids_.clear();
+            selectionRequired_ = false;
             return L"OK\tDISABLE";
         }
 
@@ -1122,6 +1437,7 @@ private:
     GuardState state_;
     std::wstring lastProxyPath_;
     std::vector<UINT64> lastTunLuids_;
+    bool selectionRequired_ = false;
 };
 
 bool WaitForOverlapped(HANDLE pipe, OVERLAPPED& operation, DWORD timeout, DWORD& transferred)

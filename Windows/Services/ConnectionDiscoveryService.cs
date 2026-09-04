@@ -29,7 +29,7 @@ public sealed class ConnectionDiscoveryService
         CancellationToken cancellationToken = default)
     {
         var systemProxy = _probeService.IsSystemProxyEnabled();
-        var tunnelKindTask = _probeService.DetectTunnelKindAsync(cancellationToken);
+        var tunnelKindTask = _probeService.DetectRouteAsync(cancellationToken);
         var candidates = new List<ConnectionCandidate>();
 
         using (var config = await _controllerService.TryGetJsonAsync("/configs", cancellationToken))
@@ -68,7 +68,8 @@ public sealed class ConnectionDiscoveryService
                 port,
                 "常用 Mihomo 端口",
                 IsExplicitSystemProxy: false)));
-        var tunnelKind = await tunnelKindTask;
+        var detection = await tunnelKindTask;
+        var tunnelKind = detection.Coverage;
         var coreProcessIds = _probeService.GetProxyCoreProcessIds();
 
         foreach (var candidateGroup in candidates.GroupBy(candidate => (candidate.Host, candidate.Port)))
@@ -97,11 +98,11 @@ public sealed class ConnectionDiscoveryService
                 ownedByMihomo ? "Mihomo / Clash Verge" : "本地代理（未归属 Mihomo）",
                 candidate.Source,
                 systemProxy,
-                tunnelKind == TunnelKind.Mihomo,
-                tunnelKind == TunnelKind.Other,
+                detection.MihomoDetected,
+                detection.OtherTunnelDetected,
                 tunnelKind == TunnelKind.Split,
                 tunnelKind == TunnelKind.VirtualNetwork,
-                tunnelKind == TunnelKind.Unknown,
+                detection.LookupUnknown || tunnelKind == TunnelKind.Unknown,
                 EndpointOwnershipChecked: true,
                 EndpointOwnedByMihomo: ownedByMihomo);
         }
@@ -110,14 +111,14 @@ public sealed class ConnectionDiscoveryService
             false,
             "127.0.0.1",
             current.MixedPort,
-            coreProcessIds.Count > 0 ? "Mihomo / Clash Verge" : "未发现代理核心",
-            "自动检测未找到可用入口",
+            coreProcessIds.Count > 0 ? "Mihomo / Clash Verge" : detection.OtherTunnelDetected ? "VPN / TUN 已检测" : "未发现代理核心",
+            detection.OtherTunnelDetected ? "已检测系统 VPN 路径，不依赖此 mixed 端口" : "自动检测未找到可用入口",
             systemProxy,
-            tunnelKind == TunnelKind.Mihomo,
-            tunnelKind == TunnelKind.Other,
+            detection.MihomoDetected,
+            detection.OtherTunnelDetected,
             tunnelKind == TunnelKind.Split,
             tunnelKind == TunnelKind.VirtualNetwork,
-            tunnelKind == TunnelKind.Unknown);
+            detection.LookupUnknown || tunnelKind == TunnelKind.Unknown);
     }
 
     internal static bool ShouldAcceptCandidate(

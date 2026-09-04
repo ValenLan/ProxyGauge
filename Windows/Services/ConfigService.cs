@@ -18,6 +18,7 @@ public sealed class ConfigService
 
     private static readonly HashSet<string> KnownProperties = new(
     [
+        nameof(AppConfig.ProxyExecutablePath),
         nameof(AppConfig.MixedHost),
         nameof(AppConfig.MixedPort),
         nameof(AppConfig.ExpectedIp),
@@ -43,7 +44,11 @@ public sealed class ConfigService
     {
         ConfigPath = configPath ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+#if PROXYGAUGE_TRIAL
+            "ProxyGauge-Trial",
+#else
             "ProxyGauge",
+#endif
             "config.json");
     }
 
@@ -185,7 +190,9 @@ public sealed class ConfigService
                 throw new InvalidDataException("配置包含未知或重复字段。");
             }
         }
-        if (!encountered.SetEquals(KnownProperties))
+        // Old configurations predate application selection and keep the Clash default.
+        if (!KnownProperties.Where(name => name != nameof(AppConfig.ProxyExecutablePath))
+                .All(encountered.Contains))
         {
             throw new InvalidDataException("配置缺少必需字段。");
         }
@@ -193,6 +200,7 @@ public sealed class ConfigService
 
     private static AppConfig ValidateAndNormalize(AppConfig config)
     {
+        config.ProxyExecutablePath = ProxyApplicationSelection.NormalizePath(config.ProxyExecutablePath);
         if (!IsBounded(config.MixedHost, MaximumHostLength) ||
             !LocalEndpointPolicy.IsLoopbackHost(config.MixedHost))
         {

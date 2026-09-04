@@ -10,7 +10,8 @@ internal enum HealthExitRoute
 {
     Unavailable,
     MihomoMixed,
-    TunSystem
+    TunSystem,
+    SystemRoute
 }
 
 public sealed class HealthCheckService
@@ -214,12 +215,16 @@ public sealed class HealthCheckService
 
     internal static bool ShouldUseTunOnlySystemRoute(ProxySnapshot snapshot) =>
         snapshot.TunDetected &&
+        !snapshot.SplitTunnelDetected && !snapshot.RouteLookupUnknown &&
         snapshot.Core.Level == HealthLevel.Ok &&
         snapshot.Port.Level != HealthLevel.Ok &&
         !snapshot.SystemProxyEnabled;
 
     internal static HealthExitRoute SelectPrimaryExitRoute(ProxySnapshot snapshot) =>
-        ShouldUseTunOnlySystemRoute(snapshot)
+        snapshot.OtherTunnelDetected || (snapshot.TunDetected &&
+            (snapshot.SplitTunnelDetected || snapshot.RouteLookupUnknown))
+            ? HealthExitRoute.SystemRoute
+            : ShouldUseTunOnlySystemRoute(snapshot)
             ? HealthExitRoute.TunSystem
             : snapshot.Port.Level == HealthLevel.Ok
                 ? HealthExitRoute.MihomoMixed
@@ -239,15 +244,35 @@ public sealed class HealthCheckService
                 HealthLevel.Error), null);
         }
 
-        using var client = route == HealthExitRoute.TunSystem
+        using var client = route == HealthExitRoute.SystemRoute
+            ? CreateSystemRouteClient(config.TimeoutSeconds)
+            : route == HealthExitRoute.TunSystem
             ? CreateTunRouteClient(config.TimeoutSeconds)
             : CreateProxyClient(config.MixedHost, config.MixedPort, config.TimeoutSeconds);
-        return await CheckExitIpAsync(
+        var result = await CheckExitIpAsync(
             client,
             config.ExpectedIp,
-            route == HealthExitRoute.TunSystem ? "TUN 系统出口" : "默认出口",
+            route is HealthExitRoute.TunSystem or HealthExitRoute.SystemRoute ? "系统实际出口" : "默认出口",
             cancellationToken);
+        if (route == HealthExitRoute.SystemRoute)
+        {
+            result.Item = result.Item with
+            {
+                Detail = result.Item.Detail + " · 仅验证本次系统路径的查询结果，不代表全部流量经过 VPN；规则分流与断网保护独立判断"
+            };
+        }
+        return result;
     }
+
+    private static HttpClient CreateSystemRouteClient(int timeoutSeconds) => new(new SocketsHttpHandler
+    {
+        Proxy = HttpClient.DefaultProxy,
+        UseProxy = true,
+        UseCookies = false,
+        AllowAutoRedirect = false,
+        AutomaticDecompression = DecompressionMethods.All,
+        ConnectTimeout = TimeSpan.FromSeconds(timeoutSeconds)
+    }) { Timeout = TimeSpan.FromSeconds(timeoutSeconds) };
 
     private static HttpClient CreateTunRouteClient(int timeoutSeconds)
     {

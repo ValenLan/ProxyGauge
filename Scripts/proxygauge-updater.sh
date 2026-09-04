@@ -76,7 +76,7 @@ if [ "$DESTINATION_PARENT" = "/" ] || [ ! -d "$DESTINATION_PARENT" ]; then
   exit 2
 fi
 if [ "$(/usr/bin/id -u)" -eq 0 ] \
-  && [ "$DESTINATION" != "/Library/Application Support/ProxyGauge/ProxyGauge.app" ]; then
+  && [ "$DESTINATION" != "/Applications/ProxyGauge.app" ]; then
   echo "管理员更新目标不是受保护的正式安装目录。" >&2
   exit 2
 fi
@@ -138,7 +138,11 @@ if [ "$ACTUAL_SHA" != "$(/usr/bin/printf '%s' "$EXPECTED_SHA" | /usr/bin/tr '[:u
   exit 1
 fi
 
-STAGE_DIR=$(/usr/bin/mktemp -d "$DESTINATION_PARENT/.proxygauge-update.XXXXXX")
+if [ "$(/usr/bin/id -u)" -eq 0 ]; then
+  STAGE_DIR=$(/usr/bin/mktemp -d /private/var/tmp/com.valenlan.proxygauge-update-app.XXXXXX)
+else
+  STAGE_DIR=$(/usr/bin/mktemp -d "$DESTINATION_PARENT/.proxygauge-update.XXXXXX")
+fi
 BACKUP_APP="$STAGE_DIR/ProxyGauge.previous.app"
 EXTRACT_DIR="$STAGE_DIR/extracted"
 INSTALLED=0
@@ -204,21 +208,18 @@ if /usr/bin/find "$EXTRACTED_APP" -type l -print -quit | /usr/bin/grep -q .; the
   exit 1
 fi
 if [ "$(/usr/bin/id -u)" -eq 0 ]; then
-  for protected_parent in /Library "/Library/Application Support" "$DESTINATION_PARENT"; do
+  for protected_parent in "$DESTINATION_PARENT"; do
     if [ ! -d "$protected_parent" ] || [ -L "$protected_parent" ] \
       || [ "$(/usr/bin/stat -f '%u' "$protected_parent" 2>/dev/null || true)" != 0 ]; then
       echo "正式安装目录的所有者或类型不安全。" >&2
       exit 1
     fi
     protected_mode=$(/usr/bin/stat -f '%Lp' "$protected_parent" 2>/dev/null || true)
-    if [ -z "$protected_mode" ] || [ $((8#$protected_mode & 022)) -ne 0 ]; then
+    if [ -z "$protected_mode" ] || [ $((8#$protected_mode & 002)) -ne 0 ]; then
       echo "正式安装目录权限不安全。" >&2
       exit 1
     fi
   done
-  /bin/chmod -N "$DESTINATION_PARENT"
-  /usr/sbin/chown root:wheel "$DESTINATION_PARENT"
-  /bin/chmod 755 "$DESTINATION_PARENT"
   /bin/chmod -RN "$EXTRACTED_APP"
   /usr/sbin/chown -R root:wheel "$EXTRACTED_APP"
   /bin/chmod -R go-w "$EXTRACTED_APP"

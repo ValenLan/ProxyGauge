@@ -8,7 +8,8 @@ namespace ProxyGauge.ViewModels;
 public sealed class MainViewModel : ObservableObject, IDisposable
 {
     private readonly ConfigService _configService;
-    private readonly GuardClient _guardClient;
+    private readonly GuardActivationService _guardActivation;
+    private readonly Func<CancellationToken, Task> _disableGuard;
     private readonly Func<AppConfig, CancellationToken, Task<ProxySnapshot>> _probeAsync;
     private readonly Func<AppConfig, CancellationToken, Task<ExitSummary>> _exitResolver;
     private readonly Func<CancellationToken, Task<GuardStatus>> _guardStatusResolver;
@@ -24,12 +25,21 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private string _lastUpdated = "尚未刷新";
     private GuardStatus _guardStatus = GuardStatus.Unavailable();
     private bool _isGuardBusy;
+    private long _guardRevision;
+    private string? _activeGuardApplication;
     private ExitSummary _exitSummary = ExitSummary.Unavailable();
     private CancellationTokenSource? _activeRefreshCancellation;
+    private CancellationTokenSource? _exitSettlementCancellation;
+    private readonly TimeSpan _exitSettlementTimeout;
+    private bool _exitSettlementExpired;
     private Task _refreshLoopTask = Task.CompletedTask;
     private long _refreshGeneration;
     private bool _refreshRequested;
     private bool _disposed;
+    private bool _connectionHasSystemProxy;
+    private bool _connectionHasVirtualAdapter;
+    private string? _detectedClientName;
+    private bool _proxyStatusAvailable;
 
     public MainViewModel(
         ConfigService configService,
@@ -54,10 +64,15 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Func<AppConfig, CancellationToken, Task<ProxySnapshot>> probeAsync,
         Func<AppConfig, CancellationToken, Task<ExitSummary>> exitResolver,
         Func<CancellationToken, Task<GuardStatus>> guardStatusResolver,
-        Func<AppConfig, CancellationToken, Task<HealthReport>>? healthCheckAsync = null)
+        Func<AppConfig, CancellationToken, Task<HealthReport>>? healthCheckAsync = null,
+        GuardActivationService? guardActivation = null,
+        Func<CancellationToken, Task>? disableGuard = null,
+        TimeSpan? exitSettlementTimeout = null)
     {
         _configService = configService;
-        _guardClient = guardClient;
+        _guardActivation = guardActivation ?? new GuardActivationService(guardClient);
+        _disableGuard = disableGuard ?? guardClient.DisableAsync;
+        _exitSettlementTimeout = exitSettlementTimeout ?? TimeSpan.FromSeconds(16);
         _probeAsync = probeAsync;
         _exitResolver = exitResolver;
         _guardStatusResolver = guardStatusResolver;
@@ -82,63 +97,72 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public string HealthButtonLabel { get => _healthButtonLabel; private set => SetProperty(ref _healthButtonLabel, value); }
     public string LastUpdated { get => _lastUpdated; private set => SetProperty(ref _lastUpdated, value); }
     public string Endpoint => LocalEndpointPolicy.FormatEndpoint(_config.MixedHost, _config.MixedPort);
-    public string ConnectionValue => OverallLevel switch
+    public string ConnectionValue => BuildConnectionStatus(
+        _connectionHasSystemProxy,
+        _connectionHasVirtualAdapter,
+        _exitSummary.State == ExitSummaryState.Disconnected,
+        _proxyStatusAvailable,
+        OverallLevel,
+        Headline).Value;
+    public HealthLevel ConnectionLevel => BuildConnectionStatus(
+        _connectionHasSystemProxy,
+        _connectionHasVirtualAdapter,
+        _exitSummary.State == ExitSummaryState.Disconnected,
+        _proxyStatusAvailable,
+        OverallLevel,
+        Headline).Level;
+    public Brush ConnectionBrush => Palette.ForLevel(ConnectionLevel);
+    public string ConnectionDetail => BuildConnectionClientDetail(
+        _activeGuardApplication,
+        _detectedClientName,
+        _connectionHasSystemProxy,
+        _connectionHasVirtualAdapter,
+        _exitSummary.State == ExitSummaryState.Disconnected,
+        _proxyStatusAvailable);
+
+    internal static (string Value, HealthLevel Level) BuildConnectionStatus(
+        bool hasSystemProxy,
+        bool hasVirtualAdapter,
+        bool networkDisconnected,
+        bool probeAvailable,
+        HealthLevel fallbackLevel,
+        string fallbackHeadline)
     {
-        HealthLevel.Ok => "已连接",
-        HealthLevel.Warning => Headline,
-        HealthLevel.Error => "未连接",
-        _ => "检查中"
-    };
-    public string ConnectionDetail
-    {
-        get => BuildConnectionDetail(
-            Route.Title,
-            Route.Value,
-            Core.Level,
-            Port.Level,
-            Endpoint);
+        if (networkDisconnected) return ("无网络连接", HealthLevel.Error);
+        if (hasSystemProxy && hasVirtualAdapter)
+            return ("系统代理 + 虚拟网卡", HealthLevel.Warning);
+        if (hasVirtualAdapter) return ("虚拟网卡", HealthLevel.Ok);
+        if (hasSystemProxy) return ("系统代理", HealthLevel.Ok);
+        if (probeAvailable) return ("未检测到代理", HealthLevel.Idle);
+        return fallbackLevel switch
+        {
+            HealthLevel.Ok => ("代理路径", HealthLevel.Ok),
+            HealthLevel.Warning => (fallbackHeadline, HealthLevel.Warning),
+            HealthLevel.Error => ("代理状态不可用", HealthLevel.Error),
+            _ => ("检查中", HealthLevel.Idle)
+        };
     }
 
-    internal static string BuildConnectionDetail(
-        string routeTitle,
-        string routeValue,
-        HealthLevel coreLevel,
-        HealthLevel portLevel,
-        string endpoint)
+    internal static string BuildConnectionClientDetail(
+        string? selectedApplication,
+        string? detectedClientName,
+        bool hasSystemProxy,
+        bool hasVirtualAdapter,
+        bool networkDisconnected,
+        bool probeAvailable)
     {
-        if (routeTitle.Contains("其他 VPN / TUN", StringComparison.Ordinal))
-        {
-            return routeTitle.Contains("系统代理", StringComparison.Ordinal)
-                ? "其他 VPN / TUN · 与系统代理并存"
-                : "其他 VPN / TUN · 系统路径";
-        }
-        var mode = routeTitle switch
-        {
-            "TUN 路由" => "TUN",
-            "系统代理" => "系统代理",
-            "PAC 代理" => "PAC",
-            "自动代理" => "WPAD",
-            "双重入口" => "系统代理 + TUN",
-            "系统代理 + TUN" => "系统代理 + TUN",
-            _ => routeTitle
-        };
-        var mihomoCoreHealthy = coreLevel == HealthLevel.Ok;
-        var localMihomoEndpointHealthy = mihomoCoreHealthy && portLevel == HealthLevel.Ok;
-        if (mihomoCoreHealthy &&
-            routeTitle == "TUN 路由" &&
-            routeValue == "代表性路由已确认")
-        {
-            return localMihomoEndpointHealthy
-                ? $"Mihomo · TUN · {endpoint}"
-                : "Mihomo · TUN-only";
-        }
-
-        var verifiedMihomoPath = localMihomoEndpointHealthy &&
-             (routeTitle == "双重入口" && routeValue == "同时开启" ||
-              routeTitle == "系统代理" && routeValue == "已启用");
-        return verifiedMihomoPath
-            ? $"Mihomo · {mode} · {endpoint}"
-            : $"系统路径 · {mode}";
+        if (networkDisconnected) return "请检查网络连接";
+        if (!hasSystemProxy && !hasVirtualAdapter)
+            return probeAvailable ? "当前使用直连网络" : "代理状态暂时不可用";
+        var selectedName = string.IsNullOrWhiteSpace(selectedApplication)
+            ? null
+            : ProxyProbeService.DetectClientName([Path.GetFileNameWithoutExtension(selectedApplication)]);
+        var client = selectedName ?? detectedClientName;
+        if (!string.IsNullOrWhiteSpace(client)) return client;
+        if (hasSystemProxy && hasVirtualAdapter) return "其他 VPN / 代理已连接";
+        if (hasVirtualAdapter) return "其他 VPN 已连接";
+        if (hasSystemProxy) return "其他系统代理已启用";
+        return "未检测到代理客户端";
     }
 
     internal static bool HasDetectedSystemPath(ProxySnapshot snapshot) =>
@@ -155,6 +179,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public string HealthDetail => IsHealthCheckRunning ? "正在按方案检测…" : "按当前方案检查连接";
     public Brush GuardLevelBrush => _guardStatus.Kind switch
     {
+        GuardStatusKind.Enabled when _guardStatus.SelectionRequired => Palette.Warning,
         GuardStatusKind.Enabled => Palette.Success,
         GuardStatusKind.Fault => Palette.Error,
         _ => Palette.Idle
@@ -170,7 +195,10 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     {
         GuardStatusKind.Enabled when !_guardStatus.OwnedByCurrentUser =>
             "由其他 Windows 用户开启，退出界面后仍然生效",
-        GuardStatusKind.Enabled => "退出 ProxyGauge 后仍持续拦截直连；代理核心停止时会断网而非裸连",
+        GuardStatusKind.Enabled when _guardStatus.SelectionRequired =>
+            "多个代理核心仍在运行，当前入口无法确定。保护继续生效；请点击选择当前使用的代理。",
+        GuardStatusKind.Enabled => (_activeGuardApplication is null ? "" : $"已识别 {Path.GetFileNameWithoutExtension(_activeGuardApplication)}；") +
+            "持续拦截当前用户的公网直连，保留局域网；信任选中核心的 DIRECT，不覆盖系统服务和其他用户",
         GuardStatusKind.Fault => "持久规则不完整，请勿假设真实 IP 已受保护",
         GuardStatusKind.Disabled => "只有明确开启后才会拦截；关闭界面不改变状态",
         _ => "请使用 ProxyGauge MSI 安装系统保护服务"
@@ -183,9 +211,14 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             _ => "开启"
         };
     public bool GuardEnabled => _guardStatus.IsEnabled;
-    public bool CanChangeGuard => !IsBusy && !_isGuardBusy &&
-        _guardStatus.Kind != GuardStatusKind.Unavailable &&
-        _guardStatus.OwnedByCurrentUser;
+    public string GuardApplicationLabel => _guardStatus.SelectionRequired
+        ? "需要选择当前代理…"
+        : _guardStatus.ProxyExecutablePath.Length > 0
+        ? $"{Path.GetFileNameWithoutExtension(_guardStatus.ProxyExecutablePath)} · 切换"
+        : "选择当前代理…";
+    public string GuardPathFingerprint => $"{_guardStatus.Kind}|{_guardStatus.ProxyExecutablePath}|{_guardStatus.SelectionRequired}";
+    public bool CanChangeGuard => !_disposed && !_isGuardBusy &&
+        (_guardStatus.Kind == GuardStatusKind.Unavailable || _guardStatus.OwnedByCurrentUser);
 
     public HealthLevel OverallLevel
     {
@@ -198,6 +231,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 OnPropertyChanged(nameof(OverallBackground));
                 OnPropertyChanged(nameof(OverallMark));
                 OnPropertyChanged(nameof(ConnectionValue));
+                OnPropertyChanged(nameof(ConnectionLevel));
+                OnPropertyChanged(nameof(ConnectionBrush));
             }
         }
     }
@@ -260,7 +295,12 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
         _refreshRequested = true;
         _refreshGeneration++;
-        ApplyExit(ExitSummary.Checking());
+        if (!_exitSettlementExpired && _exitSummary.State != ExitSummaryState.Disconnected) ApplyExit(ExitSummary.Checking());
+        if (_exitSettlementCancellation is null)
+        {
+            _exitSettlementCancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetimeCancellation.Token);
+            _ = SettleExitDeadlineAsync(_exitSettlementCancellation.Token);
+        }
         _activeRefreshCancellation?.Cancel();
         return StartRefreshLoopIfNeeded();
     }
@@ -283,8 +323,31 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
 
         _refreshGeneration++;
-        ApplyExit(ExitSummary.Checking());
+        // No query is running during debounce or while the window is inactive.
+        if (_exitSummary.State != ExitSummaryState.Disconnected)
+            ApplyExit(_exitSettlementExpired ? ExitSummary.Unavailable() : ExitSummary.Waiting());
         _activeRefreshCancellation?.Cancel();
+    }
+
+    public void NotifyNetworkUnavailable()
+    {
+        if (_disposed) return;
+        _refreshGeneration++;
+        _activeRefreshCancellation?.Cancel();
+        ApplyExit(ExitSummary.Disconnected());
+    }
+
+    private async Task SettleExitDeadlineAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(_exitSettlementTimeout, token);
+            if (_disposed) return;
+            _exitSettlementExpired = true;
+            if (_exitSummary.State is ExitSummaryState.Checking or ExitSummaryState.Unavailable)
+                ApplyExit(ExitSummary.Unavailable());
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
     }
 
     private async Task RunRefreshLoopAsync()
@@ -324,13 +387,13 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         long generation,
         CancellationToken cancellationToken)
     {
-        var guardTask = InvokeSafely(() => _guardStatusResolver(cancellationToken));
+        // Publish local Guard status without waiting for public-IP or proxy probes.
+        var guardTask = RefreshGuardStatusAsync(cancellationToken);
         var exitTask = InvokeSafely(() => _exitResolver(config, cancellationToken));
         var probeTask = InvokeSafely(() => _probeAsync(config, cancellationToken));
 
         ProxySnapshot? snapshot = null;
         ExitSummary exitSummary = ExitSummary.Unavailable();
-        GuardStatus guardStatus = GuardStatus.Unavailable();
         try
         {
             snapshot = await probeTask;
@@ -357,14 +420,13 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
         try
         {
-            guardStatus = await guardTask;
+            await guardTask;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
         }
         catch
         {
-            guardStatus = GuardStatus.Unavailable();
         }
 
         if (_disposed || cancellationToken.IsCancellationRequested || generation != _refreshGeneration)
@@ -380,42 +442,101 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         {
             Apply(snapshot);
         }
+        _exitSettlementCancellation?.Cancel();
+        _exitSettlementCancellation?.Dispose();
+        _exitSettlementCancellation = null;
+        _exitSettlementExpired = false;
         ApplyExit(exitSummary);
-        ApplyGuard(guardStatus);
         LastUpdated = $"更新于 {DateTime.Now:HH:mm:ss}";
     }
 
-    public async Task ToggleGuardAsync()
+    public async Task RefreshGuardStatusAsync(CancellationToken cancellationToken = default)
     {
-        if (_disposed || !CanChangeGuard)
-        {
-            return;
-        }
+        var revision = _guardRevision;
+        var status = await _guardStatusResolver(cancellationToken);
+        if (!_disposed && !IsGuardBusy && !cancellationToken.IsCancellationRequested && revision == _guardRevision)
+            ApplyGuard(status);
+    }
 
+    public Task ToggleGuardAsync(Func<GuardApplicationRequest, Task<string?>>? chooseApplication = null) =>
+        ChangeGuardAsync(!_guardStatus.IsEnabled, chooseApplication);
+
+    public Task EnableGuardAsync(Func<GuardApplicationRequest, Task<string?>>? chooseApplication = null) =>
+        ChangeGuardAsync(true, chooseApplication);
+
+    public Task SwitchGuardApplicationAsync(Func<GuardApplicationRequest, Task<string?>> chooseApplication) =>
+        ChangeGuardAsync(true, chooseApplication, reconfigure: true, forceChoice: true);
+
+    private async Task ChangeGuardAsync(bool enable,
+        Func<GuardApplicationRequest, Task<string?>>? chooseApplication = null, bool reconfigure = false, bool forceChoice = false)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (IsGuardBusy) throw new InvalidOperationException("断网保护正在处理，请稍候。");
         IsGuardBusy = true;
+        ++_guardRevision; // Reject an in-flight refresh's stale pre-mutation Guard status.
         try
         {
-            if (_guardStatus.IsEnabled)
+            var before = await _guardStatusResolver(_lifetimeCancellation.Token);
+            ApplyGuard(before);
+            if (before.Kind == GuardStatusKind.Unavailable) throw new GuardCommandException("SERVICE_UNAVAILABLE");
+            if (!before.OwnedByCurrentUser) throw new GuardCommandException("OWNER_MISMATCH");
+            if (enable && before.Kind == GuardStatusKind.Enabled && !reconfigure) return;
+            if (!enable)
             {
-                await _guardClient.DisableAsync(_lifetimeCancellation.Token);
+                await _disableGuard(_lifetimeCancellation.Token);
+                _activeGuardApplication = null;
             }
             else
             {
-                await _guardClient.EnableAsync(_config.MixedPort, _lifetimeCancellation.Token);
+                async Task<string?> ChooseAndRemember(GuardApplicationRequest request)
+                {
+                    var path = await chooseApplication!(request);
+                    if (path is not null)
+                    {
+                        var config = _config.Clone();
+                        config.ProxyExecutablePath = ProxyApplicationSelection.NormalizePath(path);
+                        if (config.ProxyExecutablePath.Length == 0) throw new GuardCommandException("INVALID_PROXY_PATH");
+                        if (_config.ProxyExecutablePath.Length > 0 || !GuardActivationService.IsKnownCore(config.ProxyExecutablePath))
+                        {
+                            _configService.Save(config);
+                            _config = config;
+                        } // Choosing the current known core in auto mode does not pin future switches.
+                    }
+                    return path;
+                }
+                var path = await _guardActivation.EnableAsync(_config.ProxyExecutablePath,
+                    chooseApplication is null ? null : ChooseAndRemember, _lifetimeCancellation.Token, forceChoice);
+                if (path is null) return;
+                _activeGuardApplication = path;
             }
-            var status = await _guardClient.GetStatusAsync(_lifetimeCancellation.Token);
+            var status = await _guardStatusResolver(_lifetimeCancellation.Token);
             if (!_disposed)
             {
                 ApplyGuard(status);
             }
+            if (status.Kind != (enable ? GuardStatusKind.Enabled : GuardStatusKind.Disabled))
+                throw new GuardCommandException(status.Kind == GuardStatusKind.Unavailable ? "SERVICE_UNAVAILABLE" : "FILTER_FAULT");
         }
         catch (OperationCanceledException) when (_lifetimeCancellation.IsCancellationRequested)
         {
             // Window disposal cancels in-flight Guard requests and suppresses late state changes.
         }
+        catch
+        {
+            // An uncertain reply may follow a committed transaction: display the actual state.
+            try
+            {
+                var status = await _guardStatusResolver(_lifetimeCancellation.Token);
+                if (!_disposed) ApplyGuard(status);
+            }
+            catch { /* Preserve the original operation error. */ }
+            throw;
+        }
         finally
         {
+            ++_guardRevision;
             IsGuardBusy = false;
+            OnPropertyChanged(nameof(GuardEnabled)); // Reset the toggle after cancel/error, even if the value is unchanged.
             if (!_disposed)
             {
                 _ = StartRefreshLoopIfNeeded();
@@ -423,35 +544,13 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    public async Task ReconfigureGuardAsync()
+    public Task ReconfigureGuardAsync()
     {
         if (_disposed || !_guardStatus.IsEnabled || !_guardStatus.OwnedByCurrentUser)
         {
-            return;
+            return Task.CompletedTask;
         }
-
-        IsGuardBusy = true;
-        try
-        {
-            await _guardClient.EnableAsync(_config.MixedPort, _lifetimeCancellation.Token);
-            var status = await _guardClient.GetStatusAsync(_lifetimeCancellation.Token);
-            if (!_disposed)
-            {
-                ApplyGuard(status);
-            }
-        }
-        catch (OperationCanceledException) when (_lifetimeCancellation.IsCancellationRequested)
-        {
-            // Window disposal cancels in-flight Guard requests and suppresses late state changes.
-        }
-        finally
-        {
-            IsGuardBusy = false;
-            if (!_disposed)
-            {
-                _ = StartRefreshLoopIfNeeded();
-            }
-        }
+        return ChangeGuardAsync(true, reconfigure: true);
     }
 
     public async Task<HealthReport?> RunHealthCheckAsync()
@@ -519,6 +618,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
         _disposed = true;
         _lifetimeCancellation.Cancel();
+        _exitSettlementCancellation?.Cancel();
+        _exitSettlementCancellation?.Dispose();
         _refreshGeneration++;
         _refreshRequested = false;
         _activeRefreshCancellation?.Cancel();
@@ -538,6 +639,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     private void Apply(ProxySnapshot snapshot)
     {
+        _proxyStatusAvailable = true;
+        _connectionHasSystemProxy = snapshot.SystemProxyEnabled;
+        _connectionHasVirtualAdapter = snapshot.VirtualNetworkDetected || snapshot.TunDetected ||
+            snapshot.OtherTunnelDetected || snapshot.SplitTunnelDetected;
+        _detectedClientName = snapshot.DetectedClientName;
         Headline = snapshot.Headline;
         Detail = snapshot.Detail;
         OverallLevel = snapshot.OverallLevel;
@@ -545,11 +651,17 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Port.Update(snapshot.Port);
         Route.Update(snapshot.Route);
         OnPropertyChanged(nameof(ConnectionValue));
+        OnPropertyChanged(nameof(ConnectionLevel));
+        OnPropertyChanged(nameof(ConnectionBrush));
         OnPropertyChanged(nameof(ConnectionDetail));
     }
 
     private void ApplyUnavailableProbe()
     {
+        _proxyStatusAvailable = false;
+        _connectionHasSystemProxy = false;
+        _connectionHasVirtualAdapter = false;
+        _detectedClientName = null;
         Headline = "暂时无法读取状态";
         Detail = "请稍后刷新，或检查 Windows 网络组件";
         OverallLevel = HealthLevel.Error;
@@ -557,18 +669,24 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Port.Update(new MetricSnapshot("本地端口", "状态不可用", Endpoint, "端", HealthLevel.Error));
         Route.Update(new MetricSnapshot("流量入口", "状态不可用", "系统路径检测失败", "入", HealthLevel.Error));
         OnPropertyChanged(nameof(ConnectionValue));
+        OnPropertyChanged(nameof(ConnectionLevel));
+        OnPropertyChanged(nameof(ConnectionBrush));
         OnPropertyChanged(nameof(ConnectionDetail));
     }
 
     private void ApplyGuard(GuardStatus status)
     {
         _guardStatus = status;
+        if (status.ProxyExecutablePath.Length > 0) _activeGuardApplication = status.ProxyExecutablePath;
+        else if (!status.IsEnabled) _activeGuardApplication = null;
         OnPropertyChanged(nameof(GuardValue));
         OnPropertyChanged(nameof(GuardDetail));
         OnPropertyChanged(nameof(GuardButtonLabel));
         OnPropertyChanged(nameof(GuardEnabled));
         OnPropertyChanged(nameof(CanChangeGuard));
         OnPropertyChanged(nameof(GuardLevelBrush));
+        OnPropertyChanged(nameof(GuardApplicationLabel));
+        OnPropertyChanged(nameof(ConnectionDetail));
     }
 
     private void ApplyExit(ExitSummary summary)
@@ -578,5 +696,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(ExitLocation));
         OnPropertyChanged(nameof(ExitIpVersion));
         OnPropertyChanged(nameof(HasExitIpVersion));
+        OnPropertyChanged(nameof(ConnectionValue));
+        OnPropertyChanged(nameof(ConnectionLevel));
+        OnPropertyChanged(nameof(ConnectionBrush));
+        OnPropertyChanged(nameof(ConnectionDetail));
     }
 }

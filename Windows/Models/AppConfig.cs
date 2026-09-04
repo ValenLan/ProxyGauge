@@ -2,6 +2,8 @@ namespace ProxyGauge.Models;
 
 public sealed class AppConfig
 {
+    // Empty enables automatic known-core discovery; a custom choice pins an executable path.
+    public string ProxyExecutablePath { get; set; } = string.Empty;
     public string MixedHost { get; set; } = "127.0.0.1";
     public int MixedPort { get; set; } = 7890;
     public string ExpectedIp { get; set; } = string.Empty;
@@ -18,6 +20,7 @@ public sealed class AppConfig
 
     public AppConfig Clone() => new()
     {
+        ProxyExecutablePath = ProxyExecutablePath,
         MixedHost = MixedHost,
         MixedPort = MixedPort,
         ExpectedIp = ExpectedIp,

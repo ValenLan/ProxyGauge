@@ -73,9 +73,13 @@ struct ContentView: View {
                 .interpolation(.high)
                 .frame(width: 50, height: 50)
 
-            Text("快速查看代理连接、出口 IP、城市/地区与浏览器隐私状态。")
-                .font(CloudTypography.headerDetail)
-                .foregroundStyle(AppThemePalette.secondaryText)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("ProxyGauge")
+                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                Text("监控代理连接、出口 IP 与浏览器隐私")
+                    .font(CloudTypography.headerDetail)
+                    .foregroundStyle(AppThemePalette.secondaryText)
+            }
 
             Spacer()
 
@@ -105,10 +109,10 @@ struct ContentView: View {
                     Text("代理状态")
                         .font(CloudTypography.metricLabel)
                     HStack(spacing: 8) {
-                        Circle().fill(model.overallLevel.color).frame(width: 8, height: 8)
+                        Circle().fill(model.connectionLevel.color).frame(width: 8, height: 8)
                         Text(model.connectionValue)
                             .font(CloudTypography.metricValue())
-                            .foregroundStyle(model.overallLevel.color)
+                            .foregroundStyle(model.connectionLevel.color)
                     }
                     Text(model.connectionDetail)
                         .font(CloudTypography.actionDetail)
@@ -136,6 +140,12 @@ struct ContentView: View {
                 Text(model.killSwitch.value == "未配置" ? "未开启" : model.killSwitch.value)
                     .font(CloudTypography.metricValue())
                     .foregroundStyle(model.killSwitch.level.color)
+                Button(model.guardApplicationLabel) { model.chooseGuardApplication() }
+                    .font(.system(size: 10, weight: .medium))
+                    .buttonStyle(.plain)
+                    .foregroundStyle(model.guardSelection?.ambiguous == true ? .orange : AppThemePalette.secondaryText)
+                    .lineLimit(1)
+                    .help("选择代理时保护继续生效；macOS root 系统进程仍豁免")
             }
             Spacer(minLength: 4)
             Toggle("", isOn: Binding(
@@ -154,6 +164,41 @@ struct ContentView: View {
         .padding(18)
         .frame(maxWidth: .infinity, minHeight: 118)
         .dashboardCard()
+    }
+
+    private var guardApplicationPicker: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("选择当前使用的代理").font(.headline)
+            Text("保护开启时可直接切换。普通应用的公网直连仍受拦截；root 系统进程保持豁免。")
+                .font(.callout).foregroundStyle(AppThemePalette.secondaryText)
+            Button("自动识别当前代理") { model.selectGuardApplication(nil) }
+                .buttonStyle(BubbleActionButtonStyle(isPrimary: true))
+            ScrollView {
+                VStack(spacing: 8) {
+                    ForEach(model.guardApplications) { choice in
+                        Button { model.selectGuardApplication(choice.path) } label: {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(choice.name)
+                                Text(choice.uid == 0 ? choice.path : "请先启用此客户端的系统服务")
+                                    .font(.caption).foregroundStyle(AppThemePalette.secondaryText)
+                                    .lineLimit(2).truncationMode(.middle)
+                            }.frame(maxWidth: .infinity, alignment: .leading).padding(10)
+                        }
+                        .buttonStyle(.plain)
+                        .background(AppThemePalette.raisedSurface, in: RoundedRectangle(cornerRadius: 10))
+                        .disabled(choice.uid != 0)
+                    }
+                }
+            }.frame(maxHeight: 160)
+            if !model.guardSelectionError.isEmpty { Text(model.guardSelectionError).foregroundStyle(.orange).font(.caption) }
+            HStack {
+                Button("选择其他应用…") { model.chooseOtherGuardApplication() }
+                    .buttonStyle(BubbleActionButtonStyle())
+                Spacer()
+                Button("取消") { model.showGuardApplicationSelection = false }
+                    .buttonStyle(BubbleActionButtonStyle()).keyboardShortcut(.cancelAction)
+            }
+        }.padding(22).frame(width: 430)
     }
 
     private var currentExitCard: some View {
@@ -290,6 +335,7 @@ struct ContentView: View {
     }
 
     private var popupIdentity: String {
+        if model.showGuardApplicationSelection { return "guard-application" }
         if model.isInstallingUpdate { return "installing" }
         if let browserPrompt { return "browser-\(browserPrompt.id)" }
         if model.showDisableConfirmation { return "disable-protection" }
@@ -302,7 +348,9 @@ struct ContentView: View {
 
     @ViewBuilder
     private var popupLayer: some View {
-        if model.isInstallingUpdate {
+        if model.showGuardApplicationSelection {
+            BubbleOverlay { guardApplicationPicker }
+        } else         if model.isInstallingUpdate {
             BubbleOverlay {
                 HStack(spacing: 12) {
                     ProgressView().controlSize(.small)

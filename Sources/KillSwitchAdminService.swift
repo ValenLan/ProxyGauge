@@ -3,8 +3,9 @@ import Foundation
 enum KillSwitchAdminService {
     private static let allowedActions: Set<String> = ["on", "off"]
 
-    static func run(action: String, bundle: Bundle = .main) async -> (status: Int32, output: String) {
-        guard allowedActions.contains(action) else {
+    static func run(action: String, selection: String = "AUTO", bundle: Bundle = .main) async -> (status: Int32, output: String) {
+        guard allowedActions.contains(action),
+              selection == "AUTO" || GuardApplicationPolicy.validPath(selection) else {
             return (2, "非法的 Kill Switch 操作。")
         }
         do {
@@ -35,6 +36,7 @@ enum KillSwitchAdminService {
 
         return await invokeAdministratorBridge(
             action: action,
+            selection: selection,
             helper: helper,
             template: template,
             osascript: URL(fileURLWithPath: "/usr/bin/osascript")
@@ -50,6 +52,7 @@ enum KillSwitchAdminService {
     helper_expected=${3:-}
     template_expected=${4:-}
     action=${5:-}
+    selection=${6:-AUTO}
 
     case "$action" in on|off) ;; *) echo "非法的 Kill Switch 操作。" >&2; exit 2 ;; esac
     case "$helper_expected" in ''|*[!0-9a-f]*|?????????????????????????????????????????????????????????????????*) exit 2 ;; esac
@@ -120,36 +123,44 @@ enum KillSwitchAdminService {
     [ "$(/usr/bin/shasum -a 256 "$fixed_helper" | /usr/bin/awk '{print $1}')" = "$helper_expected" ] || exit 1
     [ "$(/usr/bin/shasum -a 256 "$fixed_template" | /usr/bin/awk '{print $1}')" = "$template_expected" ] || exit 1
 
+    set -- "$action"
+    [ "$action" != on ] || set -- "$action" "$selection"
     /usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin LC_ALL=C \
-      "$fixed_helper" "$action"
-    /bin/rm -f \
-      /Library/PrivilegedHelperTools/com.valenlan.proxygauge.killswitch \
-      /Library/PrivilegedHelperTools/proxygauge.conf.template
+      "$fixed_helper" "$@"
+    archive=/var/backups/proxygauge/legacy-components-$(/usr/bin/uuidgen)
+    /usr/bin/install -d -o root -g wheel -m 700 "$archive"
+    /usr/bin/printf '%s\n' '仅备份、非权威来源' > "$archive/BACKUP-ONLY.txt"
+    for old in /Library/PrivilegedHelperTools/com.valenlan.proxygauge.killswitch /Library/PrivilegedHelperTools/proxygauge.conf.template /etc/pf.conf.proxygauge.bak /etc/pf.conf.proxygauge-entry.bak; do
+      [ ! -f "$old" ] || /bin/mv "$old" "$archive/$(/usr/bin/basename "$old").$(/bin/date +%Y%m%d%H%M%S)"
+    done
     """#
 
     static let administratorAppleScript = #"""
     use scripting additions
     on run argv
-        if (count of argv) is not 6 then error "Invalid ProxyGauge administrator arguments"
+        if (count of argv) is not 7 then error "Invalid ProxyGauge administrator arguments"
         set bootstrapText to item 1 of argv
         set helperPath to item 2 of argv
         set templatePath to item 3 of argv
         set helperHash to item 4 of argv
         set templateHash to item 5 of argv
         set actionName to item 6 of argv
+        set selectionName to item 7 of argv
         if actionName is not in {"on", "off"} then error "Invalid ProxyGauge administrator action"
-        set commandText to "/usr/bin/lockf -k -t 120 /private/var/run/com.valenlan.proxygauge.killswitch.lock /bin/bash -p -c " & quoted form of bootstrapText & " proxygauge-killswitch-bootstrap " & quoted form of helperPath & " " & quoted form of templatePath & " " & quoted form of helperHash & " " & quoted form of templateHash & " " & quoted form of actionName
+        set commandText to "/usr/bin/lockf -k -t 120 /private/var/run/com.valenlan.proxygauge.killswitch.lock /bin/bash -p -c " & quoted form of bootstrapText & " proxygauge-killswitch-bootstrap " & quoted form of helperPath & " " & quoted form of templatePath & " " & quoted form of helperHash & " " & quoted form of templateHash & " " & quoted form of actionName & " " & quoted form of selectionName
         «event sysoexec» commandText given «class badm»:true
     end run
     """#
 
     static func invokeAdministratorBridge(
         action: String,
+        selection: String = "AUTO",
         helper: URL,
         template: URL,
         osascript: URL
     ) async -> (status: Int32, output: String) {
-        guard allowedActions.contains(action) else {
+        guard allowedActions.contains(action),
+              selection == "AUTO" || GuardApplicationPolicy.validPath(selection) else {
             return (2, "非法的 Kill Switch 操作。")
         }
         return await Task.detached(priority: .userInitiated) {
@@ -162,7 +173,7 @@ enum KillSwitchAdminService {
                 helper.path, template.path,
                 BundledResourceIntegrity.killSwitchHelperSHA256,
                 BundledResourceIntegrity.killSwitchTemplateSHA256,
-                action
+                action, selection
             ]
             process.environment = [
                 "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",

@@ -1,5 +1,18 @@
 #!/bin/bash
 
+# This read-only command enumerates executable paths, never process arguments.
+if [ "${1:-}" = guard-applications ]; then
+  /bin/ps -axo uid=,comm= | while read -r uid path; do
+    name="${path##*/}"
+    case "$name" in verge-mihomo|mihomo|clash-meta|clash|sing-box|singbox|xray|v2ray|iKuuuVPNCore|ikuuuvpncore) ;;
+      *) [ -n "${2:-}" ] && { [ "$path" = "$2" ] || [[ "$path" = "$2/"* ]]; } || continue ;;
+    esac
+    case "$path" in *$'\t'*|*$'\r'*|*:*) continue ;; esac
+    /usr/bin/printf '%s\t%s\n' "$uid" "$path"
+  done
+  exit 0
+fi
+
 RESOURCE_DIR=$(/usr/bin/dirname "$0")
 
 CHECK="$RESOURCE_DIR/proxygauge-check.sh"
@@ -286,7 +299,7 @@ fake_ip_route_interface() {
 }
 
 route_lookup_interface() {
-  local family destination result
+  local family destination result route_output route_status
   family="$1"
   destination="$2"
 
@@ -303,12 +316,19 @@ route_lookup_interface() {
     return
   fi
 
-  if result=$(/sbin/route -n get "-$family" "$destination" 2>/dev/null \
-    | /usr/bin/awk '/^[[:space:]]*interface:[[:space:]]*/ { print $2; exit }'); then
+  route_status=0
+  route_output=$(/sbin/route -n get "-$family" "$destination" 2>&1) || route_status=$?
+  if [ "$route_status" -eq 0 ]; then
+    result=$(/usr/bin/awk '/^[[:space:]]*interface:[[:space:]]*/ { print $2; exit }' \
+      <<< "$route_output")
     if /usr/bin/grep -Eq '^[A-Za-z0-9._-]+$' <<< "$result"; then
       /usr/bin/printf '%s\n' "$result"
       return
     fi
+  fi
+  if /usr/bin/grep -Fq 'not in table' <<< "$route_output"; then
+    /usr/bin/printf '%s\n' unavailable
+    return
   fi
   if route_family_has_default "$family"; then
     /usr/bin/printf '%s\n' unknown
@@ -390,8 +410,28 @@ mihomo_tun_device() {
   return 0
 }
 
+trusted_mihomo_tun_candidates() {
+  local raw candidate count normalized
+  local -a candidate_list
+  raw="${PROXYGAUGE_TRUSTED_MIHOMO_TUNS:-}"
+  [ -n "$raw" ] || return 1
+  /usr/bin/grep -Eq '^utun[0-9]+( utun[0-9]+){0,62}$' <<< "$raw" || return 1
+  IFS=' ' read -r -a candidate_list <<< "$raw"
+  count=0
+  normalized=""
+  for candidate in "${candidate_list[@]}"; do
+    count=$((count + 1))
+    [ "$count" -le 63 ] || return 1
+    if ! /usr/bin/grep -Fxq "$candidate" <<< "$normalized"; then
+      normalized="${normalized}${normalized:+$'\n'}${candidate}"
+    fi
+  done
+  [ -n "$normalized" ] || return 1
+  /usr/bin/printf '%s\n' "$normalized"
+}
+
 classify_tunnel_route() {
-  local device fake_device candidate inet_route inet6_route available_count route_interface
+  local device fake_device candidates inet_route inet6_route available_count route_interface
   if ! has_tun_route; then
     /usr/bin/printf '%s\n' none
     return
@@ -402,17 +442,17 @@ classify_tunnel_route() {
       return
       ;;
   esac
-  if ! device=$(mihomo_tun_device 2>/dev/null); then
-    /usr/bin/printf '%s\n' other
-    return
-  fi
-
-  fake_device=$(fake_ip_route_interface 2>/dev/null || true)
-  candidate="$device"
-  [ -n "$candidate" ] || candidate="$fake_device"
-  if [ -z "$candidate" ]; then
-    /usr/bin/printf '%s\n' mihomo-unconfirmed
-    return
+  if device=$(mihomo_tun_device 2>/dev/null); then
+    fake_device=$(fake_ip_route_interface 2>/dev/null || true)
+    [ -n "$device" ] || device="$fake_device"
+    if [ -z "$device" ]; then
+      /usr/bin/printf '%s\n' mihomo-unconfirmed
+      return
+    fi
+    candidates="$device"
+  elif ! candidates=$(trusted_mihomo_tun_candidates 2>/dev/null); then
+      /usr/bin/printf '%s\n' other
+      return
   fi
 
   inet_route=$(representative_route_interface inet \
@@ -429,7 +469,7 @@ classify_tunnel_route() {
   for route_interface in "$inet_route" "$inet6_route"; do
     [ "$route_interface" = unavailable ] && continue
     available_count=$((available_count + 1))
-    if [ "$route_interface" != "$candidate" ]; then
+    if ! /usr/bin/grep -Fxq "$route_interface" <<< "$candidates"; then
       /usr/bin/printf '%s\n' split
       return
     fi
@@ -689,6 +729,21 @@ runtime_mixed_port() {
   /usr/bin/printf '%s\n' "$port"
 }
 
+detected_running_client() {
+  {
+    if /usr/bin/pgrep -x verge-mihomo >/dev/null 2>&1; then /usr/bin/printf '%s\n' "Clash Verge Rev"; fi
+    if /usr/bin/pgrep -x mihomo >/dev/null 2>&1 \
+      || /usr/bin/pgrep -x clash-meta >/dev/null 2>&1 \
+      || /usr/bin/pgrep -x clash >/dev/null 2>&1; then /usr/bin/printf '%s\n' "Clash / Mihomo"; fi
+    if /usr/bin/pgrep -x sing-box >/dev/null 2>&1 \
+      || /usr/bin/pgrep -x singbox >/dev/null 2>&1; then /usr/bin/printf '%s\n' "sing-box"; fi
+    if /usr/bin/pgrep -x xray >/dev/null 2>&1; then /usr/bin/printf '%s\n' "Xray"; fi
+    if /usr/bin/pgrep -x v2ray >/dev/null 2>&1; then /usr/bin/printf '%s\n' "V2Ray"; fi
+    if /usr/bin/pgrep -x iKuuuVPNCore >/dev/null 2>&1 \
+      || /usr/bin/pgrep -x ikuuuvpncore >/dev/null 2>&1; then /usr/bin/printf '%s\n' "iKuuuVPN"; fi
+  } | /usr/bin/awk '!seen[$0]++ { count++; client=$0 } END { if (count == 1) print client }'
+}
+
 discover() {
   local client endpoint source active mode config_path port candidate
   local system_active tun_active mihomo_tun_unconfirmed split_tun_active
@@ -707,12 +762,9 @@ discover() {
 
   if [ -n "${PROXYGAUGE_DISCOVERY_CLIENT:-}" ]; then
     client="$PROXYGAUGE_DISCOVERY_CLIENT"
-  elif /usr/bin/pgrep -x verge-mihomo >/dev/null 2>&1; then
-    client="Clash Verge Rev"
-  elif /usr/bin/pgrep -x mihomo >/dev/null 2>&1; then
-    client="Mihomo"
-  elif /usr/bin/pgrep -x clash-meta >/dev/null 2>&1; then
-    client="Clash Meta"
+  else
+    candidate=$(detected_running_client)
+    [ -n "$candidate" ] && client="$candidate"
   fi
 
   if system_proxy_active; then system_active=1; fi
@@ -779,7 +831,6 @@ discover() {
     if [ -n "$port" ]; then
       endpoint="127.0.0.1:$port"
       source="Clash Verge 本地设置"
-      [ "$client" = "未识别" ] && client="Clash Verge Rev"
     fi
   fi
 
@@ -1091,7 +1142,7 @@ probe() {
     && [ -z "$system_active" ]; then
     overall="ok"
     headline="代理路径已确认"
-    detail="Mihomo TUN 的代表性 IPv4 / IPv6 路由已确认"
+    detail="Mihomo TUN 的可用公网路由已确认"
   elif [ "$core_count" = "1" ] && [ "$port_level" = "ok" ] \
     && [ -n "$system_active" ] \
     && [ -n "$tun_active$mihomo_tun_unconfirmed$split_tun_active$unknown_tun_active$other_tun_active" ]; then

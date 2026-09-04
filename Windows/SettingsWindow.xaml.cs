@@ -13,6 +13,7 @@ public partial class SettingsWindow : Window
     private readonly CancellationTokenSource _lifetimeCancellation = new();
     private bool _isDiscovering;
     private bool _isClosed;
+    private bool _isLoadingApplications;
 
     public SettingsWindow(
         AppConfig config,
@@ -26,6 +27,7 @@ public partial class SettingsWindow : Window
         _updateService = updateService;
         _runDiscoveryOnLoad = runDiscoveryOnLoad;
         Config = config.Clone();
+        LoadProxyApplications(Config.ProxyExecutablePath);
         HostTextBox.Text = Config.MixedHost;
         PortTextBox.Text = Config.MixedPort.ToString();
         ExpectedIpTextBox.Text = Config.ExpectedIp;
@@ -41,8 +43,59 @@ public partial class SettingsWindow : Window
 
     public AppConfig Config { get; private set; }
 
+    private void LoadProxyApplications(string selectedPath, IReadOnlyList<ProxyApplicationChoice>? applications = null)
+    {
+        var choices = new List<ProxyApplicationChoice>
+        {
+            new(ProxyApplicationSelection.DefaultLabel, string.Empty)
+        };
+        choices.AddRange(applications ?? ProxyApplicationSelection.FindRunningApplications());
+        if (selectedPath.Length > 0 && !choices.Any(choice =>
+                string.Equals(choice.ExecutablePath, selectedPath, StringComparison.OrdinalIgnoreCase)))
+        {
+            choices.Add(new ProxyApplicationChoice($"已选择 — {selectedPath}", selectedPath));
+        }
+        ProxyApplicationComboBox.ItemsSource = choices;
+        ProxyApplicationComboBox.SelectedItem = choices.First(choice =>
+            string.Equals(choice.ExecutablePath, selectedPath, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void BrowseProxyApplication_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "选择实际处理网络流量的代理核心（不是客户端启动器）",
+            Filter = "代理核心程序 (*.exe)|*.exe",
+            CheckFileExists = true,
+            Multiselect = false
+        };
+        if (dialog.ShowDialog(this) == true)
+        {
+            try { LoadProxyApplications(ProxyApplicationSelection.NormalizePath(dialog.FileName)); }
+            catch (System.IO.InvalidDataException exception) { ValidationText.Text = exception.Message; }
+        }
+    }
+
+    private async void RefreshProxyApplications_Click(object sender, RoutedEventArgs e) =>
+        await RefreshProxyApplicationsAsync();
+
+    private async Task RefreshProxyApplicationsAsync()
+    {
+        if (_isClosed || _isLoadingApplications) return;
+        _isLoadingApplications = true;
+        try
+        {
+            var choices = await ProxyApplicationSelection.FindRunningApplicationsAsync(_lifetimeCancellation.Token);
+            if (!_isClosed)
+                LoadProxyApplications((ProxyApplicationComboBox.SelectedItem as ProxyApplicationChoice)?.ExecutablePath ?? string.Empty, choices);
+        }
+        catch (OperationCanceledException) when (_lifetimeCancellation.IsCancellationRequested) { }
+        finally { _isLoadingApplications = false; }
+    }
+
     private async void Window_Loaded(object sender, RoutedEventArgs e)
     {
+        await RefreshProxyApplicationsAsync();
         if (_runDiscoveryOnLoad)
         {
             await DiscoverAsync();
@@ -201,6 +254,8 @@ public partial class SettingsWindow : Window
         }
 
         Config.MixedHost = host;
+        Config.ProxyExecutablePath =
+            (ProxyApplicationComboBox.SelectedItem as ProxyApplicationChoice)?.ExecutablePath ?? string.Empty;
         Config.MixedPort = port;
         Config.ExpectedIp = expectedIp.Length == 0 ? string.Empty : normalizedExpectedIp;
         Config.TimeoutSeconds = timeout;

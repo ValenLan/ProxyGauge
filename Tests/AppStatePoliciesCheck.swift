@@ -8,7 +8,62 @@ struct AppStatePoliciesCheck {
         try checkProbeParser()
         try checkRefreshLifecyclePolicy()
         try checkUpdateSchedule()
+        try checkGuardSelection()
+        try checkConnectionPresentation()
         print("ProxyGauge app-state policy tests passed.")
+    }
+
+    private static func checkConnectionPresentation() throws {
+        let system = ConnectionPathPresentation.make(mode: "系统代理")
+        try require(system.value == "系统代理" && system.isActive && !system.isCombined,
+                    "A system proxy must have a green single-path presentation.")
+        let tunnel = ConnectionPathPresentation.make(mode: "其他 VPN / TUN")
+        try require(tunnel.value == "虚拟网卡" && tunnel.isActive && !tunnel.isCombined,
+                    "An active VPN/TUN must be presented as a virtual adapter.")
+        let combined = ConnectionPathPresentation.make(mode: "系统代理 + 其他 VPN / TUN")
+        try require(combined.value == "系统代理 + 虚拟网卡" && combined.isCombined,
+                    "A simultaneous system proxy and virtual adapter must remain orange.")
+        try require(ConnectionPathPresentation.make(mode: "未开启").value == nil,
+                    "An inactive path must not fabricate a connection type.")
+        let offline = ConnectionStatusPresentation.make(
+            mode: "TUN", networkAvailable: false, probeAvailable: true)
+        try require(offline == .init(value: "无网络连接", detailOverride: "请检查网络连接", tone: .error),
+                    "A disconnected network must take precedence over stale proxy-path evidence.")
+        let direct = ConnectionStatusPresentation.make(
+            mode: "未开启", networkAvailable: true, probeAvailable: true)
+        try require(direct == .init(value: "未检测到代理", detailOverride: "当前使用直连网络", tone: .idle),
+                    "A connected network without a proxy must be a neutral direct connection.")
+        try require(ConnectionStatusPresentation.make(
+            mode: "状态不可用", networkAvailable: true, probeAvailable: false) == nil,
+                    "A failed probe must not be misreported as confirmed direct networking.")
+    }
+
+    private static func checkGuardSelection() throws {
+        let sample = "AUTO\n/Applications/Clash Verge.app/Contents/MacOS/verge-mihomo\n0\nlo0 utun0\n"
+        let snapshot = GuardSelectionSnapshot.parse(sample)
+        try require(snapshot?.tunnels == ["lo0", "utun0"], "Trusted runtime TUN selection must parse.")
+        try require(snapshot?.trustedMihomoTunnels == ["utun0"], "A root-selected Mihomo core must export only its TUN interfaces.")
+        try require(snapshot?.detectedClientName == "Clash Verge Rev", "The selected core must provide a privacy-safe client label.")
+        let otherCore = GuardSelectionSnapshot.parse(sample.replacingOccurrences(of: "verge-mihomo", with: "other-vpn"))
+        try require(otherCore?.trustedMihomoTunnels == nil, "Another VPN selection must not be attributed to Mihomo.")
+        let ambiguous = GuardSelectionSnapshot.parse(sample.replacingOccurrences(of: "\n0\n", with: "\n1\n"))
+        try require(ambiguous?.trustedMihomoTunnels == nil, "An ambiguous core selection must fail closed.")
+        try require(GuardRuntimeState.parse("enabled\n"), "The exact enabled runtime record must be accepted.")
+        try require(!GuardRuntimeState.parse("enabled\tfault\n"), "A decorated runtime record must not enable attribution.")
+        try require(!GuardRuntimeState.parse("disabled\n"), "A disabled guard must not export stale attribution.")
+        try require(GuardSelectionSnapshot.parse(sample + "extra\n") == nil, "Unexpected runtime records must fail closed.")
+        try require(GuardSelectionSnapshot.parse(sample.replacingOccurrences(of: "utun0", with: "en0")) == nil, "Physical interfaces cannot be granted as tunnels.")
+        try require(!GuardApplicationPolicy.validPath("/Applications/../bin/core"), "Traversal cannot reach root helper selection.")
+        try require(!GuardApplicationPolicy.validPath("/Applications/core\nother"), "Newline path cannot reach root helper selection.")
+        let choices = GuardApplicationPolicy.parseChoices("0\t/Applications/Clash Verge.app/core\n501\t/Applications/core\n0\t/Applications/Clash Verge.app/core\n")
+        try require(choices.count == 2 && choices[0].uid == 0, "Selection must preserve spaces and deduplicate paths.")
+        var loading = ExitLoadingGate()
+        let start = Date(timeIntervalSince1970: 0)
+        try require(loading.begin(at: start), "Initial refresh must show checking.")
+        try require(loading.begin(at: start.addingTimeInterval(7)), "Checking remains within deadline.")
+        try require(!loading.begin(at: start.addingTimeInterval(8)), "Repeated refresh cannot restart the eight-second deadline.")
+        loading.finish()
+        try require(loading.begin(at: start.addingTimeInterval(9)), "Completed refresh must allow a future fresh check.")
     }
 
     private static func checkHealthPlanPolicy() throws {

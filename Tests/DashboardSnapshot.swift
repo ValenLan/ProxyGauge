@@ -48,6 +48,13 @@ struct DashboardSnapshot {
             ? "2001:db8:85a3::8a2e:370:7334"
             : "198.51.100.24"
         model.exitLocation = "美国 · 洛杉矶"
+        model.showGuardApplicationSelection = snapshotState.hasPrefix("guard-selection")
+        if model.showGuardApplicationSelection {
+            model.guardApplications = [
+                .init(path: "/Applications/Clash Verge.app/Contents/MacOS/verge-mihomo", uid: 0),
+                .init(path: "/Applications/iKuuu VPN.app/Contents/MacOS/iKuuuVPNCore", uid: 0)
+            ]
+        }
         model.showConnectionSetup = snapshotState.hasPrefix("connection-setup")
 
         let dashboard = ContentView(model: model)

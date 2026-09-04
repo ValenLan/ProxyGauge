@@ -14,6 +14,9 @@ public sealed record GuardStatus(
     int FilterCount,
     string ErrorCode = "")
 {
+    public bool AutomaticSelection { get; init; }
+    public string ProxyExecutablePath { get; init; } = string.Empty;
+    public bool SelectionRequired { get; init; }
     public bool IsEnabled => Kind is GuardStatusKind.Enabled or GuardStatusKind.Fault;
     public bool IsHealthy => Kind == GuardStatusKind.Enabled;
 

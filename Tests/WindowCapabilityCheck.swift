@@ -13,6 +13,9 @@ struct WindowCapabilityCheck {
             defer: false
         )
         MainWindowCapability.enableFullScreen(for: window)
+        guard window.titleVisibility == .hidden else {
+            throw WindowCapabilityError.duplicateTitle
+        }
         guard window.styleMask.contains(.resizable) else {
             throw WindowCapabilityError.notResizable
         }
@@ -29,6 +32,7 @@ struct WindowCapabilityCheck {
         case notResizable
         case notFullScreenPrimary
         case zoomButtonDisabled
+        case duplicateTitle
     }
 }
 #endif

@@ -189,13 +189,27 @@ if /usr/bin/grep -Fq '/bin/rm -f "$ARCHIVE"' "$MAC_PACKAGER"; then
   echo "macOS packaging failures must preserve the previous verified archive." >&2
   exit 1
 fi
-/usr/bin/grep -Fq "install_dir='/Library/Application Support/ProxyGauge'" "$MAC_INSTALLER"
+/usr/bin/grep -Fq 'install_dir=/Applications' "$MAC_INSTALLER"
+/usr/bin/grep -Fq "legacy_system_app='/Library/Application Support/ProxyGauge/ProxyGauge.app'" "$MAC_INSTALLER"
 /usr/bin/grep -Fq '/usr/bin/lockf -k -t 120 /private/var/run/com.valenlan.proxygauge.install.lock' "$MAC_INSTALLER"
 /usr/bin/grep -Fq '/bin/bash -p -c' "$MAC_INSTALLER"
 /usr/bin/grep -Fq '/usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin LC_ALL=C' "$MAC_INSTALLER"
 /usr/bin/grep -Fq '/usr/bin/install -o root -g wheel -m 600 "$archive_source" "$staged_archive"' "$MAC_INSTALLER"
 /usr/bin/grep -Fq '/usr/sbin/chown -R root:wheel "$staged_app"' "$MAC_INSTALLER"
-/usr/bin/grep -Fq '/bin/ln -s "$destination" "$application_link"' "$MAC_INSTALLER"
+/usr/bin/grep -Fq '[ -d "$destination" ] && [ ! -L "$destination" ] || exit 1' "$MAC_INSTALLER"
+/usr/bin/grep -Fq '[ "$(/usr/bin/readlink "$destination")" = "$legacy_system_app" ] || exit 1' "$MAC_INSTALLER"
+/usr/bin/grep -Fq '/bin/mv "$destination" "$backup_app"' "$MAC_INSTALLER"
+/usr/bin/grep -Fq '/bin/mv "$legacy_system_app" "$backup_legacy_app"' "$MAC_INSTALLER"
+/usr/bin/grep -Fq '/bin/rmdir "$(/usr/bin/dirname "$legacy_system_app")" 2>/dev/null || true' "$MAC_INSTALLER"
+if /usr/bin/grep -Fq '/bin/ln -s "$destination"' "$MAC_INSTALLER"; then
+  echo "The macOS application entry must be a real bundle without Finder's alias badge." >&2
+  exit 1
+fi
+if /usr/bin/grep -Fq '/usr/sbin/chown root:wheel "$install_dir"' "$MAC_INSTALLER" || \
+   /usr/bin/grep -Fq '/bin/chmod 755 "$install_dir"' "$MAC_INSTALLER"; then
+  echo "The installer must preserve the system-managed ownership and mode of /Applications." >&2
+  exit 1
+fi
 /usr/bin/grep -Fq -- '--connect-timeout 15' "$MAC_INSTALLER"
 /usr/bin/grep -Fq -- '--max-time 300' "$MAC_INSTALLER"
 /usr/bin/grep -Fq -- "--proto-redir '=https'" "$MAC_INSTALLER"
@@ -207,8 +221,8 @@ if [ "$(/usr/bin/grep -Fc '/usr/bin/curl -q \' "$MAC_INSTALLER")" -ne 2 ]; then
   exit 1
 fi
 /usr/bin/grep -Fq 'if [ "$committed" -ne 1 ]; then' "$MAC_INSTALLER"
-/usr/bin/grep -Fq 'preserve_install_stage=1' "$MAC_INSTALLER"
-/usr/bin/grep -Fq '可恢复副本保留在受保护目录' "$MAC_INSTALLER"
+/usr/bin/grep -Fq 'mktemp -d /private/var/tmp/com.valenlan.proxygauge-install.XXXXXX' "$MAC_INSTALLER"
+/usr/bin/grep -Fq '可恢复副本保留在隔离目录' "$MAC_INSTALLER"
 if /usr/bin/grep -Fq 'INSTALL_DIR="$HOME/Applications"' "$MAC_INSTALLER"; then
   echo "The privileged macOS app must not be installed in a user-writable bundle path." >&2
   exit 1

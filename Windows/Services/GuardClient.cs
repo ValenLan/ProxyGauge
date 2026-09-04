@@ -51,6 +51,27 @@ public sealed class GuardClient
         GuardProtocol.RequireSuccess(response, "ENABLE");
     }
 
+    public async Task<IReadOnlyList<ProxyApplicationChoice>> GetApplicationsAsync(CancellationToken cancellationToken = default) =>
+        GuardProtocol.ParseApplications(await SendAsync("APPLICATIONS", cancellationToken));
+
+    public async Task EnableAsync(AppConfig config, CancellationToken cancellationToken = default)
+    {
+        var response = await SendAsync(
+            GuardProtocol.CreateApplicationEnableRequest(config.ProxyExecutablePath), cancellationToken);
+        GuardProtocol.RequireSuccess(response, "ENABLE");
+    }
+
+    public async Task<string> EnableAutomaticAsync(string seed = "AUTO", CancellationToken cancellationToken = default)
+    {
+        var selection = seed == "AUTO" ? "AUTO" : ProxyApplicationSelection.NormalizePath(seed);
+        if (selection.Length == 0) throw new GuardCommandException("INVALID_PROXY_PATH");
+        GuardProtocol.RequireSuccess(await SendAsync("ENABLE_AUTO\t" + selection, cancellationToken), "ENABLE");
+        var status = await GetStatusAsync(cancellationToken);
+        if (!status.IsHealthy || !status.AutomaticSelection || status.ProxyExecutablePath.Length == 0)
+            throw new GuardCommandException("FILTER_FAULT");
+        return status.ProxyExecutablePath;
+    }
+
     public async Task DisableAsync(CancellationToken cancellationToken = default)
     {
         var response = await SendAsync("DISABLE", cancellationToken);

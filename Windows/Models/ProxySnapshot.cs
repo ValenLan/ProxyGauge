@@ -24,4 +24,12 @@ public sealed record ProxySnapshot(
     MetricSnapshot Route,
     bool SystemProxyEnabled,
     bool TunDetected,
-    bool OtherTunnelDetected = false);
+    bool OtherTunnelDetected = false)
+{
+    public bool SplitTunnelDetected { get; init; }
+    public bool RouteLookupUnknown { get; init; }
+    public bool VirtualNetworkDetected { get; init; }
+    public string? DetectedClientName { get; init; }
+    public string? ConnectionLabel { get; init; }
+    public string? ConnectionSummary { get; init; }
+}
