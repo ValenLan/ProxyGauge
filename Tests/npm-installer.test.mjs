@@ -27,7 +27,7 @@ import {
   nativeArchitectureCommand,
   noProxyMatches,
   proxySettingsFor,
-  resolveNativeWindowsRuntime,
+  runtimeForNativeMachine,
   sanitizedCmdArguments,
   systemCmdPath,
   systemPowerShellPath,
@@ -483,7 +483,16 @@ test("embedded Windows PowerShell commands parse on Windows PowerShell 5.1", {
     assert.equal(result.status, 0, result.stderr);
   }
   assert.match(systemCmdPath(process.env), /\\System32\\cmd\.exe$/u);
-  assert.ok(["win-x64", "win-arm64"].includes(resolveNativeWindowsRuntime(process.env)));
+  assert.equal(runtimeForNativeMachine("8664", "WinNT"), "win-x64");
+  assert.equal(runtimeForNativeMachine("aa64", "WinNT"), "win-arm64");
+  assert.throws(
+    () => runtimeForNativeMachine("8664", "ServerNT"),
+    /不支持 Windows Server/
+  );
+  assert.throws(
+    () => runtimeForNativeMachine("014c", "WinNT"),
+    /不支持的 Windows 原生架构/
+  );
 });
 
 test("postinstall runs globally but not for a local dependency", () => {

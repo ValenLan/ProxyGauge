@@ -527,13 +527,7 @@ function resolveNativeWindowsRuntimeAtBase(environment, temporaryBase) {
     }
     const [machine, productType] = (result.stdout.trim().split(/\r?\n/u).at(-1) ?? "")
       .split("\t");
-    if (productType !== "WinNT") {
-      throw new Error("ProxyGauge 正式版不支持 Windows Server。");
-    }
-    const normalizedMachine = machine?.toUpperCase();
-    if (normalizedMachine === "AA64") runtime = "win-arm64";
-    else if (normalizedMachine === "8664") runtime = "win-x64";
-    else throw new Error(`不支持的 Windows 原生架构：${normalizedMachine || "未知"}`);
+    runtime = runtimeForNativeMachine(machine, productType);
   } catch (error) {
     detectionError = error;
   }
@@ -554,6 +548,16 @@ function resolveNativeWindowsRuntimeAtBase(environment, temporaryBase) {
     throw new Error(`架构检测完成，但临时目录未能安全清理：${cleanupError.message}`);
   }
   return runtime;
+}
+
+function runtimeForNativeMachine(machine, productType) {
+  if (productType !== "WinNT") {
+    throw new Error("ProxyGauge 正式版不支持 Windows Server。");
+  }
+  const normalizedMachine = machine?.toUpperCase();
+  if (normalizedMachine === "AA64") return "win-arm64";
+  if (normalizedMachine === "8664") return "win-x64";
+  throw new Error(`不支持的 Windows 原生架构：${normalizedMachine || "未知"}`);
 }
 
 function resolveNativeWindowsRuntime(environment) {
@@ -933,6 +937,7 @@ export {
   nativeArchitectureCommand,
   proxySettingsFor,
   resolveNativeWindowsRuntime,
+  runtimeForNativeMachine,
   sanitizedCmdArguments,
   systemCmdPath,
   systemPowerShellPath,

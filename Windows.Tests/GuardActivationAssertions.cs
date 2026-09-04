@@ -125,7 +125,7 @@ internal static class GuardActivationAssertions
                 "Automatic enable must leave stale port and unrelated settings byte-for-byte unchanged.");
             status = status with { AutomaticSelection = true, ProxyExecutablePath = Core, SelectionRequired = true };
             await model.RefreshGuardStatusAsync();
-            Check(model.GuardEnabled && model.GuardApplicationLabel == "需要选择当前代理…" &&
+            Check(model.GuardEnabled && model.GuardApplicationLabel == "选择当前代理" &&
                     model.GuardDetail.Contains("保护继续生效"),
                 "Ambiguous live cores must expose an actionable choice while retaining enabled protection.");
             await model.ToggleGuardAsync();
