@@ -7,6 +7,7 @@ struct ExitSummaryServiceCheck {
         try checkSummaryParsing()
         try checkConsensusSelection()
         try checkGenerationGate()
+        try checkPersistence()
         try checkEphemeralConfiguration()
         try await checkPrimarySummaryPath()
         try await checkPrimaryAndVerifierRunConcurrently()
@@ -251,6 +252,40 @@ struct ExitSummaryServiceCheck {
         let second = gate.request()
         try require(!gate.accepts(first), "A queued refresh must invalidate the older generation immediately.")
         try require(gate.accepts(second), "The newest refresh generation must be accepted.")
+    }
+
+    private static func checkPersistence() throws {
+        let suiteName = "com.valenlan.proxygauge.exit-cache-tests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            throw TestFailure(message: "Could not create isolated exit-summary preferences.")
+        }
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        try require(ExitSummaryPersistence.loadSummary(defaults: defaults) == nil,
+                    "A fresh install must not fabricate an exit summary.")
+        ExitSummaryPersistence.recordPathFingerprint(
+            String(repeating: "a", count: 64), clearSummary: false, defaults: defaults)
+        ExitSummaryPersistence.saveSummary(
+            .init(address: "8.8.8.8", location: "United States"), defaults: defaults)
+        try require(
+            ExitSummaryPersistence.loadSummary(defaults: defaults) ==
+                .init(address: "8.8.8.8", location: "United States"),
+            "A verified public exit must survive reopening without another public lookup."
+        )
+        try require(
+            ExitSummaryPersistence.loadPathFingerprint(defaults: defaults) ==
+                String(repeating: "a", count: 64),
+            "The local path fingerprint must survive reopening."
+        )
+
+        ExitSummaryPersistence.recordPathFingerprint(
+            String(repeating: "b", count: 64), clearSummary: true, defaults: defaults)
+        try require(ExitSummaryPersistence.loadSummary(defaults: defaults) == nil,
+                    "A changed local path must clear the stale cached exit before lookup.")
+        defaults.set("10.0.0.1", forKey: "proxygauge.exit-summary.address.v1")
+        defaults.set("Private", forKey: "proxygauge.exit-summary.location.v1")
+        try require(ExitSummaryPersistence.loadSummary(defaults: defaults) == nil,
+                    "A tampered non-public cached address must fail closed.")
     }
 
     private static func checkEphemeralConfiguration() throws {

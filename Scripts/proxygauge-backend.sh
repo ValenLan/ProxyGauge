@@ -1254,10 +1254,8 @@ probe() {
 }
 
 local_fingerprint() {
-  local cores listeners listener_signature route_signature
+  local cores listener_signature route_signature default_route_signature
   cores=$(core_pids | /usr/bin/awk 'NF' | /usr/bin/sort -n | /usr/bin/paste -sd, -)
-  listeners=$(matching_listener_pids "$MIXED_HOST" "$MIXED_PORT" 2>/dev/null \
-    | /usr/bin/sort -n | /usr/bin/paste -sd, -)
   listener_signature=$(core_listener_records | /usr/bin/sort | /usr/bin/cksum \
     | /usr/bin/awk '{ print $1 ":" $2 }')
   # Do not hash the complete netstat rows: macOS can include an Expire column
@@ -1276,8 +1274,17 @@ local_fingerprint() {
     }
   ' | /usr/bin/sort -u | /usr/bin/cksum \
     | /usr/bin/awk '{ print $1 ":" $2 }')
-  /usr/bin/printf 'endpoint=%s;core=%s;listener=%s;coreListeners=%s;routes=%s\n' \
-    "$MIXED" "$cores" "$listeners" "$listener_signature" "$route_signature"
+  # A physical-network switch can change the public exit while keeping the same
+  # interface name. Hash the stable default-route gateway and interface fields so
+  # reopening ProxyGauge can detect that change without contacting an IP service.
+  default_route_signature=$(tun_route_table | /usr/bin/awk '
+    tolower($1) == "default" {
+      print tolower($1) "|" tolower($2) "|" $3 "|" $4
+    }
+  ' | /usr/bin/sort -u | /usr/bin/cksum \
+    | /usr/bin/awk '{ print $1 ":" $2 }')
+  /usr/bin/printf 'core=%s;coreListeners=%s;routes=%s;defaultRoutes=%s\n' \
+    "$cores" "$listener_signature" "$route_signature" "$default_route_signature"
 }
 
 case "${1:-}" in

@@ -377,7 +377,17 @@ fingerprint_closed=$(PROXYGAUGE_CONFIG=/dev/null \
   PROXYGAUGE_TUN_ROUTE_TABLE='default 192.0.2.1 UGSc en0' \
   /bin/bash "$BACKEND" fingerprint)
 [ "$fingerprint_open" != "$fingerprint_closed" ]
-/usr/bin/grep -Fq 'core=41001;listener=41001' <<< "$fingerprint_open"
+/usr/bin/grep -Fq 'core=41001;coreListeners=' <<< "$fingerprint_open"
+if /usr/bin/grep -Fq 'endpoint=' <<< "$fingerprint_open"; then
+  echo 'Changing only ProxyGauge local settings must not change the system exit fingerprint.' >&2
+  exit 1
+fi
+fingerprint_other_network=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_CORE_PIDS=41001 \
+  PROXYGAUGE_DISCOVERY_LISTENER_RECORDS=$'p41001\nn127.0.0.1:53012' \
+  PROXYGAUGE_TUN_ROUTE_TABLE='default 10.0.0.1 UGSc en0' \
+  /bin/bash "$BACKEND" fingerprint)
+[ "$fingerprint_open" != "$fingerprint_other_network" ]
 
 single_mihomo_core=$(PROXYGAUGE_CORE_PIDS=41001 \
   PROXYGAUGE_SYSTEM_PROXY_ACTIVE=0 \

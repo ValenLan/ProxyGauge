@@ -1888,13 +1888,6 @@ Require(!MainViewModel.HasDetectedSystemPath(noSystemPathSnapshot) &&
         MainViewModel.HasDetectedSystemPath(otherVpnSnapshot),
     "System proxy/PAC, Mihomo TUN, and other VPN/TUN paths must bypass forced first-run port setup.");
 
-var pendingRefreshTimer = new System.Windows.Threading.DispatcherTimer();
-pendingRefreshTimer.Start();
-Require(MainWindow.StopPendingRefresh(pendingRefreshTimer) && !pendingRefreshTimer.IsEnabled,
-    "A manual refresh or settings workflow must consume the pending debounce before starting I/O.");
-Require(!MainWindow.StopPendingRefresh(pendingRefreshTimer),
-    "Stopping an already-consumed debounce must not invent another pending refresh.");
-
 var configTestDirectory = Path.Combine(
     Path.GetTempPath(),
     $"proxygauge-config-test.{Guid.NewGuid():N}");
@@ -2054,25 +2047,43 @@ try
         BindingFlags.Instance | BindingFlags.NonPublic)
         ?? throw new InvalidOperationException("The refresh race test could not locate ApplyExit.");
     applyExit.Invoke(viewModel, [new ExitSummary("9.9.9.9", "Switzerland")]);
-    var firstRefresh = viewModel.RefreshAsync();
+    await viewModel.RefreshAsync();
+    Require(resolverCalls == 0 && viewModel.ExitAddress == "9.9.9.9",
+        "Opening the window or manually refreshing local state must not query or clear the actual exit.");
+    Require(!viewModel.ObserveExitPathFingerprint(new string('a', 64)),
+        "The first local path fingerprint must establish a baseline without a public lookup.");
+
+    var firstRefresh = viewModel.RefreshExitAsync();
     Require(viewModel.ExitAddress == "正在检测" && !viewModel.HasExitIpVersion,
-        "Starting a refresh must immediately invalidate the previously displayed exit IP.");
+        "A path-change exit refresh must immediately invalidate the previously displayed exit IP.");
     await oldRequestStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
 
     viewModel.SaveConfig(new AppConfig { MixedPort = 7891, TimeoutSeconds = 3 });
-    Require(viewModel.ExitAddress == "等待重新检测",
-        "Saving settings during a refresh must keep the stale IP invalidated.");
-    _ = viewModel.RefreshAsync();
+    Require(viewModel.ExitAddress == "正在检测",
+        "Editing ProxyGauge's local endpoint must not masquerade as a system exit-path change.");
+    Require(viewModel.ObserveExitPathFingerprint(new string('b', 64)) &&
+            viewModel.ExitAddress == "等待重新检测",
+        "A changed path fingerprint must clear the stale exit before the debounce elapses.");
+    var nextRefresh = viewModel.RefreshExitAsync();
     releaseOldRequest.TrySetResult(true);
-    await firstRefresh.WaitAsync(TimeSpan.FromSeconds(5));
+    await Task.WhenAll(firstRefresh, nextRefresh).WaitAsync(TimeSpan.FromSeconds(5));
     Require(resolverCalls >= 2 && viewModel.ExitAddress == "1.1.1.1" &&
             viewModel.Endpoint.EndsWith(":7891", StringComparison.Ordinal),
-        "A canceled old-generation request must never overwrite the queued refresh for new settings.");
+        "A canceled old-generation lookup must never overwrite the latest path-change result.");
+    var persistedExit = new ExitSummaryStore(refreshConfigService.ConfigPath).Load();
+    Require(persistedExit.Summary?.Address == "1.1.1.1" &&
+            persistedExit.PathFingerprint == new string('b', 64),
+        "A verified exit and its path fingerprint must survive reopening without another lookup.");
 
     applyExit.Invoke(viewModel, [new ExitSummary("8.8.8.8", "United States")]);
-    viewModel.InvalidateExitSummary();
+    Require(!viewModel.ObserveExitPathFingerprint(new string('b', 64)),
+        "Duplicate route notifications with the same fingerprint must not query again.");
+    Require(viewModel.ObserveExitPathFingerprint(new string('c', 64)),
+        "A later path fingerprint must be recognized as another real change.");
     Require(viewModel.ExitAddress == "等待重新检测" && !viewModel.HasExitIpVersion,
         "A network-change invalidation must clear the old address before the debounce elapses.");
+    Require(new ExitSummaryStore(refreshConfigService.ConfigPath).Load().Summary is null,
+        "A changed path must remove the persisted stale exit before a replacement query.");
 }
 finally
 {

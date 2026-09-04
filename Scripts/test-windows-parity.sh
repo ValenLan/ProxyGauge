@@ -64,7 +64,7 @@ fi
 /usr/bin/grep -Fq 'NetworkChange.NetworkAvailabilityChanged +=' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
 /usr/bin/grep -Fq 'NetworkChange.NetworkAvailabilityChanged -=' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
 /usr/bin/grep -Fq 'ScheduleDebouncedRefresh' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
-/usr/bin/grep -Fq '_routeChangeMonitor = new RouteChangeMonitor(DispatchNetworkRefresh);' \
+/usr/bin/grep -Fq '_routeChangeMonitor = new RouteChangeMonitor(DispatchObservedExitPathChange);' \
   "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
 /usr/bin/grep -Fq '_ = _routeChangeMonitor.Start();' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
 /usr/bin/grep -Fq '_routeChangeMonitor.Dispose();' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
@@ -112,9 +112,16 @@ fi
 /usr/bin/grep -Fq 'ApplyExit(ExitSummary.Checking())' "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
 /usr/bin/grep -Fq 'x:Name="ExitCardTitle" Text="系统实际出口"' "$PROJECT_ROOT/Windows/MainWindow.xaml"
 /usr/bin/grep -Fq '会看到该路径的出口 IP 和请求时间，但不会收到代理配置、订阅或凭据' "$PROJECT_ROOT/Windows/MainWindow.xaml"
-/usr/bin/grep -Fq 'Interval = TimeSpan.FromMinutes(5)' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
-/usr/bin/grep -Fq 'Interval = TimeSpan.FromSeconds(1)' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
-/usr/bin/grep -Fq 'DetectProxyConfigurationChange' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'WmSettingChange' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'WindowMessageHook' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'ReadExitPathFingerprint' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'RefreshExitAsync()' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+/usr/bin/grep -Fq 'ExitSummaryStore' "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
+if /usr/bin/grep -Eq 'Interval = TimeSpan.From(Minutes\(5\)|Seconds\(1\))|PeriodicRefreshTimer|ProxyConfigurationTimer' \
+  "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"; then
+  echo 'The Windows dashboard must not poll the actual exit on a timer.' >&2
+  exit 1
+fi
 /usr/bin/grep -Fq 'WinHttpGetIEProxyConfigForCurrentUser' "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
 /usr/bin/grep -Fq 'Environment.GetEnvironmentVariable("HTTPS_PROXY")' "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
 /usr/bin/grep -Fq 'public bool MayBypassExitLookup' "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"

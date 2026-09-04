@@ -19,6 +19,76 @@ struct ExitSummarySnapshot: Equatable, Sendable {
         address: "暂时无法读取",
         location: "请检查当前网络连接"
     )
+
+    static let waitingForPathChange = ExitSummarySnapshot(
+        address: "等待出口变化",
+        location: "路由、系统代理或 VPN 变化后自动检测"
+    )
+
+    static let waitingAfterPathChange = ExitSummarySnapshot(
+        address: "等待重新检测",
+        location: "网络路径已变化，旧出口已清除"
+    )
+}
+
+enum ExitSummaryPersistence {
+    private static let addressKey = "proxygauge.exit-summary.address.v1"
+    private static let locationKey = "proxygauge.exit-summary.location.v1"
+    private static let pathFingerprintKey = "proxygauge.exit-summary.path-fingerprint.v1"
+    private static let maximumLocationScalars = 160
+
+    static func loadSummary(defaults: UserDefaults = .standard) -> ExitSummarySnapshot? {
+        guard let rawAddress = defaults.string(forKey: addressKey),
+              let address = PublicIPAddress.normalize(rawAddress),
+              let location = defaults.string(forKey: locationKey),
+              isSafeLocation(location) else {
+            return nil
+        }
+        return ExitSummarySnapshot(address: address, location: location)
+    }
+
+    static func loadPathFingerprint(defaults: UserDefaults = .standard) -> String? {
+        guard let value = defaults.string(forKey: pathFingerprintKey),
+              value.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil else {
+            return nil
+        }
+        return value
+    }
+
+    static func saveSummary(
+        _ summary: ExitSummarySnapshot,
+        defaults: UserDefaults = .standard
+    ) {
+        guard let address = PublicIPAddress.normalize(summary.address),
+              isSafeLocation(summary.location) else { return }
+        defaults.set(address, forKey: addressKey)
+        defaults.set(summary.location, forKey: locationKey)
+    }
+
+    static func recordPathFingerprint(
+        _ fingerprint: String,
+        clearSummary: Bool,
+        defaults: UserDefaults = .standard
+    ) {
+        guard fingerprint.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil else {
+            return
+        }
+        defaults.set(fingerprint, forKey: pathFingerprintKey)
+        if clearSummary {
+            defaults.removeObject(forKey: addressKey)
+            defaults.removeObject(forKey: locationKey)
+        }
+    }
+
+    private static func isSafeLocation(_ value: String) -> Bool {
+        guard !value.isEmpty,
+              value.unicodeScalars.count <= maximumLocationScalars else { return false }
+        return value.unicodeScalars.allSatisfy { scalar in
+            !CharacterSet.controlCharacters.contains(scalar)
+                && ![0x061C, 0x200E, 0x200F, 0x202A, 0x202B, 0x202C, 0x202D, 0x202E,
+                     0x2066, 0x2067, 0x2068, 0x2069].contains(scalar.value)
+        }
+    }
 }
 
 private struct ParsedExitSummary: Sendable {

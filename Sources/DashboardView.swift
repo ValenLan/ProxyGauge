@@ -224,7 +224,7 @@ struct ContentView: View {
         .padding(18)
         .frame(maxWidth: .infinity, minHeight: 144, alignment: .leading)
         .dashboardCard()
-        .help("出口查询遵循 macOS 当前系统网络路径；前台打开时最多每 5 分钟自动核验一次。每次至少由两个独立公网查询服务交叉确认，它们会看到该路径的出口 IP 和请求时间，但不会收到代理配置、订阅或凭据。")
+        .help("出口查询遵循 macOS 当前系统网络路径；打开页面、切回应用和手动刷新不会发起查询，只有网络路由、系统代理或 VPN/TUN 路径变化后才检测。每次至少由两个独立公网查询服务交叉确认，它们会看到该路径的出口 IP 和请求时间，但不会收到代理配置、订阅或凭据。")
         .overlay(alignment: .topTrailing) {
             HeaderUtilityButton(
                 symbol: copiedExitAddress ? "checkmark" : "doc.on.doc",

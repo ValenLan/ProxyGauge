@@ -203,34 +203,24 @@ struct AppStatePoliciesCheck {
     }
 
     private static func checkRefreshLifecyclePolicy() throws {
-        try require(!RefreshLifecyclePolicy.shouldSchedulePathRefresh(
-            isSatisfied: true,
-            isInitialPath: false,
-            isApplicationActive: false
-        ), "A background path change must not start a public exit lookup.")
-        try require(RefreshLifecyclePolicy.shouldSchedulePathRefresh(
-            isSatisfied: false,
-            isInitialPath: true,
-            isApplicationActive: true
-        ), "An active app must refresh local state when its initial path is offline.")
-        try require(!RefreshLifecyclePolicy.shouldSchedulePathRefresh(
-            isSatisfied: true,
-            isInitialPath: true,
-            isApplicationActive: true
-        ), "The initial satisfied callback must not duplicate the startup refresh.")
-        try require(RefreshLifecyclePolicy.shouldSchedulePathRefresh(
-            isSatisfied: true,
-            isInitialPath: false,
-            isApplicationActive: true
-        ), "A foreground route change must refresh the actual exit.")
-        try require(RefreshLifecyclePolicy.shouldRefreshOnActivation(
-            secondsSinceLastRequest: 0.5,
-            hasPendingInvalidation: true
-        ), "A background invalidation must bypass the ordinary activation debounce.")
-        try require(!RefreshLifecyclePolicy.shouldRefreshOnActivation(
-            secondsSinceLastRequest: 0.5,
-            hasPendingInvalidation: false
-        ), "A duplicate activation without invalidation must remain debounced.")
+        try require(!ExitRefreshTriggerPolicy.pathDidChange(
+            previous: nil, current: "path-a"
+        ), "The first local fingerprint must establish a baseline without a public lookup.")
+        try require(!ExitRefreshTriggerPolicy.pathDidChange(
+            previous: "path-a", current: "path-a"
+        ), "An unchanged route notification must not query the actual exit.")
+        try require(ExitRefreshTriggerPolicy.pathDidChange(
+            previous: "path-a", current: "path-b"
+        ), "A changed route fingerprint must request a new actual-exit lookup.")
+        try require(!ExitRefreshTriggerPolicy.shouldStartLookup(
+            isApplicationActive: true, hasPendingPathChange: false
+        ), "Opening or activating the dashboard alone must not query the actual exit.")
+        try require(!ExitRefreshTriggerPolicy.shouldStartLookup(
+            isApplicationActive: false, hasPendingPathChange: true
+        ), "A background path change must remain pending instead of issuing public traffic.")
+        try require(ExitRefreshTriggerPolicy.shouldStartLookup(
+            isApplicationActive: true, hasPendingPathChange: true
+        ), "A real path change may query once the application is active.")
     }
 
     private static func checkUpdateSchedule() throws {

@@ -3,8 +3,67 @@ import CFNetwork
 import CryptoKit
 import Darwin
 import Network
+import SystemConfiguration
 import SwiftUI
 import UniformTypeIdentifiers
+
+private final class SystemNetworkChangeMonitor: @unchecked Sendable {
+    private let queue = DispatchQueue(label: "com.valenlan.proxygauge.system-network-change")
+    private let onChange: @Sendable () -> Void
+    private var store: SCDynamicStore?
+
+    init(onChange: @escaping @Sendable () -> Void) {
+        self.onChange = onChange
+    }
+
+    func start() {
+        guard store == nil else { return }
+        var context = SCDynamicStoreContext(
+            version: 0,
+            info: Unmanaged.passUnretained(self).toOpaque(),
+            retain: nil,
+            release: nil,
+            copyDescription: nil
+        )
+        guard let store = SCDynamicStoreCreate(
+            kCFAllocatorDefault,
+            "ProxyGauge.NetworkChange" as CFString,
+            { _, _, info in
+                guard let info else { return }
+                let monitor = Unmanaged<SystemNetworkChangeMonitor>
+                    .fromOpaque(info)
+                    .takeUnretainedValue()
+                monitor.onChange()
+            },
+            &context
+        ) else { return }
+
+        let keys = [
+            "State:/Network/Global/IPv4",
+            "State:/Network/Global/IPv6",
+            "State:/Network/Global/Proxies",
+            "Setup:/Network/Global/Proxies"
+        ] as CFArray
+        let patterns = [
+            "State:/Network/Service/.*/IPv4",
+            "State:/Network/Service/.*/IPv6",
+            "State:/Network/Service/.*/Proxies"
+        ] as CFArray
+        guard SCDynamicStoreSetNotificationKeys(store, keys, patterns),
+              SCDynamicStoreSetDispatchQueue(store, queue) else { return }
+        self.store = store
+    }
+
+    func stop() {
+        guard let store else { return }
+        SCDynamicStoreSetDispatchQueue(store, nil)
+        self.store = nil
+    }
+
+    deinit {
+        stop()
+    }
+}
 
 enum HealthLevel: String, Sendable {
     case ok
@@ -115,7 +174,8 @@ final class ProxyModel: ObservableObject {
     @Published var isDiscoveringConnection = false
     @Published var discovery = ProxyDiscovery()
     @Published var healthPlan = ProxyGaugePreferences.loadHealthPlan()
-    @Published private var exitSummary = ExitSummarySnapshot.checking
+    @Published private var exitSummary =
+        ExitSummaryPersistence.loadSummary() ?? .waitingForPathChange
     var exitAddress: String {
         get { exitSummary.address }
         set { exitSummary = ExitSummarySnapshot(address: newValue, location: exitSummary.location) }
@@ -211,14 +271,14 @@ final class ProxyModel: ObservableObject {
     private let networkMonitorQueue = DispatchQueue(label: "com.valenlan.proxygauge.network-path")
     private var receivedInitialNetworkPath = false
     @Published private var networkPathSatisfied: Bool?
-    private var lastRefreshRequestAt = Date()
-    private var needsRefreshWhenActive = false
     private var activeRefreshTask: Task<Void, Never>?
+    private var activeExitRefreshTask: Task<ExitSummarySnapshot, Never>?
     private var automaticRefreshTask: Task<Void, Never>?
-    private var periodicRefreshTask: Task<Void, Never>?
-    private var systemProxyMonitorTask: Task<Void, Never>?
-    private var lastSystemProxyFingerprint: String?
-    private var lastLocalStateFingerprint: String?
+    private var pathEvaluationTask: Task<Void, Never>?
+    private var exitRefreshGeneration = RefreshGenerationGate()
+    private var observedPathFingerprint: String?
+    private var needsExitRefreshWhenActive = false
+    private var systemNetworkChangeMonitor: SystemNetworkChangeMonitor?
 
     private let backendPath = Bundle.main.path(forResource: "proxygauge-backend", ofType: "sh")
 
@@ -229,11 +289,11 @@ final class ProxyModel: ObservableObject {
         self.exitSummaryService = exitSummaryService
         guard startImmediately else { return }
         startNetworkMonitoring()
-        startPeriodicRefresh()
-        startSystemProxyMonitoring()
+        startSystemNetworkMonitoring()
         Task { [weak self] in
             guard let self else { return }
             await self.refresh()
+            await self.evaluateCurrentPathChange(isStartup: true)
             let defaults = UserDefaults.standard
             let setupCompleted = defaults.bool(forKey: ProxyGaugePreferences.setupCompletedKey)
             let savedEndpointIsValid = defaults.string(
@@ -252,9 +312,10 @@ final class ProxyModel: ObservableObject {
 
     deinit {
         activeRefreshTask?.cancel()
+        activeExitRefreshTask?.cancel()
         automaticRefreshTask?.cancel()
-        periodicRefreshTask?.cancel()
-        systemProxyMonitorTask?.cancel()
+        pathEvaluationTask?.cancel()
+        systemNetworkChangeMonitor?.stop()
         networkMonitor?.cancel()
     }
 
@@ -311,15 +372,8 @@ final class ProxyModel: ObservableObject {
     }
 
     func refresh() async {
-        // A direct/manual refresh supersedes a pending debounced refresh. The
-        // scheduled task clears this property before calling us, so it never
-        // cancels itself and accidentally marks the new exit lookup stale.
-        automaticRefreshTask?.cancel()
-        automaticRefreshTask = nil
-        lastRefreshRequestAt = Date()
         let requestedGeneration = refreshGeneration.request()
         let requestedDiscoveryGeneration = discoveryGeneration.request()
-        beginExitLoading()
 
         if isRefreshing {
             refreshQueued = true
@@ -359,44 +413,27 @@ final class ProxyModel: ObservableObject {
     }
 
     func applicationDidBecomeActive() {
-        startPeriodicRefresh()
-        startSystemProxyMonitoring()
-        let now = Date()
-        guard RefreshLifecyclePolicy.shouldRefreshOnActivation(
-            secondsSinceLastRequest: now.timeIntervalSince(lastRefreshRequestAt),
-            hasPendingInvalidation: needsRefreshWhenActive
+        schedulePathEvaluation()
+        guard ExitRefreshTriggerPolicy.shouldStartLookup(
+            isApplicationActive: true,
+            hasPendingPathChange: needsExitRefreshWhenActive
         ) else { return }
-        needsRefreshWhenActive = false
-        lastRefreshRequestAt = now
-        invalidateExitSummary(
-            as: networkPathSatisfied == false ? .disconnected : .checking
-        )
-        scheduleAutomaticRefresh()
+        needsExitRefreshWhenActive = false
+        scheduleExitRefresh()
     }
 
     func applicationDidResignActive() {
         if automaticRefreshTask != nil {
-            needsRefreshWhenActive = true
+            needsExitRefreshWhenActive = true
         }
         automaticRefreshTask?.cancel()
         automaticRefreshTask = nil
-        periodicRefreshTask?.cancel()
-        periodicRefreshTask = nil
-        systemProxyMonitorTask?.cancel()
-        systemProxyMonitorTask = nil
     }
 
     private func performRefresh(generation: UInt64, discoveryGeneration: UInt64) async {
         guardSelection = GuardSelectionSnapshot.read()
         async let probeResult = execute("probe")
         async let discoveryResult = execute("discover")
-        let exit = networkPathSatisfied == false
-            ? ExitSummarySnapshot.disconnected
-            : await exitSummaryService.resolve()
-        if refreshGeneration.accepts(generation) {
-            finishExitLoading(exit)
-        }
-
         let (result, discovered) = await (probeResult, discoveryResult)
         guard refreshGeneration.accepts(generation) else { return }
 
@@ -437,64 +474,42 @@ final class ProxyModel: ObservableObject {
                 let isInitialPath = !self.receivedInitialNetworkPath
                 self.receivedInitialNetworkPath = true
                 self.networkPathSatisfied = isSatisfied
-                let shouldSchedule = RefreshLifecyclePolicy.shouldSchedulePathRefresh(
-                    isSatisfied: isSatisfied,
-                    isInitialPath: isInitialPath,
-                    isApplicationActive: NSApplication.shared.isActive
-                )
-                if !NSApplication.shared.isActive {
-                    self.needsRefreshWhenActive = true
-                }
                 if !isSatisfied {
                     self.automaticRefreshTask?.cancel()
                     self.invalidateExitSummary(as: .disconnected)
-                    if shouldSchedule {
-                        self.scheduleAutomaticRefresh()
-                    }
+                    if !isInitialPath { self.schedulePathEvaluation() }
                     return
                 }
-                if isInitialPath { return }
-                self.invalidateExitSummary(as: .checking)
-                if shouldSchedule {
-                    self.scheduleAutomaticRefresh()
-                }
+                if !isInitialPath { self.schedulePathEvaluation() }
             }
         }
         monitor.start(queue: networkMonitorQueue)
     }
 
     private func invalidateExitSummary(as snapshot: ExitSummarySnapshot) {
-        _ = refreshGeneration.request()
+        _ = exitRefreshGeneration.request()
         if snapshot == .checking { beginExitLoading() } else { finishExitLoading(snapshot) }
-        activeRefreshTask?.cancel()
+        activeExitRefreshTask?.cancel()
     }
 
-    private func startSystemProxyMonitoring() {
-        detectSystemProxyChange()
-        systemProxyMonitorTask?.cancel()
-        systemProxyMonitorTask = Task { @MainActor [weak self] in
-            while !Task.isCancelled {
-                do {
-                    try await Task.sleep(for: .seconds(2))
-                } catch {
-                    return
-                }
-                guard let self else { return }
-                guard NSApplication.shared.isActive else { continue }
-                self.detectSystemProxyChange()
-                await self.detectLocalStateChange()
+    private func startSystemNetworkMonitoring() {
+        let monitor = SystemNetworkChangeMonitor { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.schedulePathEvaluation()
             }
         }
+        systemNetworkChangeMonitor = monitor
+        monitor.start()
     }
 
-    private func detectSystemProxyChange() {
-        let current = Self.systemProxyFingerprint()
-        defer { lastSystemProxyFingerprint = current }
-        guard let previous = lastSystemProxyFingerprint,
-              previous != current else { return }
-        invalidateExitSummary(as: networkPathSatisfied == false ? .disconnected : .checking)
-        guard networkPathSatisfied != false else { return }
-        scheduleAutomaticRefresh()
+    private func schedulePathEvaluation() {
+        pathEvaluationTask?.cancel()
+        pathEvaluationTask = Task { @MainActor [weak self] in
+            do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+            guard let self, !Task.isCancelled else { return }
+            self.pathEvaluationTask = nil
+            await self.evaluateCurrentPathChange(isStartup: false)
+        }
     }
 
     private static func systemProxyFingerprint() -> String {
@@ -517,17 +532,37 @@ final class ProxyModel: ObservableObject {
         return digest.map { String(format: "%02x", $0) }.joined()
     }
 
-    private func detectLocalStateChange() async {
+    private func currentPathFingerprint() async -> String? {
         let result = await execute("fingerprint")
-        guard result.status == 0 else { return }
-        let current = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !current.isEmpty else { return }
-        defer { lastLocalStateFingerprint = current }
-        guard let previous = lastLocalStateFingerprint,
-              previous != current else { return }
-        invalidateExitSummary(as: networkPathSatisfied == false ? .disconnected : .checking)
+        guard result.status == 0 else { return nil }
+        let local = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !local.isEmpty else { return nil }
+        let material = "proxy=\(Self.systemProxyFingerprint())\nlocal=\(local)"
+        return SHA256.hash(data: Data(material.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+
+    private func evaluateCurrentPathChange(isStartup: Bool) async {
+        guard let current = await currentPathFingerprint() else { return }
+        let previous = observedPathFingerprint ?? ExitSummaryPersistence.loadPathFingerprint()
+        observedPathFingerprint = current
+        guard let previous else {
+            ExitSummaryPersistence.recordPathFingerprint(current, clearSummary: false)
+            return
+        }
+        guard ExitRefreshTriggerPolicy.pathDidChange(previous: previous, current: current) else {
+            return
+        }
+
+        ExitSummaryPersistence.recordPathFingerprint(current, clearSummary: true)
+        invalidateExitSummary(as: networkPathSatisfied == false ? .disconnected : .waitingAfterPathChange)
         guard networkPathSatisfied != false else { return }
-        scheduleAutomaticRefresh()
+        if isStartup || NSApplication.shared.isActive {
+            scheduleExitRefresh()
+        } else {
+            needsExitRefreshWhenActive = true
+        }
     }
 
     private static func stableDescription(_ value: Any) -> String {
@@ -555,7 +590,11 @@ final class ProxyModel: ObservableObject {
         mode.contains("TUN") || mode.contains("VPN") || mode.contains("系统代理") || mode.contains("PAC")
     }
 
-    private func scheduleAutomaticRefresh() {
+    private func scheduleExitRefresh() {
+        guard NSApplication.shared.isActive else {
+            needsExitRefreshWhenActive = true
+            return
+        }
         automaticRefreshTask?.cancel()
         automaticRefreshTask = Task { @MainActor [weak self] in
             do {
@@ -567,27 +606,37 @@ final class ProxyModel: ObservableObject {
             guard let self else { return }
             self.automaticRefreshTask = nil
             guard NSApplication.shared.isActive else {
-                self.needsRefreshWhenActive = true
+                self.needsExitRefreshWhenActive = true
                 return
             }
             await self.refresh()
+            guard !Task.isCancelled, NSApplication.shared.isActive else {
+                self.needsExitRefreshWhenActive = true
+                return
+            }
+            await self.refreshExitSummary()
         }
     }
 
-    private func startPeriodicRefresh() {
-        periodicRefreshTask?.cancel()
-        periodicRefreshTask = Task { @MainActor [weak self] in
-            while !Task.isCancelled {
-                do {
-                    try await Task.sleep(for: .seconds(5 * 60))
-                } catch {
-                    return
-                }
-                guard let self else { return }
-                guard NSApplication.shared.isActive,
-                      self.networkPathSatisfied != false else { continue }
-                await self.refresh()
-            }
+    private func refreshExitSummary() async {
+        guard !Task.isCancelled else { return }
+        guard networkPathSatisfied != false else {
+            invalidateExitSummary(as: .disconnected)
+            return
+        }
+        let generation = exitRefreshGeneration.request()
+        beginExitLoading()
+        activeExitRefreshTask?.cancel()
+        let task = Task { [exitSummaryService] in
+            await exitSummaryService.resolve()
+        }
+        activeExitRefreshTask = task
+        let result = await task.value
+        guard exitRefreshGeneration.accepts(generation) else { return }
+        activeExitRefreshTask = nil
+        finishExitLoading(result)
+        if PublicIPAddress.normalize(result.address) != nil {
+            ExitSummaryPersistence.saveSummary(result)
         }
     }
 

@@ -37,15 +37,15 @@ internal static class NetworkStateAssertions
                 new HealthCheckService(probe, new MihomoPlanInspectionService(new MihomoControllerService())), new GuardClient(),
                 (_, _) => Task.FromException<ProxySnapshot>(new IOException()), (_, token) => release.Task.WaitAsync(token),
                 _ => Task.FromResult(GuardStatus.Unavailable()), exitSettlementTimeout: TimeSpan.FromMilliseconds(80));
-            var refresh = model.RefreshAsync();
+            var refresh = model.RefreshExitAsync();
             await Task.Delay(120);
             Check(model.ExitAddress == "暂时无法读取", "A refresh storm or stalled resolver must not leave an endless spinner.");
             model.InvalidateExitSummary();
-            var next = model.RefreshAsync();
+            var next = model.RefreshExitAsync();
             Check(model.ExitAddress != "正在检测", "Repeated invalidations must not reset an expired settlement deadline.");
             model.NotifyNetworkUnavailable();
             Check(model.ExitAddress == "已断开网络连接", "Physical disconnection must immediately clear stale IP/loading state.");
-            var recovery = model.RefreshAsync();
+            var recovery = model.RefreshExitAsync();
             Check(model.ExitAddress == "已断开网络连接", "Background retries must preserve the disconnected label until a result arrives.");
             release.TrySetResult(new ExitSummary("1.1.1.1", "Australia"));
             await Task.WhenAll(refresh, next, recovery);
