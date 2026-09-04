@@ -109,17 +109,18 @@ internal static class GuardActivationAssertions
                 (_, token) => releaseExit.Task.WaitAsync(token),
                 _ => Task.FromResult(status), guardActivation: activation,
                 disableGuard: _ => { status = new(GuardStatusKind.Disabled, true, 0); return Task.CompletedTask; });
-            var refresh = model.RefreshAsync();
-            Check(model.IsBusy && model.CanChangeGuard, "Public-IP refresh must not disable the Guard switch.");
+            var exitRefresh = model.RefreshExitAsync();
+            Check(model.ExitAddress == "正在检测" && model.CanChangeGuard,
+                "Public-IP refresh must not disable the Guard switch.");
             var changes = 0;
             model.PropertyChanged += (_, args) => { if (args.PropertyName == nameof(model.GuardEnabled)) ++changes; };
             await model.ToggleGuardAsync(_ => throw new Exception("The actual button path must not request setup for iKuuu"))
                 .WaitAsync(TimeSpan.FromSeconds(2));
-            Check(model.GuardEnabled && model.GuardValue == "已开启" && model.IsBusy &&
+            Check(model.GuardEnabled && model.GuardValue == "已开启" && model.ExitAddress == "正在检测" &&
                     model.GuardDetail.Contains("iKuuuVPNCore") && enabledPath == Core,
                 "The complete button flow must auto-enable while the public-IP task is still blocked.");
             releaseExit.SetResult(ExitSummary.Unavailable());
-            await refresh;
+            await exitRefresh;
             Check(model.GuardEnabled, "A pre-enable refresh must not overwrite the new Guard state.");
             Check(File.ReadAllBytes(configService.ConfigPath).SequenceEqual(configBytes),
                 "Automatic enable must leave stale port and unrelated settings byte-for-byte unchanged.");
