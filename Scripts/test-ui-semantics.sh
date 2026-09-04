@@ -75,6 +75,14 @@ fi
 /usr/bin/grep -Fq '.background(AppThemePalette.canvas)' "$DASHBOARD_SOURCE"
 /usr/bin/grep -Fq '.tint(AppThemePalette.accent)' "$DASHBOARD_SOURCE"
 /usr/bin/grep -Fq 'Click="GuardButton_Click"' "$WINDOWS_MAIN"
+/usr/bin/grep -Fq 'if model.guardSelection?.ambiguous == true {' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq 'guardSelection?.ambiguous == true ? "选择当前代理" : ""' "$APP_SOURCE"
+/usr/bin/grep -Fq 'Visibility="{Binding ShowGuardApplicationAction, Converter={StaticResource BooleanToVisibilityConverter}}"' "$WINDOWS_MAIN"
+/usr/bin/grep -Fq 'public bool ShowGuardApplicationAction => GuardEnabled && _guardStatus.SelectionRequired;' "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
+if /usr/bin/grep -Fq '"切换代理"' "$APP_SOURCE" "$DASHBOARD_SOURCE" "$WINDOWS_MAIN" "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"; then
+  echo 'The Guard card must not show a routine switch-proxy subtitle.' >&2
+  exit 1
+fi
 /usr/bin/grep -Fq 'x:Name="ExitCardTitle" Text="系统实际出口" FontSize="11" FontWeight="Medium"' "$WINDOWS_MAIN"
 /usr/bin/grep -Fq 'FontSize="18" FontWeight="SemiBold" Margin="0,8,0,0"' "$WINDOWS_MAIN"
 /usr/bin/grep -Fq 'Text="IP 纯净度" FontSize="14" FontWeight="SemiBold"' "$WINDOWS_MAIN"

@@ -220,7 +220,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public bool GuardEnabled => _guardStatus.IsEnabled;
     public string GuardApplicationLabel => _guardStatus.SelectionRequired
         ? "选择当前代理"
-        : "切换代理";
+        : string.Empty;
+    public bool ShowGuardApplicationAction => GuardEnabled && _guardStatus.SelectionRequired;
     public string GuardPathFingerprint => $"{_guardStatus.Kind}|{_guardStatus.ProxyExecutablePath}|{_guardStatus.SelectionRequired}";
     public bool CanChangeGuard => !_disposed && !_isGuardBusy &&
         (_guardStatus.Kind == GuardStatusKind.Unavailable || _guardStatus.OwnedByCurrentUser);
@@ -691,6 +692,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(CanChangeGuard));
         OnPropertyChanged(nameof(GuardLevelBrush));
         OnPropertyChanged(nameof(GuardApplicationLabel));
+        OnPropertyChanged(nameof(ShowGuardApplicationAction));
         OnPropertyChanged(nameof(ConnectionDetail));
     }
 

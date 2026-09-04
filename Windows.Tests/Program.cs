@@ -1032,6 +1032,7 @@ var wpfThread = new Thread(() =>
 
         var applyGuard = typeof(ProxyGauge.ViewModels.MainViewModel).GetMethod(
             "ApplyGuard", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var guardApplicationButton = (Button)mainWindow.FindName("GuardApplicationButton");
         var applyProxy = typeof(ProxyGauge.ViewModels.MainViewModel).GetMethod(
             "Apply", BindingFlags.Instance | BindingFlags.NonPublic)
             ?? throw new InvalidOperationException("The deterministic WPF test could not locate Apply.");
@@ -1046,8 +1047,10 @@ var wpfThread = new Thread(() =>
         RenderPixels(mainRoot, 820, 550, Artifact("main-guard-on.png"));
         Require(mainViewModel.ConnectionValue == "虚拟网卡" &&
                 mainViewModel.ConnectionDetail == "Clash Verge Rev · verge-mihomo" &&
-                mainViewModel.GuardApplicationLabel == "切换代理",
-            "The proxy card must show the client and core while the guard card keeps a short switch action.");
+                mainViewModel.GuardApplicationLabel.Length == 0 &&
+                !mainViewModel.ShowGuardApplicationAction &&
+                guardApplicationButton.Visibility == Visibility.Collapsed,
+            "The proxy card must show the client and core while the normal guard card has no secondary action text.");
         applyExit.Invoke(mainViewModel, [ExitSummary.Disconnected()]);
         RenderPixels(mainRoot, 820, 550, Artifact("main-disconnected-guard-on.png"));
         Require(mainViewModel.ExitAddress == "已断开网络连接" && ipVersionBorder.Visibility == Visibility.Collapsed &&
@@ -1058,6 +1061,8 @@ var wpfThread = new Thread(() =>
         RenderPixels(mainRoot, 820, 550, Artifact("main-disconnected-selection-required.png"));
         Require(mainViewModel.ExitAddress == "已断开网络连接" && ipVersionBorder.Visibility == Visibility.Collapsed &&
                 mainViewModel.GuardApplicationLabel == "选择当前代理" &&
+                mainViewModel.ShowGuardApplicationAction &&
+                guardApplicationButton.Visibility == Visibility.Visible &&
                 mainViewModel.GuardDetail.Contains("保护继续生效"),
             "An ambiguous entry must visibly request a selection while keeping protection and offline state visible.");
         applyGuard.Invoke(mainViewModel, [new GuardStatus(GuardStatusKind.Disabled, true, 0)]);

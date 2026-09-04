@@ -84,7 +84,7 @@ final class ProxyModel: ObservableObject {
     private var exitDeadlineTask: Task<Void, Never>?
     private static let guardPreferenceKey = "proxygauge.guard.selectedCore.v1"
     var guardApplicationLabel: String {
-        guardSelection?.ambiguous == true ? "选择当前代理" : "切换代理"
+        guardSelection?.ambiguous == true ? "选择当前代理" : ""
     }
     private var disconnectedByGuard: Bool {
         guard killSwitch.level == .ok, let guardSelection,

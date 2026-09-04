@@ -54,6 +54,11 @@ struct DashboardSnapshot {
         model.exitLocation = "美国 · 洛杉矶"
         model.showGuardApplicationSelection = snapshotState.hasPrefix("guard-selection")
         if model.showGuardApplicationSelection {
+            model.guardSelection = GuardSelectionSnapshot.parse(
+                "AUTO\n/Applications/Clash Verge.app/Contents/MacOS/verge-mihomo\n1\nlo0 utun0\n"
+            )
+        }
+        if model.showGuardApplicationSelection {
             model.guardApplications = [
                 .init(path: "/Applications/Clash Verge.app/Contents/MacOS/verge-mihomo", uid: 0),
                 .init(path: "/Applications/iKuuu VPN.app/Contents/MacOS/iKuuuVPNCore", uid: 0)

@@ -140,11 +140,13 @@ struct ContentView: View {
                 Text(model.killSwitch.value == "未配置" ? "未开启" : model.killSwitch.value)
                     .font(CloudTypography.metricValue())
                     .foregroundStyle(model.killSwitch.level.color)
-                Button(model.guardApplicationLabel) { model.chooseGuardApplication() }
-                    .font(.system(size: 10, weight: .medium))
-                    .buttonStyle(.plain)
-                    .foregroundStyle(model.guardSelection?.ambiguous == true ? .orange : AppThemePalette.secondaryText)
-                    .help("选择代理时保护继续生效；macOS root 系统进程仍豁免")
+                if model.guardSelection?.ambiguous == true {
+                    Button(model.guardApplicationLabel) { model.chooseGuardApplication() }
+                        .font(.system(size: 10, weight: .medium))
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.orange)
+                        .help("选择代理时保护继续生效；macOS root 系统进程仍豁免")
+                }
             }
             Spacer(minLength: 4)
             Toggle("", isOn: Binding(

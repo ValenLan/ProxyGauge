@@ -1,6 +1,6 @@
 {
   "name": "proxygauge",
-  "version": "1.6.6",
+  "version": "1.6.7",
   "description": "面向 macOS 与 Windows 11 的原生代理状态、链路验证与防泄漏面板。",
   "license": "MIT",
   "author": "ValenLan",
