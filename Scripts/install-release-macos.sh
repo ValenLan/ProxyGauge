@@ -365,6 +365,6 @@ fi
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
   -f "$DESTINATION" >/dev/null 2>&1 || true
 
-echo "已安装 ProxyGauge $TAG：$DESTINATION"
-echo "可从 $DESTINATION 打开；这是无替身角标的受保护应用本体。"
+echo "已安装 ProxyGauge ${TAG}：${DESTINATION}"
+echo "可从 ${DESTINATION} 打开；这是无替身角标的受保护应用本体。"
 echo "当前正式版采用 ad-hoc 签名且尚未公证；脚本不会绕过 macOS 安全检查。"

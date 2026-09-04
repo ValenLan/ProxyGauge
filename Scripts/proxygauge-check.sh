@@ -915,7 +915,7 @@ EXT=$(printf '%s' "$EXIT_VALUES" | select_consensus_ip)
 if [ -n "$EXT" ]; then
   UNIQUE_EXITS=$(printf '%s' "$EXIT_VALUES" | /usr/bin/awk 'NF' | /usr/bin/sort -u | /usr/bin/wc -l | /usr/bin/tr -d ' ')
   if [ "$UNIQUE_EXITS" -gt 1 ]; then
-    check warn "多数查询源确认出口 $EXT，但仍有来源不一致"
+    check warn "多数查询源确认出口 ${EXT}，但仍有来源不一致"
   else
     check ok "$EXIT_RESPONSES 个查询源确认出口一致 ($EXT)"
   fi
@@ -1014,9 +1014,9 @@ elif local_port_open "$GOOGLE_MIXED_HOST" "$GOOGLE_MIXED_PORT"; then
     if [ -n "$normalized_value" ]; then
       GOOGLE_EXIT_VALUES="${GOOGLE_EXIT_VALUES}${normalized_value}"$'\n'
       GOOGLE_EXIT_RESPONSES=$((GOOGLE_EXIT_RESPONSES+1))
-      echo "  ℹ️ $service（$SECONDARY_LABEL）: $normalized_value"
+      echo "  ℹ️ ${service}（${SECONDARY_LABEL}）: $normalized_value"
     else
-      echo "  ℹ️ $service（$SECONDARY_LABEL）: 未响应"
+      echo "  ℹ️ ${service}（${SECONDARY_LABEL}）: 未响应"
     fi
   done <<'EOF'
 ipify|https://api.ipify.org
@@ -1028,7 +1028,7 @@ EOF
   if [ -n "$GOOGLE_EXT" ]; then
     GOOGLE_UNIQUE_EXITS=$(printf '%s' "$GOOGLE_EXIT_VALUES" | /usr/bin/awk 'NF' | /usr/bin/sort -u | /usr/bin/wc -l | /usr/bin/tr -d ' ')
     if [ "$GOOGLE_UNIQUE_EXITS" -gt 1 ]; then
-      check warn "多数查询源确认 $SECONDARY_LABEL 出口 $GOOGLE_EXT，但仍有来源不一致"
+      check warn "多数查询源确认 ${SECONDARY_LABEL} 出口 ${GOOGLE_EXT}，但仍有来源不一致"
     else
       check ok "$GOOGLE_EXIT_RESPONSES 个查询源确认 $SECONDARY_LABEL 出口一致 ($GOOGLE_EXT)"
     fi

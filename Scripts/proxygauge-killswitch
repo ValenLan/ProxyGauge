@@ -729,7 +729,7 @@ install_rules() {
     return 1
   fi
   if [ ! -r "$MAIN_CONF" ]; then
-    echo "❌ 无法读取 $MAIN_CONF，未做改动"
+    echo "❌ 无法读取 ${MAIN_CONF}，未做改动"
     return 1
   fi
   if [ ! -x "$PFCTL" ]; then
@@ -864,7 +864,7 @@ ensure_existing_anchor_registered() {
     return 1
   fi
   if [ ! -r "$MAIN_CONF" ]; then
-    echo "❌ 无法读取 $MAIN_CONF，未做改动"
+    echo "❌ 无法读取 ${MAIN_CONF}，未做改动"
     return 1
   fi
 

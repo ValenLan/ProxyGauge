@@ -68,6 +68,20 @@ test("Windows installer carries a UTF-8 BOM for Windows PowerShell 5.1", () => {
   assert.deepEqual([...installer.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
 });
 
+test("shell and PowerShell variables are delimited before non-ASCII prose", () => {
+  const scripts = [
+    "Scripts/install-release-macos.sh",
+    "Scripts/install-release-windows.ps1",
+    "Scripts/proxygauge-check.sh",
+    "Scripts/proxygauge-killswitch"
+  ];
+  const unsafeInterpolation = /\$[A-Za-z_][A-Za-z0-9_]*[^\x00-\x7f]/gu;
+  for (const script of scripts) {
+    const source = readFileSync(resolve(projectRoot, script), "utf8");
+    assert.doesNotMatch(source, unsafeInterpolation, script);
+  }
+});
+
 test("standalone Windows installer crosses UAC with a protected hash-checked worker", () => {
   const installer = readFileSync(
     resolve(projectRoot, "Scripts/install-release-windows.ps1"),
@@ -127,7 +141,7 @@ test("npm package version matches both native applications", () => {
 
   assert.equal(packageVersion(), packageMetadata.version);
   assert.equal(macVersion, packageMetadata.version);
-  assert.equal(macBuild, "52");
+  assert.equal(macBuild, "53");
   assert.equal(windowsVersion, packageMetadata.version);
 });
 

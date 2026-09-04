@@ -11,7 +11,7 @@ $MinimumWindowsBuild = 22000
 function Assert-ExactReleaseAsset($Release, [string]$Name, [string]$Version) {
     $Matches = @($Release.assets | Where-Object { $_.name -eq $Name })
     if ($Matches.Count -ne 1 -or [string]::IsNullOrWhiteSpace($Matches[0].browser_download_url)) {
-        throw "正式版缺少唯一的 $Name。"
+        throw "正式版缺少唯一的 ${Name}。"
     }
     $Expected = "https://github.com/$Repository/releases/download/v$Version/$Name"
     $Candidate = [Uri]$Matches[0].browser_download_url
@@ -655,7 +655,7 @@ exit $ExitCode
     }
 
     if ($InstallerExitCode -notin @(0, 1641, 3010)) {
-        throw "MSI 安装失败，退出代码：$InstallerExitCode；安装包复制、复核或 Windows Installer 未完成。"
+        throw "MSI 安装失败，退出代码：${InstallerExitCode}；安装包复制、复核或 Windows Installer 未完成。"
     }
     Write-Host "已安装 ProxyGauge v$Version 正式版。"
     if ($InstallerExitCode -in @(1641, 3010)) { Write-Host "Windows 要求重启后完成安装。" }
