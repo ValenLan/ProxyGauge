@@ -14,6 +14,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private readonly Func<AppConfig, CancellationToken, Task<ExitSummary>> _exitResolver;
     private readonly Func<CancellationToken, Task<GuardStatus>> _guardStatusResolver;
     private readonly Func<AppConfig, CancellationToken, Task<HealthReport>> _healthCheckAsync;
+    private readonly ExitSummaryStore _exitSummaryStore;
     private readonly CancellationTokenSource _lifetimeCancellation = new();
     private AppConfig _config;
     private string _headline = "正在读取代理状态";
@@ -29,12 +30,15 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private string? _activeGuardApplication;
     private ExitSummary _exitSummary = ExitSummary.Unavailable();
     private CancellationTokenSource? _activeRefreshCancellation;
+    private CancellationTokenSource? _activeExitRefreshCancellation;
     private CancellationTokenSource? _exitSettlementCancellation;
     private readonly TimeSpan _exitSettlementTimeout;
     private bool _exitSettlementExpired;
     private Task _refreshLoopTask = Task.CompletedTask;
     private long _refreshGeneration;
+    private long _exitRefreshGeneration;
     private bool _refreshRequested;
+    private string? _observedExitPathFingerprint;
     private bool _disposed;
     private bool _connectionHasSystemProxy;
     private bool _connectionHasVirtualAdapter;
@@ -67,7 +71,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Func<AppConfig, CancellationToken, Task<HealthReport>>? healthCheckAsync = null,
         GuardActivationService? guardActivation = null,
         Func<CancellationToken, Task>? disableGuard = null,
-        TimeSpan? exitSettlementTimeout = null)
+        TimeSpan? exitSettlementTimeout = null,
+        ExitSummaryStore? exitSummaryStore = null)
     {
         _configService = configService;
         _guardActivation = guardActivation ?? new GuardActivationService(guardClient);
@@ -78,6 +83,10 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         _guardStatusResolver = guardStatusResolver;
         _healthCheckAsync = healthCheckAsync ?? healthCheckService.RunAsync;
         _config = _configService.Load();
+        _exitSummaryStore = exitSummaryStore ?? new ExitSummaryStore(_configService.ConfigPath);
+        var persistedExit = _exitSummaryStore.Load();
+        _observedExitPathFingerprint = persistedExit.PathFingerprint;
+        _exitSummary = persistedExit.Summary ?? ExitSummary.WaitingForPathChange();
 
         Core = new MetricViewModel(new MetricSnapshot("代理核心", "检查中", "正在查找 Mihomo", "核", HealthLevel.Idle));
         Port = new MetricViewModel(new MetricSnapshot(
@@ -301,14 +310,73 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
         _refreshRequested = true;
         _refreshGeneration++;
-        if (!_exitSettlementExpired && _exitSummary.State != ExitSummaryState.Disconnected) ApplyExit(ExitSummary.Checking());
+        _activeRefreshCancellation?.Cancel();
+        return StartRefreshLoopIfNeeded();
+    }
+
+    public bool ObserveExitPathFingerprint(string fingerprint)
+    {
+        if (_disposed || fingerprint.Length != 64 || !fingerprint.All(character =>
+                character is >= '0' and <= '9' or >= 'A' and <= 'F' or >= 'a' and <= 'f'))
+            return false;
+        if (_observedExitPathFingerprint is null)
+        {
+            _observedExitPathFingerprint = fingerprint;
+            _exitSummaryStore.RecordPathFingerprint(fingerprint, clearSummary: false);
+            return false;
+        }
+        if (string.Equals(_observedExitPathFingerprint, fingerprint, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        _observedExitPathFingerprint = fingerprint;
+        _exitSummaryStore.RecordPathFingerprint(fingerprint, clearSummary: true);
+        InvalidateExitSummary(clearPersistedSummary: false);
+        return true;
+    }
+
+    public async Task RefreshExitAsync()
+    {
+        if (_disposed) return;
+        var generation = ++_exitRefreshGeneration;
+        if (!_exitSettlementExpired && _exitSummary.State != ExitSummaryState.Disconnected)
+            ApplyExit(ExitSummary.Checking());
         if (_exitSettlementCancellation is null)
         {
             _exitSettlementCancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetimeCancellation.Token);
             _ = SettleExitDeadlineAsync(_exitSettlementCancellation.Token);
         }
-        _activeRefreshCancellation?.Cancel();
-        return StartRefreshLoopIfNeeded();
+
+        _activeExitRefreshCancellation?.Cancel();
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetimeCancellation.Token);
+        _activeExitRefreshCancellation = cancellation;
+        ExitSummary summary;
+        try
+        {
+            summary = await InvokeSafely(() => _exitResolver(_config.Clone(), cancellation.Token));
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            return;
+        }
+        catch
+        {
+            summary = ExitSummary.Unavailable();
+        }
+        finally
+        {
+            if (ReferenceEquals(_activeExitRefreshCancellation, cancellation))
+                _activeExitRefreshCancellation = null;
+        }
+
+        if (_disposed || cancellation.IsCancellationRequested || generation != _exitRefreshGeneration)
+            return;
+        _exitSettlementCancellation?.Cancel();
+        _exitSettlementCancellation?.Dispose();
+        _exitSettlementCancellation = null;
+        _exitSettlementExpired = false;
+        ApplyExit(summary);
+        if (summary.State == ExitSummaryState.Available && ExitSummary.IsSupportedAddress(summary.Address))
+            _exitSummaryStore.SaveSummary(summary);
     }
 
     private Task StartRefreshLoopIfNeeded()
@@ -321,25 +389,26 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         return _refreshLoopTask;
     }
 
-    public void InvalidateExitSummary()
+    public void InvalidateExitSummary(bool clearPersistedSummary = true)
     {
         if (_disposed)
         {
             return;
         }
 
-        _refreshGeneration++;
+        _exitRefreshGeneration++;
         // No query is running during debounce or while the window is inactive.
         if (_exitSummary.State != ExitSummaryState.Disconnected)
             ApplyExit(_exitSettlementExpired ? ExitSummary.Unavailable() : ExitSummary.Waiting());
-        _activeRefreshCancellation?.Cancel();
+        _activeExitRefreshCancellation?.Cancel();
+        if (clearPersistedSummary) _exitSummaryStore.ClearSummary();
     }
 
     public void NotifyNetworkUnavailable()
     {
         if (_disposed) return;
-        _refreshGeneration++;
-        _activeRefreshCancellation?.Cancel();
+        _exitRefreshGeneration++;
+        _activeExitRefreshCancellation?.Cancel();
         ApplyExit(ExitSummary.Disconnected());
     }
 
@@ -395,11 +464,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     {
         // Publish local Guard status without waiting for public-IP or proxy probes.
         var guardTask = RefreshGuardStatusAsync(cancellationToken);
-        var exitTask = InvokeSafely(() => _exitResolver(config, cancellationToken));
         var probeTask = InvokeSafely(() => _probeAsync(config, cancellationToken));
 
         ProxySnapshot? snapshot = null;
-        ExitSummary exitSummary = ExitSummary.Unavailable();
         try
         {
             snapshot = await probeTask;
@@ -410,18 +477,6 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         catch
         {
             snapshot = null;
-        }
-
-        try
-        {
-            exitSummary = await exitTask;
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-        }
-        catch
-        {
-            exitSummary = ExitSummary.Unavailable();
         }
 
         try
@@ -448,11 +503,6 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         {
             Apply(snapshot);
         }
-        _exitSettlementCancellation?.Cancel();
-        _exitSettlementCancellation?.Dispose();
-        _exitSettlementCancellation = null;
-        _exitSettlementExpired = false;
-        ApplyExit(exitSummary);
         LastUpdated = $"更新于 {DateTime.Now:HH:mm:ss}";
     }
 
@@ -612,7 +662,6 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(Endpoint));
         OnPropertyChanged(nameof(PlanSummary));
         OnPropertyChanged(nameof(ConnectionDetail));
-        InvalidateExitSummary();
     }
 
     public void Dispose()
@@ -627,8 +676,10 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         _exitSettlementCancellation?.Cancel();
         _exitSettlementCancellation?.Dispose();
         _refreshGeneration++;
+        _exitRefreshGeneration++;
         _refreshRequested = false;
         _activeRefreshCancellation?.Cancel();
+        _activeExitRefreshCancellation?.Cancel();
     }
 
     private static Task<T> InvokeSafely<T>(Func<Task<T>> factory)

@@ -971,6 +971,43 @@ public sealed class ProxyProbeService
         }
     }
 
+    internal static string ReadExitPathFingerprint()
+    {
+        try
+        {
+            var proxy = ReadSystemProxyConfiguration();
+            var routes = GetBestRouteInterfaceIndexes();
+            var adapters = NetworkInterface.GetAllNetworkInterfaces()
+                .Where(adapter => adapter.NetworkInterfaceType != NetworkInterfaceType.Loopback)
+                .Select(adapter =>
+                {
+                    try
+                    {
+                        var properties = adapter.GetIPProperties();
+                        var gateways = properties.GatewayAddresses
+                            .Select(item => item.Address.ToString())
+                            .Order(StringComparer.Ordinal);
+                        var addresses = properties.UnicastAddresses
+                            .Select(item => item.Address.ToString())
+                            .Order(StringComparer.Ordinal);
+                        return $"{adapter.Id}|{adapter.OperationalStatus}|{adapter.NetworkInterfaceType}|" +
+                               $"{string.Join(",", gateways)}|{string.Join(",", addresses)}";
+                    }
+                    catch
+                    {
+                        return $"{adapter.Id}|unavailable";
+                    }
+                })
+                .Order(StringComparer.Ordinal);
+            var material = $"proxy={proxy}\nroute={routes}\nadapters={string.Join("\n", adapters)}";
+            return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(material)));
+        }
+        catch
+        {
+            return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("unavailable")));
+        }
+    }
+
     private static void FreeGlobalString(IntPtr memory)
     {
         if (memory != IntPtr.Zero)

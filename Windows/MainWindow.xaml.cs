@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using ProxyGauge.Models;
@@ -23,16 +24,15 @@ public partial class MainWindow : Window
     private readonly UpdateService _updateService;
     private readonly bool _needsConnectionSetup;
     private readonly DispatcherTimer _refreshDebounceTimer;
-    private readonly DispatcherTimer _periodicRefreshTimer;
-    private readonly DispatcherTimer _proxyConfigurationTimer;
     private readonly RouteChangeMonitor _routeChangeMonitor;
     private readonly CancellationTokenSource _lifetimeCancellation = new();
-    private SystemProxyConfiguration? _lastProxyConfiguration;
     private CancellationTokenSource? _copyFeedbackCancellation;
+    private HwndSource? _windowSource;
     private bool _networkMonitoringAttached;
     private bool _initialRefreshCompleted;
-    private bool _localStatusBusy;
+    private bool _pendingPathChange;
     private bool _isClosed;
+    private const int WmSettingChange = 0x001A;
 
     private static readonly string[] ManualReviewDirectUrls =
     [
@@ -68,24 +68,15 @@ public partial class MainWindow : Window
         _viewModel = new MainViewModel(_configService, _probeService, healthCheckService, guardClient);
         DataContext = _viewModel;
         _viewModel.PropertyChanged += ViewModel_PropertyChanged;
-        _routeChangeMonitor = new RouteChangeMonitor(DispatchNetworkRefresh);
+        _routeChangeMonitor = new RouteChangeMonitor(DispatchObservedExitPathChange);
 
         _refreshDebounceTimer = new DispatcherTimer(DispatcherPriority.Background, Dispatcher)
         {
             Interval = TimeSpan.FromMilliseconds(750)
         };
         _refreshDebounceTimer.Tick += RefreshDebounceTimer_Tick;
-        _periodicRefreshTimer = new DispatcherTimer(DispatcherPriority.Background, Dispatcher)
-        {
-            Interval = TimeSpan.FromMinutes(5)
-        };
-        _periodicRefreshTimer.Tick += PeriodicRefreshTimer_Tick;
-        _proxyConfigurationTimer = new DispatcherTimer(DispatcherPriority.Background, Dispatcher)
-        {
-            Interval = TimeSpan.FromSeconds(1)
-        };
-        _proxyConfigurationTimer.Tick += ProxyConfigurationTimer_Tick;
 
+        SourceInitialized += MainWindow_SourceInitialized;
         Loaded += MainWindow_Loaded;
         Activated += MainWindow_Activated;
         Deactivated += MainWindow_Deactivated;
@@ -108,7 +99,6 @@ public partial class MainWindow : Window
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
-        _lastProxyConfiguration = ProxyProbeService.ReadSystemProxyConfiguration();
         var detectedSystemPath = false;
         if (_needsConnectionSetup)
         {
@@ -156,12 +146,7 @@ public partial class MainWindow : Window
         }
         AttachNetworkMonitoring();
         _initialRefreshCompleted = true;
-        _proxyConfigurationTimer.Start();
-        if (IsActive)
-        {
-            _periodicRefreshTimer.Start();
-            _proxyConfigurationTimer.Start();
-        }
+        ObserveAndScheduleExitPathChange();
         UpdateThemeIcon();
         await CheckForUpdatesAsync(silent: true);
     }
@@ -172,30 +157,28 @@ public partial class MainWindow : Window
         {
             return;
         }
-        _periodicRefreshTimer.Start();
-        DetectProxyConfigurationChange();
-        _proxyConfigurationTimer.Start();
-        ScheduleDebouncedRefresh();
+        ObserveAndScheduleExitPathChange();
+        if (_pendingPathChange && !_refreshDebounceTimer.IsEnabled)
+            _refreshDebounceTimer.Start();
     }
 
     private void MainWindow_Deactivated(object? sender, EventArgs e)
     {
         _refreshDebounceTimer.Stop();
-        _periodicRefreshTimer.Stop();
-        // Keep local-only service/proxy observations active; public-IP queries remain foreground-only.
+        // Keep event-based route observations active; public-IP queries remain foreground-only.
     }
 
     private void NetworkAddressChanged(object? sender, EventArgs e) =>
-        DispatchNetworkRefresh();
+        DispatchObservedExitPathChange();
 
     private void NetworkAvailabilityChanged(object? sender, NetworkAvailabilityEventArgs e)
     {
         if (!e.IsAvailable && !_isClosed && !Dispatcher.HasShutdownStarted)
             _ = Dispatcher.BeginInvoke(new Action(_viewModel.NotifyNetworkUnavailable));
-        DispatchNetworkRefresh();
+        DispatchObservedExitPathChange();
     }
 
-    private void DispatchNetworkRefresh()
+    private void DispatchObservedExitPathChange()
     {
         if (_isClosed || Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
         {
@@ -204,14 +187,22 @@ public partial class MainWindow : Window
 
         if (Dispatcher.CheckAccess())
         {
-            ScheduleDebouncedRefresh();
+            ObserveAndScheduleExitPathChange();
         }
         else
         {
             _ = Dispatcher.BeginInvoke(
                 DispatcherPriority.Background,
-                new Action(ScheduleDebouncedRefresh));
+                new Action(ObserveAndScheduleExitPathChange));
         }
+    }
+
+    private void ObserveAndScheduleExitPathChange()
+    {
+        if (_isClosed || !IsLoaded) return;
+        var fingerprint = ProxyProbeService.ReadExitPathFingerprint();
+        if (_viewModel.ObserveExitPathFingerprint(fingerprint))
+            ScheduleDebouncedRefresh();
     }
 
     private void ScheduleDebouncedRefresh()
@@ -221,9 +212,9 @@ public partial class MainWindow : Window
             return;
         }
 
+        _pendingPathChange = true;
         // A burst of route notifications must not postpone the first refresh forever.
         if (_refreshDebounceTimer.IsEnabled) return;
-        _viewModel.InvalidateExitSummary();
         if (!CanStartAutomaticRefresh(_isClosed, IsLoaded, IsActive))
         {
             return;
@@ -238,7 +229,8 @@ public partial class MainWindow : Window
         {
             return;
         }
-        await _viewModel.RefreshAsync();
+        _pendingPathChange = false;
+        await Task.WhenAll(_viewModel.RefreshAsync(), _viewModel.RefreshExitAsync());
     }
 
     internal static bool CanStartAutomaticRefresh(
@@ -247,32 +239,21 @@ public partial class MainWindow : Window
         bool isActive) =>
         !isClosed && isLoaded && isActive;
 
-    private void PeriodicRefreshTimer_Tick(object? sender, EventArgs e) =>
-        ScheduleDebouncedRefresh();
-
-    private async void ProxyConfigurationTimer_Tick(object? sender, EventArgs e)
+    private void MainWindow_SourceInitialized(object? sender, EventArgs e)
     {
-        if (_isClosed || _localStatusBusy || _viewModel.IsGuardBusy) return;
-        _localStatusBusy = true;
-        try
-        {
-            DetectProxyConfigurationChange();
-            var before = _viewModel.GuardPathFingerprint;
-            await _viewModel.RefreshGuardStatusAsync(_lifetimeCancellation.Token);
-            if (!_isClosed && before != _viewModel.GuardPathFingerprint) ScheduleDebouncedRefresh();
-        }
-        catch (OperationCanceledException) when (_lifetimeCancellation.IsCancellationRequested) { }
-        finally { _localStatusBusy = false; }
+        _windowSource = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
+        _windowSource?.AddHook(WindowMessageHook);
     }
 
-    private void DetectProxyConfigurationChange()
+    private IntPtr WindowMessageHook(
+        IntPtr hwnd,
+        int message,
+        IntPtr wParam,
+        IntPtr lParam,
+        ref bool handled)
     {
-        var current = ProxyProbeService.ReadSystemProxyConfiguration();
-        if (_lastProxyConfiguration is not null && current != _lastProxyConfiguration)
-        {
-            ScheduleDebouncedRefresh();
-        }
-        _lastProxyConfiguration = current;
+        if (message == WmSettingChange) DispatchObservedExitPathChange();
+        return IntPtr.Zero;
     }
 
     private void AttachNetworkMonitoring()
@@ -301,13 +282,12 @@ public partial class MainWindow : Window
             _networkMonitoringAttached = false;
         }
         _routeChangeMonitor.Dispose();
+        _windowSource?.RemoveHook(WindowMessageHook);
+        _windowSource = null;
 
         _refreshDebounceTimer.Stop();
         _refreshDebounceTimer.Tick -= RefreshDebounceTimer_Tick;
-        _periodicRefreshTimer.Stop();
-        _periodicRefreshTimer.Tick -= PeriodicRefreshTimer_Tick;
-        _proxyConfigurationTimer.Stop();
-        _proxyConfigurationTimer.Tick -= ProxyConfigurationTimer_Tick;
+        SourceInitialized -= MainWindow_SourceInitialized;
         Activated -= MainWindow_Activated;
         Deactivated -= MainWindow_Deactivated;
         _viewModel.Dispose();
@@ -316,23 +296,17 @@ public partial class MainWindow : Window
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e)
     {
-        StopPendingRefresh(_refreshDebounceTimer);
         await _viewModel.RefreshAsync();
     }
 
     private async void SettingsButton_Click(object sender, RoutedEventArgs e)
     {
-        var hadPendingRefresh = StopPendingRefresh(_refreshDebounceTimer);
         var dialog = new SettingsWindow(
             _viewModel.GetEditableConfig(),
             _discoveryService,
             _updateService) { Owner = this };
         if (dialog.ShowDialog() != true)
         {
-            if (hadPendingRefresh && !_isClosed)
-            {
-                await _viewModel.RefreshAsync();
-            }
             return;
         }
 
@@ -362,14 +336,8 @@ public partial class MainWindow : Window
             }
             if (!_isClosed)
             {
-                StopPendingRefresh(_refreshDebounceTimer);
                 await _viewModel.RefreshAsync();
             }
-        }
-        else if (hadPendingRefresh && !_isClosed)
-        {
-            StopPendingRefresh(_refreshDebounceTimer);
-            await _viewModel.RefreshAsync();
         }
     }
 
@@ -698,10 +666,4 @@ public partial class MainWindow : Window
         bool detectedSystemPath) =>
         !hasValidConfig && !detectedSystemPath;
 
-    internal static bool StopPendingRefresh(DispatcherTimer timer)
-    {
-        var wasPending = timer.IsEnabled;
-        timer.Stop();
-        return wasPending;
-    }
 }

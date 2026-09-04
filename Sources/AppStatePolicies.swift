@@ -262,21 +262,17 @@ enum ProbeOutputParser {
     }
 }
 
-enum RefreshLifecyclePolicy {
-    static func shouldSchedulePathRefresh(
-        isSatisfied: Bool,
-        isInitialPath: Bool,
-        isApplicationActive: Bool
-    ) -> Bool {
-        guard isApplicationActive else { return false }
-        return !isSatisfied || !isInitialPath
+enum ExitRefreshTriggerPolicy {
+    static func pathDidChange(previous: String?, current: String) -> Bool {
+        guard let previous else { return false }
+        return previous != current
     }
 
-    static func shouldRefreshOnActivation(
-        secondsSinceLastRequest: TimeInterval,
-        hasPendingInvalidation: Bool
+    static func shouldStartLookup(
+        isApplicationActive: Bool,
+        hasPendingPathChange: Bool
     ) -> Bool {
-        hasPendingInvalidation || secondsSinceLastRequest >= 2
+        isApplicationActive && hasPendingPathChange
     }
 }
 

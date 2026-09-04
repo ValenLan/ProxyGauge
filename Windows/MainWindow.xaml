@@ -184,7 +184,7 @@
                     </Grid>
 
                     <Border Grid.Row="4" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="18" Padding="18"
-                            ToolTip="出口查询遵循 Windows 当前系统网络路径；前台打开时最多每 5 分钟自动核验一次。每次至少由两个独立公网查询服务交叉确认，它们会看到该路径的出口 IP 和请求时间，但不会收到代理配置、订阅或凭据。">
+                            ToolTip="出口查询遵循 Windows 当前系统网络路径；打开页面、切回应用和手动刷新不会发起查询，只有网络路由、系统代理或 VPN/TUN 路径变化后才检测。每次至少由两个独立公网查询服务交叉确认，它们会看到该路径的出口 IP 和请求时间，但不会收到代理配置、订阅或凭据。">
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="74" />
