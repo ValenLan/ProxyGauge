@@ -144,7 +144,6 @@ struct ContentView: View {
                     .font(.system(size: 10, weight: .medium))
                     .buttonStyle(.plain)
                     .foregroundStyle(model.guardSelection?.ambiguous == true ? .orange : AppThemePalette.secondaryText)
-                    .lineLimit(1)
                     .help("选择代理时保护继续生效；macOS root 系统进程仍豁免")
             }
             Spacer(minLength: 4)

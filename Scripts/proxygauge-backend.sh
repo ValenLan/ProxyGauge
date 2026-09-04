@@ -744,12 +744,23 @@ detected_running_client() {
   } | /usr/bin/awk '!seen[$0]++ { count++; client=$0 } END { if (count == 1) print client }'
 }
 
+detected_running_core() {
+  {
+    for core_name in verge-mihomo mihomo clash-meta clash sing-box singbox xray v2ray iKuuuVPNCore ikuuuvpncore; do
+      if /usr/bin/pgrep -x "$core_name" >/dev/null 2>&1; then
+        /usr/bin/printf '%s\n' "$core_name"
+      fi
+    done
+  } | /usr/bin/awk '!seen[$0]++ { count++; core=$0 } END { if (count == 1) print core }'
+}
+
 discover() {
-  local client endpoint source active mode config_path port candidate
+  local client core endpoint source active mode config_path port candidate
   local system_active tun_active mihomo_tun_unconfirmed split_tun_active
   local unknown_tun_active other_tun_active tunnel_kind
 
   client="未识别"
+  core=""
   endpoint=""
   source=""
   active="idle"
@@ -765,6 +776,11 @@ discover() {
   else
     candidate=$(detected_running_client)
     [ -n "$candidate" ] && client="$candidate"
+  fi
+  if [ -n "${PROXYGAUGE_DISCOVERY_CORE:-}" ]; then
+    core="$PROXYGAUGE_DISCOVERY_CORE"
+  else
+    core=$(detected_running_core)
   fi
 
   if system_proxy_active; then system_active=1; fi
@@ -866,6 +882,7 @@ discover() {
   fi
 
   /usr/bin/printf 'client\t%s\n' "$client"
+  /usr/bin/printf 'core\t%s\n' "$core"
   /usr/bin/printf 'endpoint\t%s\n' "$endpoint"
   /usr/bin/printf 'mode\t%s\n' "$mode"
   /usr/bin/printf 'source\t%s\n' "$source"

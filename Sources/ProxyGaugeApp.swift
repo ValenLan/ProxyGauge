@@ -55,6 +55,7 @@ struct ResultSheet: Identifiable {
 struct ProxyDiscovery: Sendable, Equatable {
     var found = false
     var client = "正在检测"
+    var core = ""
     var endpoint = "127.0.0.1:7890"
     var mode = "正在读取"
     var source = "本地运行状态"
@@ -83,10 +84,7 @@ final class ProxyModel: ObservableObject {
     private var exitDeadlineTask: Task<Void, Never>?
     private static let guardPreferenceKey = "proxygauge.guard.selectedCore.v1"
     var guardApplicationLabel: String {
-        if guardSelection?.ambiguous == true { return "需要选择当前代理…" }
-        if let path = guardSelection?.path, !path.isEmpty { return URL(fileURLWithPath: path).lastPathComponent + " · 切换" }
-        if let path = UserDefaults.standard.string(forKey: Self.guardPreferenceKey) { return URL(fileURLWithPath: path).lastPathComponent + " · 切换" }
-        return "自动识别代理 · 选择"
+        guardSelection?.ambiguous == true ? "选择当前代理" : "切换代理"
     }
     private var disconnectedByGuard: Bool {
         guard killSwitch.level == .ok, let guardSelection,
@@ -179,8 +177,14 @@ final class ProxyModel: ObservableObject {
         ).flatMap(LocalEndpointPolicy.normalize)
             ?? LocalEndpointPolicy.normalize(discovery.endpoint)
             ?? "127.0.0.1:7890"
+        let selectedCore = guardSelection.flatMap { selection in
+            selection.ambiguous || selection.path.isEmpty
+                ? nil
+                : URL(fileURLWithPath: selection.path).lastPathComponent
+        }
         return ConnectionDetailFormatter.format(
             client: guardSelection?.detectedClientName ?? discovery.client,
+            core: selectedCore ?? discovery.core,
             endpoint: endpoint,
             mode: discovery.mode,
             discoveryFound: discovery.found,
@@ -282,6 +286,7 @@ final class ProxyModel: ObservableObject {
             discovery = ProxyDiscovery(
                 found: false,
                 client: "未发现代理客户端",
+                core: "",
                 endpoint: savedEndpoint,
                 mode: "未开启",
                 source: "请手动设置",
@@ -402,6 +407,7 @@ final class ProxyModel: ObservableObject {
                 discovery = ProxyDiscovery(
                     found: false,
                     client: "未识别",
+                    core: "",
                     endpoint: UserDefaults.standard.string(
                         forKey: ProxyGaugePreferences.selectedEndpointKey
                     ).flatMap(LocalEndpointPolicy.normalize) ?? "未配置",
@@ -793,6 +799,7 @@ final class ProxyModel: ObservableObject {
         return ProxyDiscovery(
             found: fields["found"] == "1",
             client: fields["client"] ?? "未识别",
+            core: fields["core"] ?? "",
             endpoint: endpoint,
             mode: fields["mode"] ?? "未开启",
             source: fields["source"] ?? "手动设置",

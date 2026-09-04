@@ -32,11 +32,15 @@ struct DashboardSnapshot {
         model.detail = "Mihomo · TUN · 127.0.0.1:7890"
         model.discovery = ProxyDiscovery(
             found: true,
-            client: "Mihomo",
+            client: "Clash Verge Rev",
+            core: "verge-mihomo",
             endpoint: "127.0.0.1:7890",
             mode: "TUN",
             source: "Mihomo 控制接口",
             active: true
+        )
+        model.guardSelection = GuardSelectionSnapshot.parse(
+            "AUTO\n/Applications/Clash Verge.app/Contents/MacOS/verge-mihomo\n0\nlo0 utun0\n"
         )
         model.killSwitch = MetricState(
             title: "断网保护",

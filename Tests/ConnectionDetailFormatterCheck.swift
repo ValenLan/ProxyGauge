@@ -11,6 +11,7 @@ struct ConnectionDetailFormatterCheck {
 
     static func detail(
         client: String = "Clash Verge Rev",
+        core: String = "verge-mihomo",
         endpoint: String = "127.0.0.1:7890",
         mode: String,
         found: Bool = true,
@@ -23,6 +24,7 @@ struct ConnectionDetailFormatterCheck {
     ) -> String {
         ConnectionDetailFormatter.format(
             client: client,
+            core: core,
             endpoint: endpoint,
             mode: mode,
             discoveryFound: found,
@@ -38,6 +40,7 @@ struct ConnectionDetailFormatterCheck {
     static func main() {
         require(detail(
             client: "未识别",
+            core: "",
             mode: "PAC / 自动代理",
             found: false,
             active: false,
@@ -54,21 +57,21 @@ struct ConnectionDetailFormatterCheck {
             entryTitle: "系统代理",
             entryValue: "入口不匹配",
             entryHealthy: false
-        ) == "Clash Verge Rev", "The status detail must show the detected client name.")
+        ) == "Clash Verge Rev · verge-mihomo", "The status detail must show the client and core names.")
 
         require(detail(
             mode: "系统代理",
             entryTitle: "系统代理",
             entryValue: "已启用",
             entryHealthy: true
-        ) == "Clash Verge Rev", "A system proxy must keep technical route details out of the status subtitle.")
+        ) == "Clash Verge Rev · verge-mihomo", "A system proxy must show the client and core names.")
 
         require(detail(
             mode: "双重入口",
             entryTitle: "双重入口",
             entryValue: "同时开启",
             entryHealthy: false
-        ) == "Clash Verge Rev", "A combined path must show the client name in the subtitle.")
+        ) == "Clash Verge Rev · verge-mihomo", "A combined path must show the client and core names in the subtitle.")
 
         require(detail(
             mode: "TUN",
@@ -78,24 +81,25 @@ struct ConnectionDetailFormatterCheck {
             entryTitle: "TUN 路由",
             entryValue: "代表性路由已确认",
             entryHealthy: true
-        ) == "Clash Verge Rev", "A TUN-only path must show the client name.")
+        ) == "Clash Verge Rev · verge-mihomo", "A TUN-only path must show the client and core names.")
 
         require(detail(
             mode: "TUN",
             entryTitle: "TUN 路由",
             entryValue: "代表性路由已确认",
             entryHealthy: true
-        ) == "Clash Verge Rev", "A confirmed TUN path must keep its endpoint out of the subtitle.")
+        ) == "Clash Verge Rev · verge-mihomo", "A confirmed TUN path must show the client and core without the endpoint.")
 
         require(detail(
             mode: "系统代理路径 + Mihomo TUN",
             entryTitle: "系统代理路径 + Mihomo TUN",
             entryValue: "入口不匹配",
             entryHealthy: false
-        ) == "Clash Verge Rev", "A combined path must keep its diagnostic state outside the subtitle.")
+        ) == "Clash Verge Rev · verge-mihomo", "A combined path must show the client and core without diagnostics.")
 
         require(detail(
             client: "未识别",
+            core: "",
             mode: "其他 VPN / TUN",
             found: false,
             active: false,
@@ -108,6 +112,7 @@ struct ConnectionDetailFormatterCheck {
 
         require(detail(
             client: "未识别",
+            core: "",
             mode: "系统代理 + 其他 VPN / TUN",
             found: false,
             active: false,
@@ -120,6 +125,7 @@ struct ConnectionDetailFormatterCheck {
 
         require(detail(
             client: "未识别",
+            core: "",
             mode: "未开启",
             found: false,
             active: false,
@@ -132,6 +138,7 @@ struct ConnectionDetailFormatterCheck {
 
         require(detail(
             client: "Clash Verge Rev",
+            core: "verge-mihomo",
             mode: "未开启",
             found: true,
             active: false,

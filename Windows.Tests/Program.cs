@@ -1037,13 +1037,14 @@ var wpfThread = new Thread(() =>
         applyExit.Invoke(mainViewModel, [ExitSummary.Disconnected()]);
         RenderPixels(mainRoot, 820, 550, Artifact("main-disconnected-guard-on.png"));
         Require(mainViewModel.ExitAddress == "已断开网络连接" && ipVersionBorder.Visibility == Visibility.Collapsed &&
-                mainViewModel.GuardApplicationLabel.Contains("verge-mihomo"),
-            "Offline IP and current-core switch must remain visible together while protection is ON.");
+                mainViewModel.ConnectionDetail == "Clash Verge Rev · verge-mihomo" &&
+                mainViewModel.GuardApplicationLabel == "切换代理",
+            "The proxy card must show the client and core while the guard card keeps a short switch action.");
         applyGuard.Invoke(mainViewModel, [new GuardStatus(GuardStatusKind.Enabled, true, 17)
             { AutomaticSelection = true, ProxyExecutablePath = @"C:\Clash\verge-mihomo.exe", SelectionRequired = true }]);
         RenderPixels(mainRoot, 820, 550, Artifact("main-disconnected-selection-required.png"));
         Require(mainViewModel.ExitAddress == "已断开网络连接" && ipVersionBorder.Visibility == Visibility.Collapsed &&
-                mainViewModel.GuardApplicationLabel == "需要选择当前代理…" &&
+                mainViewModel.GuardApplicationLabel == "选择当前代理" &&
                 mainViewModel.GuardDetail.Contains("保护继续生效"),
             "An ambiguous entry must visibly request a selection while keeping protection and offline state visible.");
         applyGuard.Invoke(mainViewModel, [new GuardStatus(GuardStatusKind.Disabled, true, 0)]);

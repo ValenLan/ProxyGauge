@@ -154,10 +154,17 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         if (networkDisconnected) return "请检查网络连接";
         if (!hasSystemProxy && !hasVirtualAdapter)
             return probeAvailable ? "当前使用直连网络" : "代理状态暂时不可用";
-        var selectedName = string.IsNullOrWhiteSpace(selectedApplication)
+        var selectedCore = string.IsNullOrWhiteSpace(selectedApplication)
             ? null
-            : ProxyProbeService.DetectClientName([Path.GetFileNameWithoutExtension(selectedApplication)]);
+            : Path.GetFileNameWithoutExtension(selectedApplication);
+        var selectedName = selectedCore is null
+            ? null
+            : ProxyProbeService.DetectClientName([selectedCore]);
         var client = selectedName ?? detectedClientName;
+        if (!string.IsNullOrWhiteSpace(client) && !string.IsNullOrWhiteSpace(selectedCore) &&
+            !client.Equals(selectedCore, StringComparison.OrdinalIgnoreCase))
+            return $"{client} · {selectedCore}";
+        if (!string.IsNullOrWhiteSpace(selectedCore)) return selectedCore;
         if (!string.IsNullOrWhiteSpace(client)) return client;
         if (hasSystemProxy && hasVirtualAdapter) return "其他 VPN / 代理已连接";
         if (hasVirtualAdapter) return "其他 VPN 已连接";
@@ -212,10 +219,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         };
     public bool GuardEnabled => _guardStatus.IsEnabled;
     public string GuardApplicationLabel => _guardStatus.SelectionRequired
-        ? "需要选择当前代理…"
-        : _guardStatus.ProxyExecutablePath.Length > 0
-        ? $"{Path.GetFileNameWithoutExtension(_guardStatus.ProxyExecutablePath)} · 切换"
-        : "选择当前代理…";
+        ? "选择当前代理"
+        : "切换代理";
     public string GuardPathFingerprint => $"{_guardStatus.Kind}|{_guardStatus.ProxyExecutablePath}|{_guardStatus.SelectionRequired}";
     public bool CanChangeGuard => !_disposed && !_isGuardBusy &&
         (_guardStatus.Kind == GuardStatusKind.Unavailable || _guardStatus.OwnedByCurrentUser);

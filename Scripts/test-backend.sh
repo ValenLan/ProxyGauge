@@ -199,6 +199,7 @@ trusted_guard_route=$(PROXYGAUGE_CORE_PIDS=41001 \
 
 trusted_guard_discovery=$(PROXYGAUGE_CORE_PIDS=41001 \
   PROXYGAUGE_DISCOVERY_CLIENT='Clash Verge Rev' \
+  PROXYGAUGE_DISCOVERY_CORE='verge-mihomo' \
   PROXYGAUGE_DISCOVERY_CONFIG="$TEMP_DIR/clash-verge.yaml" \
   PROXYGAUGE_DISCOVERY_PORT_ACTIVE=0 \
   PROXYGAUGE_SYSTEM_PROXY_ACTIVE=0 \
@@ -209,6 +210,7 @@ trusted_guard_discovery=$(PROXYGAUGE_CORE_PIDS=41001 \
   /bin/bash "$BACKEND" discover)
 /usr/bin/grep -Fq $'mode\tTUN' <<< "$trusted_guard_discovery"
 /usr/bin/grep -Fq $'client\tClash Verge Rev' <<< "$trusted_guard_discovery"
+/usr/bin/grep -Fq $'core\tverge-mihomo' <<< "$trusted_guard_discovery"
 
 malformed_trusted_route=$(PROXYGAUGE_SYSTEM_PROXY_ACTIVE=0 \
   PROXYGAUGE_TUN_ROUTE_TABLE=$'198.18/15 link#24 UCS utun7' \
