@@ -16,8 +16,17 @@ struct WindowCapabilityCheck {
         guard window.titleVisibility == .hidden else {
             throw WindowCapabilityError.duplicateTitle
         }
+        guard window.titlebarAppearsTransparent else {
+            throw WindowCapabilityError.opaqueTitlebar
+        }
+        guard window.titlebarSeparatorStyle == .none else {
+            throw WindowCapabilityError.titlebarSeparator
+        }
         guard window.styleMask.contains(.resizable) else {
             throw WindowCapabilityError.notResizable
+        }
+        guard window.styleMask.contains(.fullSizeContentView) else {
+            throw WindowCapabilityError.contentBelowTitlebar
         }
         guard window.collectionBehavior.contains(.fullScreenPrimary) else {
             throw WindowCapabilityError.notFullScreenPrimary
@@ -33,6 +42,9 @@ struct WindowCapabilityCheck {
         case notFullScreenPrimary
         case zoomButtonDisabled
         case duplicateTitle
+        case opaqueTitlebar
+        case titlebarSeparator
+        case contentBelowTitlebar
     }
 }
 #endif

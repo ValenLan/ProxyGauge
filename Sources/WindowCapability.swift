@@ -4,7 +4,9 @@ import SwiftUI
 enum MainWindowCapability {
     static func enableFullScreen(for window: NSWindow) {
         window.titleVisibility = .hidden
-        window.styleMask.insert(.resizable)
+        window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
+        window.styleMask.formUnion([.resizable, .fullSizeContentView])
         window.collectionBehavior.insert(.fullScreenPrimary)
         window.standardWindowButton(.zoomButton)?.isEnabled = true
     }

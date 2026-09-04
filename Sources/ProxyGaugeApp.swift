@@ -931,7 +931,7 @@ enum AppThemePalette {
         })
     }
 
-    static let canvas = adaptive(dark: 0x181A1C, light: .windowBackgroundColor)
+    static let canvas = adaptive(dark: 0x181A1C, light: .white)
     static let surface = adaptive(dark: 0x202324, light: .controlBackgroundColor)
     static let raisedSurface = adaptive(dark: 0x25292A, light: .controlBackgroundColor)
     static let border = adaptive(dark: 0x343A38, light: .separatorColor)

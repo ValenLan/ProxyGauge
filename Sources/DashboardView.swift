@@ -47,7 +47,7 @@ struct ContentView: View {
             idealHeight: MainWindowLayout.defaultHeight
         )
         .foregroundStyle(AppThemePalette.text)
-        .background(AppThemePalette.canvas)
+        .background(AppThemePalette.canvas.ignoresSafeArea())
         .background(MainWindowCapabilityReader().frame(width: 0, height: 0))
         .preferredColorScheme(appearance == "dark" ? .dark : .light)
         .overlay {

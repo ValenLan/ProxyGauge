@@ -72,7 +72,7 @@ fi
 /usr/bin/grep -Fq 'static let surface = adaptive(dark: 0x202324' "$APP_SOURCE"
 /usr/bin/grep -Fq 'static let text = adaptive(dark: 0xE7EAE9' "$APP_SOURCE"
 /usr/bin/grep -Fq 'static let accent = adaptive(dark: 0x36EC8F' "$APP_SOURCE"
-/usr/bin/grep -Fq '.background(AppThemePalette.canvas)' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq '.background(AppThemePalette.canvas.ignoresSafeArea())' "$DASHBOARD_SOURCE"
 /usr/bin/grep -Fq '.tint(AppThemePalette.accent)' "$DASHBOARD_SOURCE"
 /usr/bin/grep -Fq 'Click="GuardButton_Click"' "$WINDOWS_MAIN"
 /usr/bin/grep -Fq 'if model.guardSelection?.ambiguous == true {' "$DASHBOARD_SOURCE"
@@ -144,6 +144,10 @@ fi
 /usr/bin/grep -Fq 'Text("ProxyGauge")' "$DASHBOARD_SOURCE"
 /usr/bin/grep -Fq 'x:Name="ProductTitle" Text="ProxyGauge"' "$WINDOWS_MAIN"
 /usr/bin/grep -Fq 'window.titleVisibility = .hidden' "$PROJECT_ROOT/Sources/WindowCapability.swift"
+/usr/bin/grep -Fq 'window.titlebarAppearsTransparent = true' "$PROJECT_ROOT/Sources/WindowCapability.swift"
+/usr/bin/grep -Fq 'window.titlebarSeparatorStyle = .none' "$PROJECT_ROOT/Sources/WindowCapability.swift"
+/usr/bin/grep -Fq '.fullSizeContentView' "$PROJECT_ROOT/Sources/WindowCapability.swift"
+/usr/bin/grep -Fq 'static let canvas = adaptive(dark: 0x181A1C, light: .white)' "$APP_SOURCE"
 
 if /usr/bin/grep -Fq 'Text("链路检测")' "$DASHBOARD_SOURCE" \
   || /usr/bin/grep -Fq 'Text("规则管理")' "$DASHBOARD_SOURCE" \

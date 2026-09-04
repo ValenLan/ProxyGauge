@@ -141,7 +141,7 @@ test("npm package version matches both native applications", () => {
 
   assert.equal(packageVersion(), packageMetadata.version);
   assert.equal(macVersion, packageMetadata.version);
-  assert.equal(macBuild, "55");
+  assert.equal(macBuild, "56");
   assert.equal(windowsVersion, packageMetadata.version);
 });
 
