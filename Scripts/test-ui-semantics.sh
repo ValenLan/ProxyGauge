@@ -20,6 +20,12 @@ for label in '监控代理连接、出口 IP 与浏览器隐私' '代理状态' 
   /usr/bin/grep -Fq "$label" "$DASHBOARD_SOURCE"
   /usr/bin/grep -Fq "$label" "$WINDOWS_MAIN"
 done
+if /usr/bin/grep -Fq '等待出口变化' "$EXIT_SERVICE" "$PROJECT_ROOT/Windows/Models/ExitSummary.cs"; then
+  echo 'An empty exit cache must initialize its IP instead of waiting indefinitely for a path change.' >&2
+  exit 1
+fi
+/usr/bin/grep -Fq 'let requiresLookup = needsInitialExitLookup || pathChanged' "$APP_SOURCE"
+/usr/bin/grep -Fq 'if (!_needsInitialExitLookup && !pathChanged)' "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
 /usr/bin/grep -Fq '系统实际出口' "$DASHBOARD_SOURCE"
 /usr/bin/grep -Fq 'x:Name="ExitCardTitle" Text="系统实际出口"' "$WINDOWS_MAIN"
 
@@ -112,7 +118,7 @@ fi
 /usr/bin/grep -Fq 'let result = await execute("fingerprint")' "$APP_SOURCE"
 /usr/bin/grep -Fq 'SystemNetworkChangeMonitor' "$APP_SOURCE"
 /usr/bin/grep -Fq 'SCDynamicStoreSetNotificationKeys' "$APP_SOURCE"
-/usr/bin/grep -Fq 'ExitSummaryPersistence.loadSummary()' "$APP_SOURCE"
+/usr/bin/grep -Fq 'ExitSummaryPersistence.loadSummary(defaults: exitDefaults)' "$APP_SOURCE"
 /usr/bin/grep -Fq 'func refreshExitSummary() async' "$APP_SOURCE"
 if /usr/bin/grep -Fq 'startPeriodicRefresh' "$APP_SOURCE"; then
   echo 'Opening the dashboard must not start a periodic public-exit lookup loop.' >&2

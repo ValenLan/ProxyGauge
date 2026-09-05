@@ -174,8 +174,7 @@ final class ProxyModel: ObservableObject {
     @Published var isDiscoveringConnection = false
     @Published var discovery = ProxyDiscovery()
     @Published var healthPlan = ProxyGaugePreferences.loadHealthPlan()
-    @Published private var exitSummary =
-        ExitSummaryPersistence.loadSummary() ?? .waitingForPathChange
+    @Published private var exitSummary = ExitSummarySnapshot.checking
     var exitAddress: String {
         get { exitSummary.address }
         set { exitSummary = ExitSummarySnapshot(address: newValue, location: exitSummary.location) }
@@ -263,6 +262,7 @@ final class ProxyModel: ObservableObject {
 
     private let updateService = AppUpdateService()
     private let exitSummaryService: any ExitSummaryResolving
+    private let exitDefaults: UserDefaults
     private var refreshGeneration = RefreshGenerationGate()
     private var discoveryGeneration = RefreshGenerationGate()
     private var refreshQueued = false
@@ -277,6 +277,7 @@ final class ProxyModel: ObservableObject {
     private var pathEvaluationTask: Task<Void, Never>?
     private var exitRefreshGeneration = RefreshGenerationGate()
     private var observedPathFingerprint: String?
+    private var needsInitialExitLookup: Bool
     private var needsExitRefreshWhenActive = false
     private var systemNetworkChangeMonitor: SystemNetworkChangeMonitor?
 
@@ -284,9 +285,17 @@ final class ProxyModel: ObservableObject {
 
     init(
         startImmediately: Bool = true,
-        exitSummaryService: any ExitSummaryResolving = SystemExitSummaryService()
+        exitSummaryService: any ExitSummaryResolving = SystemExitSummaryService(),
+        exitDefaults: UserDefaults = .standard
     ) {
         self.exitSummaryService = exitSummaryService
+        self.exitDefaults = exitDefaults
+        let cachedSummary = ExitSummaryPersistence.loadSummary(defaults: exitDefaults)
+        exitSummary = cachedSummary ?? .checking
+        needsInitialExitLookup = ExitRefreshTriggerPolicy.needsInitialLookup(
+            hasCachedSummary: cachedSummary != nil,
+            pathFingerprint: ExitSummaryPersistence.loadPathFingerprint(defaults: exitDefaults)
+        )
         guard startImmediately else { return }
         startNetworkMonitoring()
         startSystemNetworkMonitoring()
@@ -545,24 +554,31 @@ final class ProxyModel: ObservableObject {
 
     private func evaluateCurrentPathChange(isStartup: Bool) async {
         guard let current = await currentPathFingerprint() else { return }
-        let previous = observedPathFingerprint ?? ExitSummaryPersistence.loadPathFingerprint()
-        observedPathFingerprint = current
-        guard let previous else {
-            ExitSummaryPersistence.recordPathFingerprint(current, clearSummary: false)
-            return
-        }
-        guard ExitRefreshTriggerPolicy.pathDidChange(previous: previous, current: current) else {
-            return
-        }
-
-        ExitSummaryPersistence.recordPathFingerprint(current, clearSummary: true)
-        invalidateExitSummary(as: networkPathSatisfied == false ? .disconnected : .waitingAfterPathChange)
-        guard networkPathSatisfied != false else { return }
+        guard observeExitPathFingerprint(current) else { return }
         if isStartup || NSApplication.shared.isActive {
             scheduleExitRefresh()
         } else {
             needsExitRefreshWhenActive = true
         }
+    }
+
+    func observeExitPathFingerprint(_ current: String) -> Bool {
+        let previous = observedPathFingerprint
+            ?? ExitSummaryPersistence.loadPathFingerprint(defaults: exitDefaults)
+        observedPathFingerprint = current
+        let pathChanged = ExitRefreshTriggerPolicy.pathDidChange(previous: previous, current: current)
+        let requiresLookup = needsInitialExitLookup || pathChanged
+        ExitSummaryPersistence.recordPathFingerprint(
+            current, clearSummary: requiresLookup, defaults: exitDefaults
+        )
+        guard requiresLookup else { return false }
+
+        invalidateExitSummary(as: networkPathSatisfied == false ? .disconnected
+            : (needsInitialExitLookup ? .checking : .waitingAfterPathChange))
+        guard networkPathSatisfied != false else { return false }
+        // Consume initialization once per session; repeated events and activation are not retries.
+        needsInitialExitLookup = false
+        return true
     }
 
     private static func stableDescription(_ value: Any) -> String {
@@ -618,7 +634,7 @@ final class ProxyModel: ObservableObject {
         }
     }
 
-    private func refreshExitSummary() async {
+    func refreshExitSummary() async {
         guard !Task.isCancelled else { return }
         guard networkPathSatisfied != false else {
             invalidateExitSummary(as: .disconnected)
@@ -636,7 +652,7 @@ final class ProxyModel: ObservableObject {
         activeExitRefreshTask = nil
         finishExitLoading(result)
         if PublicIPAddress.normalize(result.address) != nil {
-            ExitSummaryPersistence.saveSummary(result)
+            ExitSummaryPersistence.saveSummary(result, defaults: exitDefaults)
         }
     }
 

@@ -2010,6 +2010,67 @@ finally
     }
 }
 
+// Exercise the same observation and resolver entry points used by MainWindow.
+foreach (var cacheState in new[] { "empty", "fingerprint-only", "summary-only", "complete" })
+{
+    var directory = Path.Combine(Path.GetTempPath(), $"proxygauge-initial-exit.{Guid.NewGuid():N}");
+    try
+    {
+        var configService = new ConfigService(Path.Combine(directory, "config.json"));
+        configService.Save(new AppConfig());
+        var store = new ExitSummaryStore(configService.ConfigPath);
+        var fingerprint = new string('a', 64);
+        if (cacheState is "fingerprint-only" or "complete")
+            store.RecordPathFingerprint(fingerprint, clearSummary: true);
+        if (cacheState is "summary-only" or "complete")
+            store.SaveSummary(new ExitSummary("9.9.9.9", "Switzerland"));
+        var calls = 0;
+        var probe = new ProxyProbeService();
+        var health = new HealthCheckService(probe, new MihomoPlanInspectionService(new MihomoControllerService()));
+        MainViewModel CreateModel() => new(
+            configService, health, new GuardClient(),
+            (config, _) => Task.FromResult(TestSnapshot(config.MixedPort)),
+            (_, _) =>
+            {
+                calls++;
+                return Task.FromResult(new ExitSummary("1.1.1.1", "Australia"));
+            },
+            _ => Task.FromResult(GuardStatus.Unavailable()));
+        using (var model = CreateModel())
+        {
+            var needsLookup = model.ObserveExitPathFingerprint(fingerprint);
+            Require(needsLookup == (cacheState != "complete"),
+                $"Initial lookup must depend on a complete usable cache: {cacheState}.");
+            if (needsLookup) await model.RefreshExitAsync();
+            Require(model.ExitAddress == (cacheState == "complete" ? "9.9.9.9" : "1.1.1.1"),
+                $"The initial observation must leave a confirmed IP on the card: {cacheState}.");
+            Require(model.HasExitIpVersion, "A confirmed initial IP must expose its local protocol label.");
+            Require(!model.ObserveExitPathFingerprint(fingerprint),
+                "Duplicate startup, route and activation notifications must not request another lookup.");
+            await model.RefreshAsync();
+            Require(calls == (cacheState == "complete" ? 0 : 1),
+                "Local refresh must not add an exit lookup after initialization.");
+        }
+        using (var reopened = CreateModel())
+        {
+            Require(!reopened.ObserveExitPathFingerprint(fingerprint),
+                "Reopening after a successful initial lookup must use the persisted IP.");
+        }
+        store.ClearSummary();
+        using (var retry = CreateModel())
+        {
+            Require(retry.ObserveExitPathFingerprint(fingerprint),
+                "A new session without a valid result must retry even with the same saved fingerprint.");
+            Require(!retry.ObserveExitPathFingerprint(fingerprint),
+                "A missing result must not turn duplicate events into repeated retries.");
+        }
+    }
+    finally
+    {
+        if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+    }
+}
+
 var refreshTestDirectory = Path.Combine(
     Path.GetTempPath(),
     $"proxygauge-refresh-test.{Guid.NewGuid():N}");
@@ -2050,8 +2111,8 @@ try
     await viewModel.RefreshAsync();
     Require(resolverCalls == 0 && viewModel.ExitAddress == "9.9.9.9",
         "Opening the window or manually refreshing local state must not query or clear the actual exit.");
-    Require(!viewModel.ObserveExitPathFingerprint(new string('a', 64)),
-        "The first local path fingerprint must establish a baseline without a public lookup.");
+    Require(viewModel.ObserveExitPathFingerprint(new string('a', 64)),
+        "Without a persisted summary the first local path observation must request an initial lookup.");
 
     var firstRefresh = viewModel.RefreshExitAsync();
     Require(viewModel.ExitAddress == "正在检测" && !viewModel.HasExitIpVersion,

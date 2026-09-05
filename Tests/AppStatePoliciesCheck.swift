@@ -203,9 +203,21 @@ struct AppStatePoliciesCheck {
     }
 
     private static func checkRefreshLifecyclePolicy() throws {
+        try require(ExitRefreshTriggerPolicy.needsInitialLookup(
+            hasCachedSummary: false, pathFingerprint: nil
+        ), "A fresh installation must resolve its first exit IP without waiting for a path change.")
+        try require(ExitRefreshTriggerPolicy.needsInitialLookup(
+            hasCachedSummary: false, pathFingerprint: "path-a"
+        ), "A fingerprint-only cache from the old version must not suppress the initial lookup.")
+        try require(ExitRefreshTriggerPolicy.needsInitialLookup(
+            hasCachedSummary: true, pathFingerprint: nil
+        ), "An orphaned summary cannot establish that its IP belongs to the current path.")
+        try require(!ExitRefreshTriggerPolicy.needsInitialLookup(
+            hasCachedSummary: true, pathFingerprint: "path-a"
+        ), "Reopening with a confirmed summary and matching path must keep using the cache.")
         try require(!ExitRefreshTriggerPolicy.pathDidChange(
             previous: nil, current: "path-a"
-        ), "The first local fingerprint must establish a baseline without a public lookup.")
+        ), "Establishing a baseline is distinct from changing paths; initialization is handled separately.")
         try require(!ExitRefreshTriggerPolicy.pathDidChange(
             previous: "path-a", current: "path-a"
         ), "An unchanged route notification must not query the actual exit.")

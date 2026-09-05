@@ -263,6 +263,10 @@ enum ProbeOutputParser {
 }
 
 enum ExitRefreshTriggerPolicy {
+    static func needsInitialLookup(hasCachedSummary: Bool, pathFingerprint: String?) -> Bool {
+        !hasCachedSummary || pathFingerprint == nil
+    }
+
     static func pathDidChange(previous: String?, current: String) -> Bool {
         guard let previous else { return false }
         return previous != current

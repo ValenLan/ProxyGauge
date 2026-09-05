@@ -174,9 +174,6 @@ public sealed record ExitSummary(
     public static ExitSummary Waiting() =>
         new("等待重新检测", "网络路径已变化，旧出口已清除") { State = ExitSummaryState.Unavailable };
 
-    public static ExitSummary WaitingForPathChange() =>
-        new("等待出口变化", "路由、系统代理或 VPN 变化后自动检测") { State = ExitSummaryState.Unavailable };
-
     public static ExitSummary Checking() =>
         new("正在检测", "正在确认系统实际出口") { State = ExitSummaryState.Checking };
 }

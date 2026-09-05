@@ -20,11 +20,6 @@ struct ExitSummarySnapshot: Equatable, Sendable {
         location: "请检查当前网络连接"
     )
 
-    static let waitingForPathChange = ExitSummarySnapshot(
-        address: "等待出口变化",
-        location: "路由、系统代理或 VPN 变化后自动检测"
-    )
-
     static let waitingAfterPathChange = ExitSummarySnapshot(
         address: "等待重新检测",
         location: "网络路径已变化，旧出口已清除"

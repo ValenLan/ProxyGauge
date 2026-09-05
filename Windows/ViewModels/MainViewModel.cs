@@ -39,6 +39,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private long _exitRefreshGeneration;
     private bool _refreshRequested;
     private string? _observedExitPathFingerprint;
+    private bool _needsInitialExitLookup;
     private bool _disposed;
     private bool _connectionHasSystemProxy;
     private bool _connectionHasVirtualAdapter;
@@ -86,7 +87,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         _exitSummaryStore = exitSummaryStore ?? new ExitSummaryStore(_configService.ConfigPath);
         var persistedExit = _exitSummaryStore.Load();
         _observedExitPathFingerprint = persistedExit.PathFingerprint;
-        _exitSummary = persistedExit.Summary ?? ExitSummary.WaitingForPathChange();
+        _exitSummary = persistedExit.Summary ?? ExitSummary.Checking();
+        _needsInitialExitLookup = persistedExit.Summary is null || persistedExit.PathFingerprint is null;
 
         Core = new MetricViewModel(new MetricSnapshot("代理核心", "检查中", "正在查找 Mihomo", "核", HealthLevel.Idle));
         Port = new MetricViewModel(new MetricSnapshot(
@@ -319,18 +321,18 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         if (_disposed || fingerprint.Length != 64 || !fingerprint.All(character =>
                 character is >= '0' and <= '9' or >= 'A' and <= 'F' or >= 'a' and <= 'f'))
             return false;
-        if (_observedExitPathFingerprint is null)
-        {
-            _observedExitPathFingerprint = fingerprint;
-            _exitSummaryStore.RecordPathFingerprint(fingerprint, clearSummary: false);
-            return false;
-        }
-        if (string.Equals(_observedExitPathFingerprint, fingerprint, StringComparison.OrdinalIgnoreCase))
+        var pathChanged = _observedExitPathFingerprint is not null &&
+            !string.Equals(_observedExitPathFingerprint, fingerprint, StringComparison.OrdinalIgnoreCase);
+        if (!_needsInitialExitLookup && !pathChanged)
             return false;
 
+        var isInitialLookup = _needsInitialExitLookup;
+        _needsInitialExitLookup = false;
         _observedExitPathFingerprint = fingerprint;
         _exitSummaryStore.RecordPathFingerprint(fingerprint, clearSummary: true);
         InvalidateExitSummary(clearPersistedSummary: false);
+        if (isInitialLookup && _exitSummary.State != ExitSummaryState.Disconnected)
+            ApplyExit(ExitSummary.Checking());
         return true;
     }
 
