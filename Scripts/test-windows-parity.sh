@@ -17,13 +17,8 @@ done
 /usr/bin/grep -Fq 'SecondaryEnabled' "$PROJECT_ROOT/Windows/Models/AppConfig.cs"
 /usr/bin/grep -Fq 'Mihomo 本地控制接口' "$PROJECT_ROOT/Windows/Services/ConnectionDiscoveryService.cs"
 /usr/bin/grep -Fq 'Windows 系统代理' "$PROJECT_ROOT/Windows/Services/ConnectionDiscoveryService.cs"
-/usr/bin/grep -Fq 'CommonMixedPorts = [7890, 7897];' \
+/usr/bin/grep -Fq 'CommonMixedPorts = [7890, 7897, 1082, 1080, 10808];' \
   "$PROJECT_ROOT/Windows/Services/ConnectionDiscoveryService.cs"
-if /usr/bin/grep -Fq 'CommonMixedPorts = [7890, 7897, 1080]' \
-  "$PROJECT_ROOT/Windows/Services/ConnectionDiscoveryService.cs"; then
-  echo 'The SOCKS convention port 1080 must not be guessed as a mixed HTTP/SOCKS port.' >&2
-  exit 1
-fi
 /usr/bin/grep -Fq 'LocalEndpointPolicy.IsLoopbackHost' "$PROJECT_ROOT/Windows/SettingsWindow.xaml.cs"
 /usr/bin/grep -Fq 'LocalEndpointPolicy.NormalizeLoopbackHost' "$PROJECT_ROOT/Windows/Services/ConfigService.cs"
 /usr/bin/grep -Fq 'LocalEndpointPolicy.FormatEndpoint' "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
@@ -247,6 +242,40 @@ fi
 if /usr/bin/grep -Fq '_probeService.CountProxyCores() > 0 ?' \
   "$PROJECT_ROOT/Windows/Services/ConnectionDiscoveryService.cs"; then
   echo 'A reachable port must not inherit Mihomo attribution merely because a core process exists.' >&2
+  exit 1
+fi
+for coreName in '"xray"' '"v2ray"' '"v2rayN"' '"sing-box"' '"singbox"' '"Shadowsocksr"'; do
+  /usr/bin/grep -Fq "$coreName" "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
+done
+/usr/bin/grep -Fq '        "Shadowsocksr"' "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
+/usr/bin/grep -Fq '未发现代理客户端或核心' "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
+/usr/bin/grep -Fq 'ResolveDetectedClientName(' "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
+/usr/bin/grep -Fq 'GetListenerOwnerProcessNames(' \
+  "$PROJECT_ROOT/Windows/Services/TcpListenerOwnership.cs"
+/usr/bin/grep -Fq 'TcpListenerOwnership.GetListenerOwnerProcessNames(' \
+  "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
+/usr/bin/grep -Fq 'TcpListenerOwnership.GetListenerOwnerProcessNames(' \
+  "$PROJECT_ROOT/Windows/Services/ConnectionDiscoveryService.cs"
+/usr/bin/grep -Fq '?? "本地代理"' "$PROJECT_ROOT/Windows/Services/ConnectionDiscoveryService.cs"
+/usr/bin/grep -Fq '正在查找代理客户端或核心' "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"
+/usr/bin/grep -Fq 'L"wireguard"' "$PROJECT_ROOT/Windows.Guard/Guard.cpp"
+if /usr/bin/grep -Fq 'coreCount > 0 ? "Clash / Mihomo"' \
+  "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"; then
+  echo 'An unidentified running core must not be labeled Clash / Mihomo.' >&2
+  exit 1
+fi
+if /usr/bin/grep -Fq '"Mihomo / Clash Verge"' \
+  "$PROJECT_ROOT/Windows/Services/ConnectionDiscoveryService.cs"; then
+  echo 'Discovered clients must be named from listener ownership, not a hardcoded Mihomo label.' >&2
+  exit 1
+fi
+if /usr/bin/grep -Fq '常用 Mihomo 端口' \
+  "$PROJECT_ROOT/Windows/Services/ConnectionDiscoveryService.cs"; then
+  echo 'Common fallback ports serve generic proxy clients, not only Mihomo.' >&2
+  exit 1
+fi
+if /usr/bin/grep -Fq '正在查找 Mihomo' "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs"; then
+  echo 'The pending core probe must stay client-neutral.' >&2
   exit 1
 fi
 /usr/bin/grep -Fq 'GetExtendedTcpTable(' \

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
@@ -95,6 +96,38 @@ internal static class TcpListenerOwnership
         catch
         {
             return false;
+        }
+    }
+
+    internal static IReadOnlyList<string> GetListenerOwnerProcessNames(string host, int port)
+    {
+        if (!OperatingSystem.IsWindows() || port is < 1 or > 65535 ||
+            !LocalEndpointPolicy.IsLoopbackHost(host))
+        {
+            return [];
+        }
+
+        try
+        {
+            var requestedAddress = IPAddress.Parse(LocalEndpointPolicy.NormalizeLoopbackHost(host));
+            var names = new List<string>();
+            foreach (var ownerPid in GetOwners(requestedAddress, port).Distinct())
+            {
+                try
+                {
+                    using var process = Process.GetProcessById(ownerPid);
+                    names.Add(process.ProcessName);
+                }
+                catch
+                {
+                    // A listener can exit between the table query and the name lookup.
+                }
+            }
+            return names;
+        }
+        catch
+        {
+            return [];
         }
     }
 

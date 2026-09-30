@@ -11,7 +11,7 @@ internal readonly record struct ConnectionCandidate(
 
 public sealed class ConnectionDiscoveryService
 {
-    private static readonly int[] CommonMixedPorts = [7890, 7897];
+    private static readonly int[] CommonMixedPorts = [7890, 7897, 1082, 1080, 10808];
     internal static IReadOnlyList<int> FallbackMixedPorts => CommonMixedPorts;
     private readonly ProxyProbeService _probeService;
     private readonly MihomoControllerService _controllerService;
@@ -66,7 +66,7 @@ public sealed class ConnectionDiscoveryService
             new ConnectionCandidate(
                 "127.0.0.1",
                 port,
-                "常用 Mihomo 端口",
+                "常用代理端口",
                 IsExplicitSystemProxy: false)));
         var detection = await tunnelKindTask;
         var tunnelKind = detection.Coverage;
@@ -91,11 +91,13 @@ public sealed class ConnectionDiscoveryService
             var candidate = ownedByMihomo
                 ? probeCandidate
                 : candidateGroup.First(value => value.IsExplicitSystemProxy);
+            var clientName = ProxyProbeService.DetectClientName(
+                TcpListenerOwnership.GetListenerOwnerProcessNames(candidate.Host, candidate.Port));
             return new ConnectionDiscoveryResult(
                 true,
                 candidate.Host,
                 candidate.Port,
-                ownedByMihomo ? "Mihomo / Clash Verge" : "本地代理（未归属 Mihomo）",
+                clientName ?? "本地代理",
                 candidate.Source,
                 systemProxy,
                 detection.MihomoDetected,
@@ -111,7 +113,9 @@ public sealed class ConnectionDiscoveryService
             false,
             "127.0.0.1",
             current.MixedPort,
-            coreProcessIds.Count > 0 ? "Mihomo / Clash Verge" : detection.OtherTunnelDetected ? "VPN / TUN 已检测" : "未发现代理核心",
+            detection.ClientName ?? ProxyProbeService.DetectRunningProxyClientName() ??
+                (coreProcessIds.Count > 0 ? "代理客户端"
+                    : detection.OtherTunnelDetected ? "VPN / TUN 已检测" : "未发现代理客户端或核心"),
             detection.OtherTunnelDetected ? "已检测系统 VPN 路径，不依赖此 mixed 端口" : "自动检测未找到可用入口",
             systemProxy,
             detection.MihomoDetected,

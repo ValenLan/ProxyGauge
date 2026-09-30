@@ -138,6 +138,8 @@ fi
 /usr/bin/grep -Fq '"其他 VPN / 代理已连接"' "$CONNECTION_FORMATTER"
 /usr/bin/grep -Fq '"其他系统代理已启用"' "$CONNECTION_FORMATTER"
 /usr/bin/grep -Fq '"MacPacketTunnel"' "$CONNECTION_FORMATTER"
+/usr/bin/grep -Fq '未发现代理客户端或核心' "$PROJECT_ROOT/Scripts/proxygauge-check.sh"
+/usr/bin/grep -Fq '未发现代理客户端或核心' "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
 /usr/bin/grep -Fq '"无网络连接"' "$PROJECT_ROOT/Sources/AppStatePolicies.swift"
 /usr/bin/grep -Fq '"当前使用直连网络"' "$PROJECT_ROOT/Sources/AppStatePolicies.swift"
 /usr/bin/grep -Fq 'model.connectionLevel.color' "$DASHBOARD_SOURCE"
