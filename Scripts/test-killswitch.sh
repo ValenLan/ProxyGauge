@@ -363,13 +363,24 @@ fi
 [ "$ne_anchor_hash_before" = "$(/usr/bin/shasum -a 256 "$TEST_ROOT/etc/pf.anchors/proxygauge" | /usr/bin/awk '{print $1}')" ]
 
 # Lockdown: an armed restore that finds no public routed utun renders the
-# catch-all block while keeping lo0/LAN/root exemptions.
+# catch-all block while keeping lo0/LAN/root exemptions. Entering lockdown
+# from a block-less monitoring anchor must purge physical states exactly once.
+: > "$TEST_ROOT/var/run/pfctl.log"
 PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS="$ne_records" \
   PROXYGAUGE_KILLSWITCH_TEST_TUN_INTERFACES='' \
   run_persisted_helper restore >/dev/null
 /usr/bin/grep -Fq 'trusted_tunnels = "{ lo0 }"' "$TEST_ROOT/etc/pf.anchors/proxygauge"
 /usr/bin/grep -Fq 'block return out quick all' "$TEST_ROOT/etc/pf.anchors/proxygauge"
 [ "$(/usr/bin/head -1 "$RUNTIME_STATE")" = "enabled" ]
+/usr/bin/grep -Fq -- '-k 0.0.0.0/0 -k ' "$TEST_ROOT/var/run/pfctl.log"
+/usr/bin/grep -Fq -- '-k ::/0 -k ' "$TEST_ROOT/var/run/pfctl.log"
+! /usr/bin/grep -Fq -- '-F states' "$TEST_ROOT/var/run/pfctl.log"
+# Staying in lockdown must not purge again on the next cycle.
+: > "$TEST_ROOT/var/run/pfctl.log"
+PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS="$ne_records" \
+  PROXYGAUGE_KILLSWITCH_TEST_TUN_INTERFACES='' \
+  run_persisted_helper restore >/dev/null
+! /usr/bin/grep -q -- '^-k ' "$TEST_ROOT/var/run/pfctl.log"
 
 # The periodic restore flips monitor↔lockdown as the tunnel comes and goes.
 PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS="$ne_records" \
@@ -379,11 +390,14 @@ if /usr/bin/grep -Fq 'block return out quick all' "$TEST_ROOT/etc/pf.anchors/pro
   echo '隧道恢复后必须回到监控态（省略 catch-all block）' >&2
   exit 1
 fi
-# The NE provider dying while armed locks the machine down on the next cycle.
+# The NE provider dying while armed locks the machine down on the next cycle,
+# again purging the physical states the open anchor had accumulated.
+: > "$TEST_ROOT/var/run/pfctl.log"
 PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS='' \
   run_persisted_helper restore >/dev/null
 /usr/bin/grep -Fq 'trusted_tunnels = "{ lo0 }"' "$TEST_ROOT/etc/pf.anchors/proxygauge"
 /usr/bin/grep -Fq 'block return out quick all' "$TEST_ROOT/etc/pf.anchors/proxygauge"
+/usr/bin/grep -Fq -- '-k 0.0.0.0/0 -k ' "$TEST_ROOT/var/run/pfctl.log"
 # The provider returning lifts the lockdown automatically.
 PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS="$ne_records" \
   run_persisted_helper restore >/dev/null
@@ -407,6 +421,58 @@ if /usr/bin/grep -Fq 'block return out quick all' "$TEST_ROOT/etc/pf.anchors/pro
   exit 1
 fi
 
+# Armed restore hard failures must fail closed even when the last render was
+# a block-less monitoring anchor (selection-failed branch).
+mock_anchor="$TEST_ROOT/var/run/pfctl-state/anchor.conf"
+if PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS='mihomo:abc:0' \
+  run_persisted_helper restore >/dev/null 2>&1; then
+  echo 'restore 选择失败必须返回非零' >&2
+  exit 1
+fi
+/usr/bin/grep -Fq 'selection-failed' "$RUNTIME_STATE"
+/usr/bin/grep -Fq 'trusted_tunnels = "{ lo0 }"' "$mock_anchor"
+/usr/bin/grep -Fq 'block return out quick all' "$mock_anchor"
+# Recover to the monitoring anchor before the next failure injection.
+PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS="$ne_records" \
+  run_persisted_helper restore >/dev/null
+if /usr/bin/grep -Fq 'block return out quick all' "$mock_anchor"; then
+  echo '故障恢复后必须回到监控态' >&2
+  exit 1
+fi
+# restore-failed branch: enable fails when the persisted template is missing.
+/bin/rm -f "$PERSIST_TEMPLATE"
+if PROXYGAUGE_KILLSWITCH_TEST_TEMPLATE="$SCRIPT_DIR/../PF/proxygauge.conf.template" \
+  PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS="$ne_records" \
+  run_persisted_helper restore >/dev/null 2>&1; then
+  echo 'restore 启用失败必须返回非零' >&2
+  exit 1
+fi
+/usr/bin/grep -Fq 'restore-failed' "$RUNTIME_STATE"
+/usr/bin/grep -Fq 'block return out quick all' "$mock_anchor"
+# The placeholder guard must keep rejecting the retired NE token: an old-format
+# persisted template (upgrade race) must fault, never leak literal placeholders.
+/bin/cat > "$PERSIST_TEMPLATE" <<'OLD_FORMAT_TEMPLATE'
+table <proxygauge_lan> persist { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 224.0.0.0/24, 239.0.0.0/8, 255.255.255.255/32, fc00::/7, fe80::/10, ff02::/16 }
+trusted_tunnels = "{ __TUN_INTERFACES__ }"
+pass quick on lo0 all keep state (if-bound)
+pass out quick on $trusted_tunnels all keep state (if-bound)
+pass out quick from any to <proxygauge_lan> keep state (if-bound)
+pass out quick all user = 0 keep state (if-bound)
+__NE_ENDPOINT_RULES__
+block return out quick all
+OLD_FORMAT_TEMPLATE
+if PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS="$ne_records" \
+  run_persisted_helper restore >/dev/null 2>&1; then
+  echo '旧格式模板必须触发故障而非渲染字面占位符' >&2
+  exit 1
+fi
+/usr/bin/grep -Fq 'restore-failed' "$RUNTIME_STATE"
+/usr/bin/grep -Fq 'block return out quick all' "$mock_anchor"
+if /usr/bin/grep -Fq '__NE_ENDPOINT_RULES__' "$mock_anchor"; then
+  echo '运行时规则不得残留已退役的模板占位符' >&2
+  exit 1
+fi
+
 # Root core behaviour stays unchanged: the catch-all block is always rendered.
 run_helper on AUTO >/dev/null
 /usr/bin/grep -Fq 'block return out quick all' "$TEST_ROOT/etc/pf.anchors/proxygauge"
@@ -418,6 +484,16 @@ if /usr/bin/grep -qE '__TUN_INTERFACES__|__BLOCK_ALL_RULE__|__NE_ENDPOINT_RULES_
   echo '渲染产物不得残留模板占位符' >&2
   exit 1
 fi
+
+# Legacy endpoint-pinning leftovers are removed on enable and on off.
+/usr/bin/printf '%s\n' '203.0.113.9' > "$TEST_ROOT/var/db/proxygauge/ne-endpoints"
+run_helper on AUTO >/dev/null
+[ ! -e "$TEST_ROOT/var/db/proxygauge/ne-endpoints" ]
+/usr/bin/printf '%s\n' '203.0.113.9' > "$TEST_ROOT/var/db/proxygauge/ne-endpoints"
+: > "$TEST_ROOT/var/run/pfctl.log"
+run_helper off >/dev/null
+[ ! -e "$TEST_ROOT/var/db/proxygauge/ne-endpoints" ]
+/usr/bin/grep -Fq -- '-t proxygauge_ne_endpoints -T flush' "$TEST_ROOT/var/run/pfctl.log"
 
 if run_helper install unexpected >/dev/null 2>&1; then
   echo '内置安装不得接收用户配置参数' >&2

@@ -634,7 +634,9 @@ render_managed_rules() {
     }
     { print }
   ' "$template" > "$destination" || return 1
-  ! /usr/bin/grep -qE '__TUN_INTERFACES__|__BLOCK_ALL_RULE__' "$destination"
+  # The retired NE endpoint token stays in the guard: an old-format persisted
+  # template (upgrade race) must fault here, never leak literal placeholders.
+  ! /usr/bin/grep -qE '__TUN_INTERFACES__|__BLOCK_ALL_RULE__|__NE_ENDPOINT_RULES__' "$destination"
 }
 
 config_has_safe_anchor() {
@@ -1070,13 +1072,17 @@ ensure_pf_reference() {
 }
 
 enable_rules() {
-  local reset_public prior_hash final_hash
+  local reset_public prior_hash final_hash prior_block final_block
   reset_public=0
   if [ "$BOOTSTRAP_DEFAULT" -eq 1 ]; then reset_public=1; install_rules || return 1; fi
   if ! anchor_enabled || ! managed_anchor_has_interface_bound_states; then reset_public=1; fi
   validate_anchor_ownership || return 1
   ensure_existing_anchor_registered || return 1
   prior_hash=$(file_sha256 "$ANCHOR_CONF")
+  prior_block=0
+  if /usr/bin/grep -qE '^[[:space:]]*block return out quick all' "$ANCHOR_CONF" 2>/dev/null; then
+    prior_block=1
+  fi
   if [ "$reset_public" -eq 1 ]; then
     load_fail_closed_transition || return 1
     ensure_pf_reference || return 1
@@ -1086,10 +1092,19 @@ enable_rules() {
   refresh_managed_rules || return 1
   validate_anchor_ownership || return 1
   final_hash=$(file_sha256 "$ANCHOR_CONF")
+  final_block=0
+  if /usr/bin/grep -qE '^[[:space:]]*block return out quick all' "$ANCHOR_CONF" 2>/dev/null; then
+    final_block=1
+  fi
   # Existing if-bound states cannot migrate from a TUN to a physical interface.
   # Atomically replace only this anchor; never flush LAN sessions on handover.
   "$PFCTL" -a "$ANCHOR" -nf "$ANCHOR_CONF" >/dev/null 2>&1 || return 1
   "$PFCTL" -a "$ANCHOR" -f "$ANCHOR_CONF" >/dev/null 2>&1 || return 1
+  if [ "$prior_block" -eq 0 ] && [ "$final_block" -eq 1 ]; then
+    # Entering lockdown from a block-less monitoring anchor: physical states
+    # established while egress was open would otherwise outlive the tunnel.
+    clear_existing_physical_states || { echo '❌ 无法在进入锁定前清理物理公网状态'; return 1; }
+  fi
   # Legacy endpoint-pinning state from older builds is never authoritative.
   /bin/rm -f "$NE_ENDPOINTS_FILE"
   anchor_enabled || { echo '❌ Kill Switch 启用后验证失败'; return 1; }
@@ -1428,11 +1443,19 @@ case "$ACTION" in
       echo "Kill Switch 未设置为开机恢复，保持关闭"
       exit 0
     fi
-    resolve_core_selection || { write_runtime_state fault selection-failed; exit 1; }
+    # Fault paths must fail closed even when the last successful render was a
+    # block-less NE monitoring anchor; the transition is independent of the
+    # failed resolution and best-effort so the fault semantics stay intact.
+    resolve_core_selection || {
+      load_fail_closed_transition || true
+      write_runtime_state fault selection-failed
+      exit 1
+    }
     if enable_rules; then
       persist_selection || exit 1
       write_runtime_state enabled || exit 1
     else
+      load_fail_closed_transition || true
       write_runtime_state fault restore-failed || true
       exit 1
     fi
