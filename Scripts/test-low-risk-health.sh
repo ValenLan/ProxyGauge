@@ -81,6 +81,7 @@ if /usr/bin/grep -Fq 'Click="HealthButton_Click"' "$WINDOWS_MAIN"; then
 fi
 
 generic_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CORE_PIDS=41001 \
   PROXYGAUGE_MIXED=127.0.0.1:9 \
   PROXYGAUGE_SECONDARY_ENABLED=0 \
@@ -96,6 +97,7 @@ if /usr/bin/grep -Fq '===== 5.' <<< "$generic_output"; then
 fi
 
 extended_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_MIXED=127.0.0.1:9 \
   PROXYGAUGE_SECONDARY_ENABLED=1 \
   PROXYGAUGE_SECONDARY_MIXED=127.0.0.1:10 \
@@ -131,6 +133,7 @@ FAKE_DNS="$TEMP_ROOT/fake-dscacheutil"
 /bin/chmod 755 "$FAKE_DNS"
 
 unowned_listener_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CURL="$FAKE_CURL" \
   PROXYGAUGE_CORE_PIDS=41001 \
   PROXYGAUGE_DISCOVERY_PORT_ACTIVE=1 \
@@ -144,6 +147,7 @@ unowned_listener_output=$(PROXYGAUGE_CONFIG=/dev/null \
 /usr/bin/grep -Fq '可以连接，但监听器不属于已检测的 Mihomo 核心' <<< "$unowned_listener_output"
 
 host_mismatch_listener_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CURL="$FAKE_CURL" \
   PROXYGAUGE_CORE_PIDS=41001 \
   PROXYGAUGE_DISCOVERY_PORT_ACTIVE=1 \
@@ -157,6 +161,7 @@ host_mismatch_listener_output=$(PROXYGAUGE_CONFIG=/dev/null \
 /usr/bin/grep -Fq '可以连接，但监听器不属于已检测的 Mihomo 核心' <<< "$host_mismatch_listener_output"
 
 host_exact_listener_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CURL="$FAKE_CURL" \
   PROXYGAUGE_CORE_PIDS=41001 \
   PROXYGAUGE_DISCOVERY_PORT_ACTIVE=1 \
@@ -171,6 +176,7 @@ host_exact_listener_output=$(PROXYGAUGE_CONFIG=/dev/null \
 
 dns_start=$(/bin/date +%s)
 dns_timeout_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CURL="$FAKE_CURL" \
   PROXYGAUGE_DSCACHEUTIL="$FAKE_DNS" \
   PROXYGAUGE_TUN_ACTIVE=1 \
@@ -188,6 +194,7 @@ dns_elapsed=$(( $(/bin/date +%s) - dns_start ))
 /usr/bin/grep -Fq '出口 IP (TUN 系统路径)' <<< "$dns_timeout_output"
 
 other_tunnel_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CURL="$FAKE_CURL" \
   PROXYGAUGE_TUN_ACTIVE=1 \
   PROXYGAUGE_TUN_KIND=other \
@@ -203,6 +210,7 @@ if /usr/bin/grep -Fq 'TUN DNS 返回 Fake-IP' <<< "$other_tunnel_output"; then
 fi
 
 generic_route_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CURL="$FAKE_CURL" \
   PROXYGAUGE_TUN_ROUTE_TABLE=$'default            10.0.0.1           UGScg                 utun7' \
   PROXYGAUGE_MIHOMO_SOCKET="$TEMP_ROOT/missing.sock" \
@@ -218,6 +226,7 @@ TUN_CONFIG_WITHOUT_DEVICE="$TEMP_ROOT/tun-config-without-device.json"
 ROUTES_UTUN7_V4=$'inet 1.1.1.1 utun7\ninet 8.8.8.8 utun7\ninet 9.9.9.9 utun7\ninet 208.67.222.222 utun7\ninet6 2606:4700:4700::1111 unavailable\ninet6 2001:4860:4860::8888 unavailable\ninet6 2620:fe::fe unavailable\ninet6 2620:119:35::35 unavailable'
 ROUTES_PHYSICAL_V4=${ROUTES_UTUN7_V4//utun7/en0}
 enabled_config_generic_route_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CURL="$FAKE_CURL" \
   PROXYGAUGE_TUN_ROUTE_TABLE=$'default            10.0.0.1           UGScg                 utun7' \
   PROXYGAUGE_DISCOVERY_SOCKET_JSON="$TUN_CONFIG_WITHOUT_DEVICE" \
@@ -229,6 +238,7 @@ enabled_config_generic_route_output=$(PROXYGAUGE_CONFIG=/dev/null \
 /usr/bin/grep -Fq 'Mihomo TUN 已启用，但路由归属仍需确认；请以系统实际出口为准' <<< "$enabled_config_generic_route_output"
 
 enabled_config_fake_ip_route_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CURL="$FAKE_CURL" \
   PROXYGAUGE_TUN_ROUTE_TABLE=$'198.18/15          link#24            UCS                   utun7' \
   PROXYGAUGE_DISCOVERY_SOCKET_JSON="$TUN_CONFIG_WITHOUT_DEVICE" \
@@ -245,6 +255,7 @@ if /usr/bin/grep -Fq '代表性 IPv4 / IPv6 路由已确认' <<< "$enabled_confi
 fi
 
 confirmed_fake_ip_route_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CURL="$FAKE_CURL" \
   PROXYGAUGE_DSCACHEUTIL=/usr/bin/true \
   PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
@@ -264,6 +275,7 @@ FAKE_TUN_DNS="$TEMP_ROOT/fake-tun-dns"
 /usr/bin/printf '%s\n' '#!/bin/bash' 'echo "ip_address: 198.18.0.2"' > "$FAKE_TUN_DNS"
 /bin/chmod 755 "$FAKE_TUN_DNS"
 if ! tun_only_success_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CURL="$FAKE_CURL" \
   PROXYGAUGE_DSCACHEUTIL="$FAKE_TUN_DNS" \
   PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
@@ -283,6 +295,7 @@ fi
 /usr/bin/grep -Fq '代理链路检查通过' <<< "$tun_only_success_output"
 
 mismatched_mihomo_route_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CURL="$FAKE_CURL" \
   PROXYGAUGE_TUN_ROUTE_TABLE=$'default            10.0.0.1           UGScg                 utun7' \
   PROXYGAUGE_MIHOMO_TUN_ACTIVE=1 \
@@ -300,6 +313,7 @@ if /usr/bin/grep -Fq '代表性 IPv4 / IPv6 路由已确认' <<< "$mismatched_mi
 fi
 
 mismatched_mihomo_fake_ip_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CURL="$FAKE_CURL" \
   PROXYGAUGE_TUN_ROUTE_TABLE=$'198.18/15          link#24            UCS                   utun7' \
   PROXYGAUGE_MIHOMO_TUN_ACTIVE=1 \
@@ -326,6 +340,7 @@ ipv6_output=$(NO_PROXY='*' no_proxy='*' \
 
 wildcard_proxy_state=$'<dictionary> {\n  HTTPSEnable : 1\n  HTTPSProxy : 127.0.0.1\n  HTTPSPort : 9\n  ExceptionsList : <array> {\n    0 : *config*\n  }\n}'
 wildcard_bypass_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CURL="$FAKE_CURL" \
   PROXYGAUGE_MIXED=127.0.0.1:9 \
   PROXYGAUGE_SYSTEM_PROXY_STATE="$wildcard_proxy_state" \
@@ -336,6 +351,7 @@ wildcard_bypass_output=$(PROXYGAUGE_CONFIG=/dev/null \
 
 scoped_only_proxy_state=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n  __SCOPED__ : <dictionary> {\n    en0 : <dictionary> {\n      HTTPSEnable : 1\n      HTTPSProxy : 127.0.0.1\n      HTTPSPort : 9\n    }\n  }\n}'
 scoped_only_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CURL="$FAKE_CURL" \
   PROXYGAUGE_MIXED=127.0.0.1:9 \
   PROXYGAUGE_SYSTEM_PROXY_STATE="$scoped_only_proxy_state" \
@@ -361,6 +377,7 @@ equivalent_loopback_output=$(NO_PROXY='*' no_proxy='*' \
 /usr/bin/grep -Fq '入口与默认 mixed 端口相同，无法区分两个出口' <<< "$equivalent_loopback_output"
 
 remote_endpoint_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CURL="$FAKE_CURL" \
   PROXYGAUGE_MIXED='192.0.2.1:7890' \
   PROXYGAUGE_SECONDARY_ENABLED=0 \
