@@ -200,6 +200,61 @@ core_pids() {
   } | /usr/bin/awk 'NF && !seen[$0]++'
 }
 
+proxy_provider_pids() {
+  if [ -n "${PROXYGAUGE_PROVIDER_PIDS+x}" ]; then
+    /usr/bin/printf '%s\n' "$PROXYGAUGE_PROVIDER_PIDS"
+    return
+  fi
+  if [ -n "${PROXYGAUGE_CORE_PIDS+x}" ]; then
+    /usr/bin/printf '%s\n' "$PROXYGAUGE_CORE_PIDS"
+    return
+  fi
+  {
+    core_pids
+    /usr/bin/pgrep -x Shadowrocket 2>/dev/null || true
+    /usr/bin/pgrep -x MacPacketTunnel 2>/dev/null || true
+  } | /usr/bin/awk 'NF && !seen[$0]++'
+}
+
+provider_pid_name() {
+  local pid name
+  pid="$1"
+  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  name=$(/bin/ps -p "$pid" -o ucomm= 2>/dev/null || true)
+  name=$(/usr/bin/printf '%s' "$name" \
+    | /usr/bin/sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
+  [ -n "$name" ] || return 1
+  /usr/bin/printf '%s\n' "$name"
+}
+
+provider_keys() {
+  local pid name
+  while IFS= read -r pid; do
+    case "$pid" in ''|*[!0-9]*) continue ;; esac
+    name=$(provider_pid_name "$pid" 2>/dev/null || true)
+    case "$name" in
+      Shadowrocket|MacPacketTunnel) /usr/bin/printf '%s\n' shadowrocket ;;
+      verge-mihomo|mihomo|clash-meta) /usr/bin/printf 'mihomo:%s\n' "$pid" ;;
+      *) /usr/bin/printf 'unknown:%s\n' "$pid" ;;
+    esac
+  done < <(proxy_provider_pids) | /usr/bin/awk 'NF && !seen[$0]++'
+}
+
+provider_count() {
+  provider_keys | /usr/bin/awk 'NF { count++ } END { print count+0 }'
+}
+
+provider_label() {
+  local keys
+  keys=$(provider_keys)
+  [ "$(/usr/bin/awk 'NF { count++ } END { print count+0 }' <<< "$keys")" = 1 ] \
+    || return 0
+  case "$(/usr/bin/awk 'NF { print; exit }' <<< "$keys")" in
+    shadowrocket) /usr/bin/printf '%s\n' Shadowrocket ;;
+    mihomo:*) /usr/bin/printf '%s\n' Mihomo ;;
+  esac
+}
+
 socket_owned_by_mihomo() {
   local socket_path records owner_pid core_pid
   socket_path="$1"
@@ -430,6 +485,72 @@ trusted_mihomo_tun_candidates() {
   /usr/bin/printf '%s\n' "$normalized"
 }
 
+trusted_client_tun_candidates() {
+  local raw candidate count normalized
+  local -a candidate_list
+  raw="${PROXYGAUGE_TRUSTED_CLIENT_TUNS:-}"
+  [ -n "$raw" ] || return 1
+  /usr/bin/grep -Eq '^utun[0-9]+(,utun[0-9]+){0,62}$' <<< "$raw" || return 1
+  IFS=',' read -r -a candidate_list <<< "$raw"
+  count=0
+  normalized=""
+  for candidate in "${candidate_list[@]}"; do
+    count=$((count + 1))
+    [ "$count" -le 63 ] || return 1
+    if ! /usr/bin/grep -Fxq "$candidate" <<< "$normalized"; then
+      normalized="${normalized}${normalized:+$'\n'}${candidate}"
+    fi
+  done
+  [ -n "$normalized" ] || return 1
+  /usr/bin/printf '%s\n' "$normalized"
+}
+
+client_tun_candidates() {
+  tun_route_table | /usr/bin/awk '
+    tolower($1) == "default" {
+      for (column = 1; column <= NF; column++) {
+        if ($column ~ /^utun[0-9]+$/) { print $column; break }
+      }
+    }
+  ' | /usr/bin/awk 'NF && !seen[$0]++'
+}
+
+classify_client_tunnel_route() {
+  local label candidates inet_route inet6_route available_count route_interface
+  label=$(provider_label)
+  if [ -z "$label" ]; then
+    /usr/bin/printf '%s\n' other
+    return
+  fi
+  if ! candidates=$(trusted_client_tun_candidates 2>/dev/null); then
+    candidates=$(client_tun_candidates 2>/dev/null || true)
+  fi
+  if [ -z "$candidates" ]; then
+    /usr/bin/printf '%s\n' other
+    return
+  fi
+
+  inet_route=$(representative_route_interface inet \
+    1.1.1.1 8.8.8.8 9.9.9.9 208.67.222.222)
+  inet6_route=$(representative_route_interface inet6 \
+    2606:4700:4700::1111 2001:4860:4860::8888 2620:fe::fe 2620:119:35::35)
+
+  available_count=0
+  for route_interface in "$inet_route" "$inet6_route"; do
+    [ "$route_interface" = unavailable ] && continue
+    available_count=$((available_count + 1))
+    if ! /usr/bin/grep -Fxq "$route_interface" <<< "$candidates"; then
+      /usr/bin/printf '%s\n' other
+      return
+    fi
+  done
+  if [ "$available_count" -eq 0 ]; then
+    /usr/bin/printf '%s\n' other
+  else
+    /usr/bin/printf '%s\n' client
+  fi
+}
+
 classify_tunnel_route() {
   local device fake_device candidates inet_route inet6_route available_count route_interface
   if ! has_tun_route; then
@@ -437,7 +558,7 @@ classify_tunnel_route() {
     return
   fi
   case "${PROXYGAUGE_TUN_KIND:-}" in
-    mihomo|mihomo-unconfirmed|split|unknown|other|none)
+    mihomo|mihomo-unconfirmed|split|unknown|other|client|none)
       /usr/bin/printf '%s\n' "$PROXYGAUGE_TUN_KIND"
       return
       ;;
@@ -451,7 +572,7 @@ classify_tunnel_route() {
     fi
     candidates="$device"
   elif ! candidates=$(trusted_mihomo_tun_candidates 2>/dev/null); then
-      /usr/bin/printf '%s\n' other
+      classify_client_tunnel_route
       return
   fi
 
@@ -612,26 +733,30 @@ matching_listener_pids() {
     | /usr/bin/awk 'NF && !seen[$0]++'
 }
 
-listener_owned_by_mihomo() {
-  local host port owner_pids core_pid owner_pid
+listener_owned_by_proxy() {
+  local host port owner_pids provider_pid owner_pid
   host="$1"
   port="$2"
 
   case "${PROXYGAUGE_DISCOVERY_PORT_OWNER:-}" in
-    mihomo) return 0 ;;
+    mihomo|proxy) return 0 ;;
     other|unknown) return 1 ;;
   esac
 
   owner_pids=$(matching_listener_pids "$host" "$port") || return 1
   [ -n "$owner_pids" ] || return 1
 
-  while IFS= read -r core_pid; do
-    case "$core_pid" in ''|*[!0-9]*) continue ;; esac
+  while IFS= read -r provider_pid; do
+    case "$provider_pid" in ''|*[!0-9]*) continue ;; esac
     while IFS= read -r owner_pid; do
-      [ "$core_pid" = "$owner_pid" ] && return 0
+      [ "$provider_pid" = "$owner_pid" ] && return 0
     done <<< "$owner_pids"
-  done < <(core_pids)
+  done < <(proxy_provider_pids)
   return 1
+}
+
+listener_owned_by_mihomo() {
+  listener_owned_by_proxy "$@"
 }
 
 core_listener_records() {
@@ -741,6 +866,8 @@ detected_running_client() {
     if /usr/bin/pgrep -x v2ray >/dev/null 2>&1; then /usr/bin/printf '%s\n' "V2Ray"; fi
     if /usr/bin/pgrep -x iKuuuVPNCore >/dev/null 2>&1 \
       || /usr/bin/pgrep -x ikuuuvpncore >/dev/null 2>&1; then /usr/bin/printf '%s\n' "iKuuuVPN"; fi
+    if /usr/bin/pgrep -x Shadowrocket >/dev/null 2>&1 \
+      || /usr/bin/pgrep -x MacPacketTunnel >/dev/null 2>&1; then /usr/bin/printf '%s\n' "Shadowrocket"; fi
   } | /usr/bin/awk '!seen[$0]++ { count++; client=$0 } END { if (count == 1) print client }'
 }
 
@@ -751,6 +878,8 @@ detected_running_core() {
         /usr/bin/printf '%s\n' "$core_name"
       fi
     done
+    if /usr/bin/pgrep -x Shadowrocket >/dev/null 2>&1 \
+      || /usr/bin/pgrep -x MacPacketTunnel >/dev/null 2>&1; then /usr/bin/printf '%s\n' "Shadowrocket"; fi
   } | /usr/bin/awk '!seen[$0]++ { count++; core=$0 } END { if (count == 1) print core }'
 }
 
@@ -758,6 +887,7 @@ discover() {
   local client core endpoint source active mode config_path port candidate
   local system_active tun_active mihomo_tun_unconfirmed split_tun_active
   local unknown_tun_active other_tun_active tunnel_kind
+  local client_tun_active client_label
 
   client="未识别"
   core=""
@@ -770,6 +900,8 @@ discover() {
   split_tun_active=""
   unknown_tun_active=""
   other_tun_active=""
+  client_tun_active=""
+  client_label=""
 
   if [ -n "${PROXYGAUGE_DISCOVERY_CLIENT:-}" ]; then
     client="$PROXYGAUGE_DISCOVERY_CLIENT"
@@ -790,8 +922,18 @@ discover() {
   [ "$tunnel_kind" = split ] && split_tun_active=1
   [ "$tunnel_kind" = unknown ] && unknown_tun_active=1
   [ "$tunnel_kind" = other ] && other_tun_active=1
+  [ "$tunnel_kind" = client ] && client_tun_active=1
+  if [ -n "$client_tun_active" ]; then
+    client_label=$(provider_label)
+    if [ -z "$client_label" ]; then
+      client_tun_active=""
+      other_tun_active=1
+    fi
+  fi
   if [ -n "$system_active" ] && [ -n "$other_tun_active" ]; then
     mode="系统代理 + 其他 VPN / TUN"
+  elif [ -n "$system_active" ] && [ -n "$client_tun_active" ]; then
+    mode="系统代理 + ${client_label} VPN"
   elif [ -n "$system_active" ] && [ -n "$tun_active" ]; then
     if system_proxy_dynamic; then
       mode="PAC / 自动代理 + Mihomo TUN"
@@ -816,6 +958,8 @@ discover() {
     mode="Mihomo TUN（代表性路由不一致）"
   elif [ -n "$unknown_tun_active" ]; then
     mode="Mihomo TUN（路由查询失败）"
+  elif [ -n "$client_tun_active" ]; then
+    mode="${client_label} VPN"
   elif [ -n "$other_tun_active" ]; then
     mode="其他 VPN / TUN"
   elif [ -n "$system_active" ]; then
@@ -857,9 +1001,9 @@ discover() {
   fi
 
   if [ -z "$endpoint" ]; then
-    for port in 7890 7897; do
+    for port in 7890 7897 1082; do
       if discovery_port_open 127.0.0.1 "$port" \
-        && listener_owned_by_mihomo 127.0.0.1 "$port"; then
+        && listener_owned_by_proxy 127.0.0.1 "$port"; then
         endpoint="127.0.0.1:$port"
         source="本地监听端口"
         break
@@ -871,7 +1015,7 @@ discover() {
     candidate="${endpoint%:*}"
     port="${endpoint##*:}"
     if discovery_port_open "$candidate" "$port" \
-      && listener_owned_by_mihomo "$candidate" "$port"; then
+      && listener_owned_by_proxy "$candidate" "$port"; then
       active="ok"
     fi
     /usr/bin/printf 'found\t1\n'
@@ -965,7 +1109,7 @@ probe() {
     port_value="配置无效"
     port_level="error"
   elif discovery_port_open "$MIXED_HOST" "$MIXED_PORT"; then
-    if listener_owned_by_mihomo "$MIXED_HOST" "$MIXED_PORT"; then
+    if listener_owned_by_proxy "$MIXED_HOST" "$MIXED_PORT"; then
       port_value="${MIXED_PORT} 监听中"
       port_level="ok"
     else
@@ -1036,7 +1180,7 @@ probe() {
     tun_level="warning"
     unknown_tun_active=1
     entry_uncertain=1
-  elif [ "$tunnel_kind" = other ]; then
+  elif [ "$tunnel_kind" = other ] || [ "$tunnel_kind" = client ]; then
     tun_value="检测到其他隧道"
     tun_level="warning"
     other_tun_active=1
