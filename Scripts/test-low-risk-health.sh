@@ -524,4 +524,83 @@ $mihomo_test_pid" \
   /bin/bash "$CHECK" 2>&1 || true)
 /usr/bin/grep -Fq '发现 2 个代理客户端或核心' <<< "$multi_provider_output"
 
+# --- client 隧道归因夹具：无 Mihomo socket、Shadowrocket 提供隧道路由时，
+# 第 3 节必须归属提供者并按已确认处理，不得再说"不能归因于 Mihomo"。
+shadowrocket_client_route_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
+  PROXYGAUGE_CURL="$FAKE_CURL" \
+  PROXYGAUGE_PROVIDER_PIDS="$shadowrocket_provider_pids" \
+  PROXYGAUGE_MIHOMO_SOCKET="$TEMP_ROOT/missing.sock" \
+  PROXYGAUGE_TUN_ROUTE_TABLE=$'default            10.0.0.1           UGScg                 utun7' \
+  PROXYGAUGE_ROUTE_LOOKUP_RESULTS="$ROUTES_UTUN7_V4" \
+  PROXYGAUGE_MIXED=127.0.0.1:9 \
+  PROXYGAUGE_SECONDARY_ENABLED=0 \
+  PROXYGAUGE_TIMEOUT=1 \
+  /bin/bash "$CHECK" 2>&1 || true)
+/usr/bin/grep -Fq 'Shadowrocket VPN: 代表性隧道路由已确认' <<< "$shadowrocket_client_route_output"
+/usr/bin/grep -Fq '代理入口已生效' <<< "$shadowrocket_client_route_output"
+if /usr/bin/grep -Fq '不能归因于 Mihomo' <<< "$shadowrocket_client_route_output"; then
+  echo 'A provider-owned client tunnel must not be reported as unattributable to Mihomo.' >&2
+  exit 1
+fi
+
+ROUTES_UTUN9_V4=${ROUTES_UTUN7_V4//utun7/utun9}
+trusted_client_route_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
+  PROXYGAUGE_CURL="$FAKE_CURL" \
+  PROXYGAUGE_PROVIDER_PIDS="$shadowrocket_provider_pids" \
+  PROXYGAUGE_MIHOMO_SOCKET="$TEMP_ROOT/missing.sock" \
+  PROXYGAUGE_TUN_ROUTE_TABLE=$'default            10.0.0.1           UGScg                 utun7' \
+  PROXYGAUGE_TRUSTED_CLIENT_TUNS=utun9 \
+  PROXYGAUGE_ROUTE_LOOKUP_RESULTS="$ROUTES_UTUN9_V4" \
+  PROXYGAUGE_MIXED=127.0.0.1:9 \
+  PROXYGAUGE_SECONDARY_ENABLED=0 \
+  PROXYGAUGE_TIMEOUT=1 \
+  /bin/bash "$CHECK" 2>&1 || true)
+/usr/bin/grep -Fq 'Shadowrocket VPN: 代表性隧道路由已确认' <<< "$trusted_client_route_output"
+
+untrusted_client_route_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
+  PROXYGAUGE_CURL="$FAKE_CURL" \
+  PROXYGAUGE_PROVIDER_PIDS="$shadowrocket_provider_pids" \
+  PROXYGAUGE_MIHOMO_SOCKET="$TEMP_ROOT/missing.sock" \
+  PROXYGAUGE_TUN_ROUTE_TABLE=$'default            10.0.0.1           UGScg                 utun9' \
+  PROXYGAUGE_TRUSTED_CLIENT_TUNS=utun9 \
+  PROXYGAUGE_ROUTE_LOOKUP_RESULTS="$ROUTES_UTUN7_V4" \
+  PROXYGAUGE_MIXED=127.0.0.1:9 \
+  PROXYGAUGE_SECONDARY_ENABLED=0 \
+  PROXYGAUGE_TIMEOUT=1 \
+  /bin/bash "$CHECK" 2>&1 || true)
+/usr/bin/grep -Fq '检测到其他 VPN / TUN；请以系统实际出口确认当前路径' <<< "$untrusted_client_route_output"
+if /usr/bin/grep -Fq 'VPN: 代表性隧道路由已确认' <<< "$untrusted_client_route_output"; then
+  echo 'Routes outside the trusted client tunnels must not be attributed to the client.' >&2
+  exit 1
+fi
+
+injected_client_kind_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
+  PROXYGAUGE_CURL="$FAKE_CURL" \
+  PROXYGAUGE_PROVIDER_PIDS="$shadowrocket_provider_pids" \
+  PROXYGAUGE_TUN_ACTIVE=1 \
+  PROXYGAUGE_TUN_KIND=client \
+  PROXYGAUGE_MIXED=127.0.0.1:9 \
+  PROXYGAUGE_SECONDARY_ENABLED=0 \
+  PROXYGAUGE_TIMEOUT=1 \
+  /bin/bash "$CHECK" 2>&1 || true)
+/usr/bin/grep -Fq 'Shadowrocket VPN: 代表性隧道路由已确认' <<< "$injected_client_kind_output"
+
+dual_entry_client_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 1\n  HTTPSProxy : 127.0.0.1\n  HTTPSPort : 53012\n}' \
+  PROXYGAUGE_CURL="$FAKE_CURL" \
+  PROXYGAUGE_PROVIDER_PIDS="$shadowrocket_provider_pids" \
+  PROXYGAUGE_MIHOMO_SOCKET="$TEMP_ROOT/missing.sock" \
+  PROXYGAUGE_TUN_ROUTE_TABLE=$'default            10.0.0.1           UGScg                 utun7' \
+  PROXYGAUGE_ROUTE_LOOKUP_RESULTS="$ROUTES_UTUN7_V4" \
+  PROXYGAUGE_MIXED=127.0.0.1:53012 \
+  PROXYGAUGE_SECONDARY_ENABLED=0 \
+  PROXYGAUGE_TIMEOUT=1 \
+  /bin/bash "$CHECK" 2>&1 || true)
+/usr/bin/grep -Fq 'Shadowrocket VPN: 代表性隧道路由已确认' <<< "$dual_entry_client_output"
+/usr/bin/grep -Fq '系统代理与 TUN 同时开启 — 通常只需保留一个流量入口' <<< "$dual_entry_client_output"
+
 echo "ProxyGauge low-risk health tests passed."

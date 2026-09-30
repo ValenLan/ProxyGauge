@@ -581,7 +581,7 @@ fake_ip_route_interface() {
 }
 
 route_lookup_interface() {
-  local family destination result
+  local family destination result route_output route_status
   family="$1"
   destination="$2"
   if [ -n "${PROXYGAUGE_ROUTE_LOOKUP_RESULTS+x}" ]; then
@@ -596,12 +596,19 @@ route_lookup_interface() {
     esac
     return
   fi
-  if result=$(/sbin/route -n get "-$family" "$destination" 2>/dev/null \
-    | /usr/bin/awk '/^[[:space:]]*interface:[[:space:]]*/ { print $2; exit }'); then
+  route_status=0
+  route_output=$(/sbin/route -n get "-$family" "$destination" 2>&1) || route_status=$?
+  if [ "$route_status" -eq 0 ]; then
+    result=$(/usr/bin/awk '/^[[:space:]]*interface:[[:space:]]*/ { print $2; exit }' \
+      <<< "$route_output")
     if /usr/bin/grep -Eq '^[A-Za-z0-9._-]+$' <<< "$result"; then
       /usr/bin/printf '%s\n' "$result"
       return
     fi
+  fi
+  if /usr/bin/grep -Fq 'not in table' <<< "$route_output"; then
+    /usr/bin/printf '%s\n' unavailable
+    return
   fi
   if route_family_has_default "$family"; then
     /usr/bin/printf '%s\n' unknown
@@ -678,6 +685,72 @@ mihomo_tun_device() {
   return 0
 }
 
+trusted_client_tun_candidates() {
+  local raw candidate count normalized
+  local -a candidate_list
+  raw="${PROXYGAUGE_TRUSTED_CLIENT_TUNS:-}"
+  [ -n "$raw" ] || return 1
+  /usr/bin/grep -Eq '^utun[0-9]+(,utun[0-9]+){0,62}$' <<< "$raw" || return 1
+  IFS=',' read -r -a candidate_list <<< "$raw"
+  count=0
+  normalized=""
+  for candidate in "${candidate_list[@]}"; do
+    count=$((count + 1))
+    [ "$count" -le 63 ] || return 1
+    if ! /usr/bin/grep -Fxq "$candidate" <<< "$normalized"; then
+      normalized="${normalized}${normalized:+$'\n'}${candidate}"
+    fi
+  done
+  [ -n "$normalized" ] || return 1
+  /usr/bin/printf '%s\n' "$normalized"
+}
+
+client_tun_candidates() {
+  tun_route_table | /usr/bin/awk '
+    tolower($1) == "default" {
+      for (column = 1; column <= NF; column++) {
+        if ($column ~ /^utun[0-9]+$/) { print $column; break }
+      }
+    }
+  ' | /usr/bin/awk 'NF && !seen[$0]++'
+}
+
+classify_client_tunnel_route() {
+  local label candidates inet_route inet6_route available_count route_interface
+  label=$(provider_label)
+  if [ -z "$label" ]; then
+    /usr/bin/printf '%s\n' other
+    return
+  fi
+  if ! candidates=$(trusted_client_tun_candidates 2>/dev/null); then
+    candidates=$(client_tun_candidates 2>/dev/null || true)
+  fi
+  if [ -z "$candidates" ]; then
+    /usr/bin/printf '%s\n' other
+    return
+  fi
+
+  inet_route=$(representative_route_interface inet \
+    1.1.1.1 8.8.8.8 9.9.9.9 208.67.222.222)
+  inet6_route=$(representative_route_interface inet6 \
+    2606:4700:4700::1111 2001:4860:4860::8888 2620:fe::fe 2620:119:35::35)
+
+  available_count=0
+  for route_interface in "$inet_route" "$inet6_route"; do
+    [ "$route_interface" = unavailable ] && continue
+    available_count=$((available_count + 1))
+    if ! /usr/bin/grep -Fxq "$route_interface" <<< "$candidates"; then
+      /usr/bin/printf '%s\n' other
+      return
+    fi
+  done
+  if [ "$available_count" -eq 0 ]; then
+    /usr/bin/printf '%s\n' other
+  else
+    /usr/bin/printf '%s\n' client
+  fi
+}
+
 classify_tunnel_route() {
   local device fake_device candidate inet_route inet6_route available_count route_interface
   if ! has_tun_route; then
@@ -685,13 +758,13 @@ classify_tunnel_route() {
     return
   fi
   case "${PROXYGAUGE_TUN_KIND:-}" in
-    mihomo|mihomo-unconfirmed|split|unknown|other|none)
+    mihomo|mihomo-unconfirmed|split|unknown|other|client|none)
       /usr/bin/printf '%s\n' "$PROXYGAUGE_TUN_KIND"
       return
       ;;
   esac
   if ! device=$(mihomo_tun_device 2>/dev/null); then
-    /usr/bin/printf '%s\n' other
+    classify_client_tunnel_route
     return
   fi
   fake_device=$(fake_ip_route_interface 2>/dev/null || true)
@@ -842,6 +915,7 @@ echo "===== 3. 代理入口 (系统代理 / TUN, 至少一个) ====="
 MODE_OK=""
 SYSTEM_ACTIVE=""
 TUN_ACTIVE=""
+CLIENT_TUN_ACTIVE=""
 OTHER_TUN_ACTIVE=""
 MIHOMO_TUN_UNCONFIRMED=""
 SPLIT_TUN_ACTIVE=""
@@ -894,6 +968,14 @@ if [ "$TUN_KIND" = mihomo ]; then
   echo "  ℹ️ TUN: 代表性 IPv4 / IPv6 路由已确认"
   MODE_OK=1
   TUN_ACTIVE=1
+elif [ "$TUN_KIND" = client ] && [ -n "$PROVIDER_LABEL" ]; then
+  echo "  ℹ️ $PROVIDER_LABEL VPN: 代表性隧道路由已确认"
+  MODE_OK=1
+  CLIENT_TUN_ACTIVE=1
+elif [ "$TUN_KIND" = client ]; then
+  echo "  ℹ️ 其他 VPN / TUN: 检测到隧道路由，归属客户端未知"
+  MODE_OK=1
+  OTHER_TUN_ACTIVE=1
 elif [ "$TUN_KIND" = mihomo-unconfirmed ]; then
   echo "  ℹ️ Mihomo TUN: 配置已启用，但活动路由无法匹配具体 utun 设备"
   MODE_OK=1
@@ -914,7 +996,7 @@ else
   echo "  ℹ️ TUN: 未检测到有效隧道路由"
 fi
 if [ -n "$SYSTEM_ACTIVE" ] \
-  && [ -n "$TUN_ACTIVE$MIHOMO_TUN_UNCONFIRMED$SPLIT_TUN_ACTIVE$UNKNOWN_TUN_ACTIVE$OTHER_TUN_ACTIVE" ]; then
+  && [ -n "$TUN_ACTIVE$CLIENT_TUN_ACTIVE$MIHOMO_TUN_UNCONFIRMED$SPLIT_TUN_ACTIVE$UNKNOWN_TUN_ACTIVE$OTHER_TUN_ACTIVE" ]; then
   check warn "系统代理与 TUN 同时开启 — 通常只需保留一个流量入口"
 elif [ -n "$SYSTEM_DYNAMIC" ]; then
   check warn "PAC / 自动代理会按目标地址选择路径 — 请以系统实际出口为准"
