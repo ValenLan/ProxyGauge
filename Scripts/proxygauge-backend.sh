@@ -1088,14 +1088,29 @@ probe() {
   local entry_value entry_level entry_title entry_symbol
   local overall headline detail entry_ok system_active tun_active mihomo_tun_unconfirmed
   local split_tun_active unknown_tun_active other_tun_active tunnel_kind
+  local engine_up engine_name provider_n client_tun_active client_label attr_name
 
   core_count=$(core_pids | /usr/bin/awk 'NF {count++} END {print count+0}')
+  engine_up=""
+  engine_name=""
   case "$core_count" in
     0)
-      core_value="未运行"
-      core_level="error"
+      provider_n=$(provider_count)
+      if [ "$provider_n" = "1" ]; then
+        engine_name=$(provider_label)
+      fi
+      if [ -n "$engine_name" ]; then
+        engine_up=1
+        core_value="$engine_name"
+        core_level="ok"
+      else
+        core_value="未运行"
+        core_level="error"
+      fi
       ;;
     1)
+      engine_up=1
+      engine_name="Mihomo"
       core_value="运行中"
       core_level="ok"
       ;;
@@ -1104,6 +1119,7 @@ probe() {
       core_level="warning"
       ;;
   esac
+  attr_name="${engine_name:-当前代理客户端}"
 
   if [ -n "$MIXED_CONFIG_INVALID" ]; then
     port_value="配置无效"
@@ -1131,6 +1147,8 @@ probe() {
   split_tun_active=""
   unknown_tun_active=""
   other_tun_active=""
+  client_tun_active=""
+  client_label=""
   if system_proxy_active; then
     if system_proxy_dynamic; then
       system_value="按目标决定"
@@ -1180,7 +1198,16 @@ probe() {
     tun_level="warning"
     unknown_tun_active=1
     entry_uncertain=1
-  elif [ "$tunnel_kind" = other ] || [ "$tunnel_kind" = client ]; then
+  elif [ "$tunnel_kind" = other ]; then
+    tun_value="检测到其他隧道"
+    tun_level="warning"
+    other_tun_active=1
+  elif [ "$tunnel_kind" = client ] && [ -n "$engine_name" ]; then
+    tun_value="代表性路由已确认"
+    tun_level="ok"
+    client_tun_active=1
+    client_label="$engine_name"
+  elif [ "$tunnel_kind" = client ]; then
     tun_value="检测到其他隧道"
     tun_level="warning"
     other_tun_active=1
@@ -1189,7 +1216,7 @@ probe() {
     tun_level="idle"
   fi
 
-  if [ -n "$tun_active" ] && [ -z "$system_active" ] \
+  if [ -n "$tun_active$client_tun_active" ] && [ -z "$system_active" ] \
     && [ "$port_level" != ok ]; then
     port_value="${MIXED_PORT} 非当前入口"
     port_level="idle"
@@ -1201,6 +1228,21 @@ probe() {
     entry_level="warning"
     entry_symbol="exclamationmark.triangle.fill"
     entry_uncertain=1
+    entry_ok=1
+  elif [ -n "$system_active" ] && [ -n "$client_tun_active" ]; then
+    if [ -n "$entry_uncertain" ]; then
+      if system_proxy_dynamic; then
+        entry_title="PAC / 自动代理 + ${client_label} VPN"
+      else
+        entry_title="系统代理路径 + ${client_label} VPN"
+      fi
+      entry_value="$system_value"
+    else
+      entry_title="双重入口"
+      entry_value="同时开启"
+    fi
+    entry_level="warning"
+    entry_symbol="exclamationmark.triangle.fill"
     entry_ok=1
   elif [ -n "$system_active" ] && [ -n "$mihomo_tun_unconfirmed" ]; then
     entry_title="系统代理 + Mihomo TUN"
@@ -1237,6 +1279,12 @@ probe() {
     entry_ok=1
   elif [ -n "$tun_active" ]; then
     entry_title="TUN 路由"
+    entry_value="代表性路由已确认"
+    entry_level="ok"
+    entry_symbol="arrow.triangle.2.circlepath"
+    entry_ok=1
+  elif [ -n "$client_tun_active" ]; then
+    entry_title="${client_label} VPN"
     entry_value="代表性路由已确认"
     entry_level="ok"
     entry_symbol="arrow.triangle.2.circlepath"
@@ -1299,18 +1347,30 @@ probe() {
 
   IFS=$'\t' read -r kill_value kill_level < <(kill_switch_snapshot)
 
-  if [ "$core_count" = "1" ] && [ -n "$tun_active" ] \
+  if [ -n "$engine_up" ] && [ -n "$tun_active$client_tun_active" ] \
     && [ -z "$system_active" ]; then
     overall="ok"
     headline="代理路径已确认"
-    detail="Mihomo TUN 的可用公网路由已确认"
-  elif [ "$core_count" = "1" ] && [ "$port_level" = "ok" ] \
+    if [ -n "$client_tun_active" ]; then
+      detail="${engine_name} VPN 的可用公网路由已确认"
+    else
+      detail="Mihomo TUN 的可用公网路由已确认"
+    fi
+  elif [ -n "$engine_up" ] && [ "$port_level" = "ok" ] \
     && [ -n "$system_active" ] \
-    && [ -n "$tun_active$mihomo_tun_unconfirmed$split_tun_active$unknown_tun_active$other_tun_active" ]; then
+    && [ -n "$tun_active$mihomo_tun_unconfirmed$split_tun_active$unknown_tun_active$other_tun_active$client_tun_active" ]; then
     overall="warning"
     if [ -n "$other_tun_active" ]; then
       headline="入口同时开启"
-      detail="系统代理与其他 VPN/TUN 均已启用，不能归因于 Mihomo"
+      detail="系统代理与其他 VPN/TUN 均已启用，不能归因于 ${engine_name}"
+    elif [ -n "$client_tun_active" ]; then
+      if [ -n "$entry_uncertain" ]; then
+        headline="入口路径需确认"
+        detail="${engine_name} VPN 的代表性路由已确认，但系统代理路径未确认指向当前本地入口"
+      else
+        headline="入口同时开启"
+        detail="系统代理与 ${engine_name} VPN 均已启用"
+      fi
     elif [ -n "$mihomo_tun_unconfirmed" ]; then
       headline="Mihomo TUN 路由待确认"
       detail="Mihomo 已启用 TUN，但当前活动路由无法与具体 utun 设备匹配"
@@ -1327,7 +1387,7 @@ probe() {
       headline="入口同时开启"
       detail="系统代理与 Mihomo TUN 均已启用"
     fi
-  elif [ "$core_count" = "1" ] && [ "$port_level" = "ok" ] && [ -n "$entry_ok" ]; then
+  elif [ -n "$engine_up" ] && [ "$port_level" = "ok" ] && [ -n "$entry_ok" ]; then
     if [ -n "$entry_uncertain" ]; then
       overall="warning"
       if [ -n "$mihomo_tun_unconfirmed" ]; then
@@ -1341,7 +1401,7 @@ probe() {
         detail="无法可靠读取代表性公网目标的本地路由，未判定为已接管"
       elif [ -n "$other_tun_active" ] && [ -z "$system_active" ]; then
         headline="检测到其他 VPN/TUN"
-        detail="活动隧道路由不能归因于 Mihomo；请以系统实际出口为准"
+        detail="活动隧道路由不能归因于 ${engine_name}；请以系统实际出口为准"
       else
         headline="入口路径需确认"
         detail="系统代理未明确指向当前检测入口，请以系统实际出口为准"
@@ -1358,7 +1418,7 @@ probe() {
   elif [ -n "$other_tun_active" ]; then
     overall="warning"
     headline="检测到其他 VPN/TUN"
-    detail="系统存在活动隧道路由，但不能归因于 Mihomo；请以系统实际出口为准"
+    detail="系统存在活动隧道路由，但不能归因于 ${attr_name}；请以系统实际出口为准"
   elif [ -n "$mihomo_tun_unconfirmed" ]; then
     overall="warning"
     headline="Mihomo TUN 路由待确认"
@@ -1374,7 +1434,7 @@ probe() {
   elif [ -n "$system_active" ]; then
     overall="warning"
     headline="检测到系统代理路径"
-    detail="系统代理已启用，但不是当前已确认的 Mihomo 入口；请以系统实际出口为准"
+    detail="系统代理已启用，但不是当前已确认的 ${attr_name} 入口；请以系统实际出口为准"
   elif [ -n "$tun_active" ]; then
     overall="warning"
     headline="检测到 TUN 路径"

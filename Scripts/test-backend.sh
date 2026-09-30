@@ -718,4 +718,103 @@ $mihomo_test_pid" \
   /bin/bash "$BACKEND" discover)
 /usr/bin/grep -Fq $'mode\t系统代理 + 其他 VPN / TUN' <<< "$multi_provider_discovery"
 
+# Shadowrocket probe 总状态：系统代理归属确认 → ok；client 隧道独占 → ok；
+# 双入口 → warning（与 mihomo 同规则，文案用客户端名）；无 provider → error。
+shadowrocket_system_probe=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_CORE_PIDS='' \
+  PROXYGAUGE_PROVIDER_PIDS="$shadowrocket_provider_pids" \
+  PROXYGAUGE_MIXED=127.0.0.1:1082 \
+  PROXYGAUGE_DISCOVERY_PORT_ACTIVE=1 \
+  PROXYGAUGE_DISCOVERY_LISTENER_RECORDS="p$packet_tunnel_test_pid
+n127.0.0.1:1082" \
+  PROXYGAUGE_SYSTEM_PROXY_ACTIVE=1 \
+  PROXYGAUGE_SYSTEM_PROXY_DYNAMIC=0 \
+  PROXYGAUGE_SYSTEM_PROXY_HTTPS=1 \
+  PROXYGAUGE_SYSTEM_PROXY_BYPASS=0 \
+  PROXYGAUGE_SYSTEM_PROXY_MATCHES=1 \
+  PROXYGAUGE_TUN_KIND=none \
+  /bin/bash "$BACKEND" probe)
+[ "$(/usr/bin/awk -F '\t' '$1 == "overall" { print $2 }' <<< "$shadowrocket_system_probe")" = ok ]
+[ "$(/usr/bin/awk -F '\t' '$1 == "headline" { print $2 }' <<< "$shadowrocket_system_probe")" = '代理已接管' ]
+[ "$(/usr/bin/awk -F '\t' '$1 == "detail" { print $2 }' <<< "$shadowrocket_system_probe")" = '流量入口当前工作正常' ]
+[ "$(/usr/bin/awk -F '\t' '$1 == "core" { print $2 "\t" $3 }' <<< "$shadowrocket_system_probe")" = $'Shadowrocket\tok' ]
+[ "$(/usr/bin/awk -F '\t' '$1 == "port" { print $2 "\t" $3 }' <<< "$shadowrocket_system_probe")" = $'1082 监听中\tok' ]
+[ "$(/usr/bin/awk -F '\t' '$1 == "entry" { print $2 "\t" $3 "\t" $4 }' <<< "$shadowrocket_system_probe")" = $'已启用\tok\t系统代理' ]
+if /usr/bin/grep -Fq 'Mihomo' <<< "$shadowrocket_system_probe"; then
+  echo 'A Shadowrocket-attributed probe must not mention Mihomo.' >&2
+  exit 1
+fi
+
+shadowrocket_tun_probe=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_CORE_PIDS='' \
+  PROXYGAUGE_PROVIDER_PIDS="$shadowrocket_provider_pids" \
+  PROXYGAUGE_MIXED=127.0.0.1:1082 \
+  PROXYGAUGE_DISCOVERY_PORT_ACTIVE=1 \
+  PROXYGAUGE_DISCOVERY_LISTENER_RECORDS="p$packet_tunnel_test_pid
+n127.0.0.1:1082" \
+  PROXYGAUGE_SYSTEM_PROXY_ACTIVE=0 \
+  PROXYGAUGE_TUN_KIND=client \
+  /bin/bash "$BACKEND" probe)
+[ "$(/usr/bin/awk -F '\t' '$1 == "overall" { print $2 }' <<< "$shadowrocket_tun_probe")" = ok ]
+[ "$(/usr/bin/awk -F '\t' '$1 == "headline" { print $2 }' <<< "$shadowrocket_tun_probe")" = '代理路径已确认' ]
+[ "$(/usr/bin/awk -F '\t' '$1 == "detail" { print $2 }' <<< "$shadowrocket_tun_probe")" = 'Shadowrocket VPN 的可用公网路由已确认' ]
+[ "$(/usr/bin/awk -F '\t' '$1 == "entry" { print $2 "\t" $3 "\t" $4 }' <<< "$shadowrocket_tun_probe")" = $'代表性路由已确认\tok\tShadowrocket VPN' ]
+[ "$(/usr/bin/awk -F '\t' '$1 == "tun" { print $2 "\t" $3 }' <<< "$shadowrocket_tun_probe")" = $'代表性路由已确认\tok' ]
+[ "$(/usr/bin/awk -F '\t' '$1 == "core" { print $2 "\t" $3 }' <<< "$shadowrocket_tun_probe")" = $'Shadowrocket\tok' ]
+if /usr/bin/grep -Fq 'Mihomo' <<< "$shadowrocket_tun_probe"; then
+  echo 'A client-tunnel probe must not attribute the route to Mihomo.' >&2
+  exit 1
+fi
+
+shadowrocket_dual_probe=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_CORE_PIDS='' \
+  PROXYGAUGE_PROVIDER_PIDS="$shadowrocket_provider_pids" \
+  PROXYGAUGE_MIXED=127.0.0.1:1082 \
+  PROXYGAUGE_DISCOVERY_PORT_ACTIVE=1 \
+  PROXYGAUGE_DISCOVERY_LISTENER_RECORDS="p$packet_tunnel_test_pid
+n127.0.0.1:1082" \
+  PROXYGAUGE_SYSTEM_PROXY_ACTIVE=1 \
+  PROXYGAUGE_SYSTEM_PROXY_DYNAMIC=0 \
+  PROXYGAUGE_SYSTEM_PROXY_HTTPS=1 \
+  PROXYGAUGE_SYSTEM_PROXY_BYPASS=0 \
+  PROXYGAUGE_SYSTEM_PROXY_MATCHES=1 \
+  PROXYGAUGE_TUN_KIND=client \
+  /bin/bash "$BACKEND" probe)
+[ "$(/usr/bin/awk -F '\t' '$1 == "overall" { print $2 }' <<< "$shadowrocket_dual_probe")" = warning ]
+[ "$(/usr/bin/awk -F '\t' '$1 == "headline" { print $2 }' <<< "$shadowrocket_dual_probe")" = '入口同时开启' ]
+[ "$(/usr/bin/awk -F '\t' '$1 == "detail" { print $2 }' <<< "$shadowrocket_dual_probe")" = '系统代理与 Shadowrocket VPN 均已启用' ]
+[ "$(/usr/bin/awk -F '\t' '$1 == "entry" { print $2 "\t" $3 "\t" $4 }' <<< "$shadowrocket_dual_probe")" = $'同时开启\twarning\t双重入口' ]
+if /usr/bin/grep -Fq 'Mihomo' <<< "$shadowrocket_dual_probe"; then
+  echo 'A client dual-entry probe must not attribute the route to Mihomo.' >&2
+  exit 1
+fi
+
+no_provider_probe=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_CORE_PIDS='' \
+  PROXYGAUGE_PROVIDER_PIDS='' \
+  PROXYGAUGE_MIXED=127.0.0.1:9 \
+  PROXYGAUGE_SYSTEM_PROXY_ACTIVE=0 \
+  PROXYGAUGE_TUN_ACTIVE=0 \
+  /bin/bash "$BACKEND" probe)
+[ "$(/usr/bin/awk -F '\t' '$1 == "overall" { print $2 }' <<< "$no_provider_probe")" = error ]
+[ "$(/usr/bin/awk -F '\t' '$1 == "headline" { print $2 }' <<< "$no_provider_probe")" = '代理未完整生效' ]
+[ "$(/usr/bin/awk -F '\t' '$1 == "core" { print $2 "\t" $3 }' <<< "$no_provider_probe")" = $'未运行\terror' ]
+
+unattributed_system_probe=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_CORE_PIDS='' \
+  PROXYGAUGE_PROVIDER_PIDS='' \
+  PROXYGAUGE_MIXED=127.0.0.1:9 \
+  PROXYGAUGE_SYSTEM_PROXY_ACTIVE=1 \
+  PROXYGAUGE_SYSTEM_PROXY_DYNAMIC=0 \
+  PROXYGAUGE_SYSTEM_PROXY_HTTPS=1 \
+  PROXYGAUGE_SYSTEM_PROXY_BYPASS=0 \
+  PROXYGAUGE_SYSTEM_PROXY_MATCHES=0 \
+  PROXYGAUGE_TUN_ACTIVE=0 \
+  /bin/bash "$BACKEND" probe)
+[ "$(/usr/bin/awk -F '\t' '$1 == "overall" { print $2 }' <<< "$unattributed_system_probe")" = warning ]
+if /usr/bin/grep -Fq 'Mihomo' <<< "$unattributed_system_probe"; then
+  echo 'An unattributed system-proxy path must not be blamed on Mihomo.' >&2
+  exit 1
+fi
+
 echo 'ProxyGauge backend state parsing tests passed.'

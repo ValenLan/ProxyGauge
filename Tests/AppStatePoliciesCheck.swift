@@ -23,6 +23,16 @@ struct AppStatePoliciesCheck {
         let combined = ConnectionPathPresentation.make(mode: "系统代理 + 其他 VPN / TUN")
         try require(combined.value == "系统代理 + 虚拟网卡" && combined.isCombined,
                     "A simultaneous system proxy and virtual adapter must remain orange.")
+        let clientTunnel = ConnectionPathPresentation.make(mode: "Shadowrocket VPN")
+        try require(clientTunnel.value == "虚拟网卡" && clientTunnel.isActive && !clientTunnel.isCombined,
+                    "An attributed client VPN path must be presented as a virtual adapter.")
+        let clientCombined = ConnectionPathPresentation.make(mode: "系统代理 + Shadowrocket VPN")
+        try require(clientCombined.value == "系统代理 + 虚拟网卡" && clientCombined.isCombined,
+                    "An attributed client VPN combined with a system proxy must remain orange.")
+        let clientStatus = ConnectionStatusPresentation.make(
+            mode: "Shadowrocket VPN", networkAvailable: true, probeAvailable: true)
+        try require(clientStatus == .init(value: "虚拟网卡", detailOverride: nil, tone: .ok),
+                    "An attributed client VPN path must be a green single-path status.")
         try require(ConnectionPathPresentation.make(mode: "未开启").value == nil,
                     "An inactive path must not fabricate a connection type.")
         let offline = ConnectionStatusPresentation.make(

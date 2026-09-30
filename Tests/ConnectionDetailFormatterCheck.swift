@@ -149,6 +149,36 @@ struct ConnectionDetailFormatterCheck {
             entryHealthy: false
         ) == "未检测到代理客户端", "A stale client process must not be shown without an active proxy path.")
 
+        require(detail(
+            client: "Shadowrocket",
+            core: "Shadowrocket",
+            endpoint: "127.0.0.1:1082",
+            mode: "Shadowrocket VPN",
+            entryTitle: "Shadowrocket VPN",
+            entryValue: "代表性路由已确认",
+            entryHealthy: true
+        ) == "Shadowrocket · MacPacketTunnel", "A Shadowrocket path must name its packet-tunnel engine.")
+
+        require(detail(
+            client: "Shadowrocket",
+            core: "Shadowrocket",
+            endpoint: "127.0.0.1:1082",
+            mode: "系统代理 + Shadowrocket VPN",
+            entryTitle: "双重入口",
+            entryValue: "同时开启",
+            entryHealthy: false
+        ) == "Shadowrocket · MacPacketTunnel", "A Shadowrocket combined path must name its packet-tunnel engine.")
+
+        require(detail(
+            client: "Shadowrocket",
+            core: "",
+            endpoint: "127.0.0.1:1082",
+            mode: "Shadowrocket VPN",
+            entryTitle: "Shadowrocket VPN",
+            entryValue: "代表性路由已确认",
+            entryHealthy: true
+        ) == "Shadowrocket", "A Shadowrocket path without an engine must keep the client name.")
+
         print("ProxyGauge connection detail formatter tests passed.")
     }
 }
