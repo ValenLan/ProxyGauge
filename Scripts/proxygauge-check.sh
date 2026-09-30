@@ -179,6 +179,61 @@ core_pids() {
   } | /usr/bin/awk 'NF && !seen[$0]++'
 }
 
+proxy_provider_pids() {
+  if [ -n "${PROXYGAUGE_PROVIDER_PIDS+x}" ]; then
+    /usr/bin/printf '%s\n' "$PROXYGAUGE_PROVIDER_PIDS"
+    return
+  fi
+  if [ -n "${PROXYGAUGE_CORE_PIDS+x}" ]; then
+    /usr/bin/printf '%s\n' "$PROXYGAUGE_CORE_PIDS"
+    return
+  fi
+  {
+    core_pids
+    /usr/bin/pgrep -x Shadowrocket 2>/dev/null || true
+    /usr/bin/pgrep -x MacPacketTunnel 2>/dev/null || true
+  } | /usr/bin/awk 'NF && !seen[$0]++'
+}
+
+provider_pid_name() {
+  local pid name
+  pid="$1"
+  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  name=$(/bin/ps -p "$pid" -o ucomm= 2>/dev/null || true)
+  name=$(/usr/bin/printf '%s' "$name" \
+    | /usr/bin/sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
+  [ -n "$name" ] || return 1
+  /usr/bin/printf '%s\n' "$name"
+}
+
+provider_keys() {
+  local pid name
+  while IFS= read -r pid; do
+    case "$pid" in ''|*[!0-9]*) continue ;; esac
+    name=$(provider_pid_name "$pid" 2>/dev/null || true)
+    case "$name" in
+      Shadowrocket|MacPacketTunnel) /usr/bin/printf '%s\n' shadowrocket ;;
+      verge-mihomo|mihomo|clash-meta) /usr/bin/printf 'mihomo:%s\n' "$pid" ;;
+      *) /usr/bin/printf 'unknown:%s\n' "$pid" ;;
+    esac
+  done < <(proxy_provider_pids) | /usr/bin/awk 'NF && !seen[$0]++'
+}
+
+provider_count() {
+  provider_keys | /usr/bin/awk 'NF { count++ } END { print count+0 }'
+}
+
+provider_label() {
+  local keys
+  keys=$(provider_keys)
+  [ "$(/usr/bin/awk 'NF { count++ } END { print count+0 }' <<< "$keys")" = 1 ] \
+    || return 0
+  case "$(/usr/bin/awk 'NF { print; exit }' <<< "$keys")" in
+    shadowrocket) /usr/bin/printf '%s\n' Shadowrocket ;;
+    mihomo:*) /usr/bin/printf '%s\n' Mihomo ;;
+  esac
+}
+
 local_port_open() {
   local host port
   host="$1"
@@ -190,14 +245,14 @@ local_port_open() {
   (exec 3<>/dev/tcp/"$host"/"$port") 2>/dev/null
 }
 
-listener_owned_by_mihomo() {
-  local host port family selector records owner_pids core_pid owner_pid
+listener_owned_by_proxy() {
+  local host port family selector records owner_pids provider_pid owner_pid
   host="$1"
   port="$2"
   host="${host#[}"
   host="${host%]}"
   case "${PROXYGAUGE_DISCOVERY_PORT_OWNER:-}" in
-    mihomo) return 0 ;;
+    mihomo|proxy) return 0 ;;
     other|unknown) return 1 ;;
   esac
   case "$host" in
@@ -242,12 +297,12 @@ listener_owned_by_mihomo() {
       ' -- "$host" "$port" "$family" \
     | /usr/bin/awk 'NF && !seen[$0]++') || return 1
   [ -n "$owner_pids" ] || return 1
-  while IFS= read -r core_pid; do
-    case "$core_pid" in ''|*[!0-9]*) continue ;; esac
+  while IFS= read -r provider_pid; do
+    case "$provider_pid" in ''|*[!0-9]*) continue ;; esac
     while IFS= read -r owner_pid; do
-      [ "$core_pid" = "$owner_pid" ] && return 0
+      [ "$provider_pid" = "$owner_pid" ] && return 0
     done <<< "$owner_pids"
-  done <<< "$CORE_PIDS"
+  done <<< "$PROVIDER_PIDS"
   return 1
 }
 
@@ -731,18 +786,30 @@ else
 fi
 
 echo "===== 1. 代理核心进程 ====="
-CORE_PIDS=$(core_pids)
-CORE_COUNT=$(printf '%s\n' "$CORE_PIDS" | /usr/bin/awk 'NF {count++} END {print count+0}')
-if [ "$CORE_COUNT" -eq 1 ]; then
-  CORE_PID=$(printf '%s\n' "$CORE_PIDS" | /usr/bin/head -1)
-  check ok "Mihomo 核心运行中 (PID $CORE_PID)"
-elif [ "$CORE_COUNT" -gt 1 ]; then
-  echo "$CORE_PIDS" | while IFS= read -r pid; do
+PROVIDER_PIDS=$(proxy_provider_pids)
+PROVIDER_COUNT=$(provider_count)
+PROVIDER_LABEL=$(provider_label)
+case "$PROVIDER_LABEL" in
+  Mihomo) PROVIDER_NOUN="Mihomo 核心" ;;
+  "") PROVIDER_NOUN="代理客户端或核心" ;;
+  *) PROVIDER_NOUN="$PROVIDER_LABEL" ;;
+esac
+if [ "$PROVIDER_COUNT" -eq 1 ]; then
+  PROVIDER_PID=$(printf '%s\n' "$PROVIDER_PIDS" | /usr/bin/awk 'NF { print; exit }')
+  if [ "$PROVIDER_LABEL" = "Mihomo" ]; then
+    check ok "Mihomo 核心运行中 (PID $PROVIDER_PID)"
+  elif [ -n "$PROVIDER_LABEL" ]; then
+    check ok "代理客户端运行中 ($PROVIDER_LABEL, PID $PROVIDER_PID)"
+  else
+    check ok "代理客户端运行中 (PID $PROVIDER_PID)"
+  fi
+elif [ "$PROVIDER_COUNT" -gt 1 ]; then
+  echo "$PROVIDER_PIDS" | while IFS= read -r pid; do
     [ -n "$pid" ] && /bin/ps -p "$pid" -o '  user=,pid=,command=' 2>/dev/null
   done
-  check no "发现 $CORE_COUNT 个 Mihomo 核心 — 可能是双核心分裂"
+  check no "发现 $PROVIDER_COUNT 个代理客户端或核心 — 可能存在多核心冲突"
 else
-  check no "未发现 Mihomo 核心 — helper 进程不会被误判为核心"
+  check no "未发现代理客户端或核心 — helper 进程不会被误判为核心"
 fi
 
 echo "===== 2. mixed 端口监听 ($MIXED) ====="
@@ -754,11 +821,11 @@ if [ -n "$MIXED_CONFIG_INVALID" ]; then
     check no "默认 mixed 入口配置无效或不是本机回环地址 ($RAW_MIXED)"
   fi
 elif local_port_open "$MIXED_HOST" "$MIXED_PORT"; then
-  if listener_owned_by_mihomo "$MIXED_HOST" "$MIXED_PORT"; then
-    check ok "$MIXED 监听中，且属于已检测的 Mihomo 核心"
+  if listener_owned_by_proxy "$MIXED_HOST" "$MIXED_PORT"; then
+    check ok "$MIXED 监听中，且属于已检测的 $PROVIDER_NOUN"
     MIXED_LISTENER_CONFIRMED=1
   else
-    check warn "$MIXED 可以连接，但监听器不属于已检测的 Mihomo 核心"
+    check warn "$MIXED 可以连接，但监听器不属于已检测的 $PROVIDER_NOUN"
   fi
 else
   if [ -n "$PURE_TUN_ONLY" ]; then
@@ -1000,8 +1067,8 @@ if [ -n "$GOOGLE_MIXED_CONFIG_INVALID" ]; then
 elif [ "$GOOGLE_MIXED" = "$MIXED" ]; then
   check no "$SECONDARY_LABEL 入口与默认 mixed 端口相同，无法区分两个出口"
 elif local_port_open "$GOOGLE_MIXED_HOST" "$GOOGLE_MIXED_PORT"; then
-  if ! listener_owned_by_mihomo "$GOOGLE_MIXED_HOST" "$GOOGLE_MIXED_PORT"; then
-    check warn "$SECONDARY_LABEL mixed 入口可以连接，但监听器未归属于 Mihomo ($GOOGLE_MIXED)"
+  if ! listener_owned_by_proxy "$GOOGLE_MIXED_HOST" "$GOOGLE_MIXED_PORT"; then
+    check warn "$SECONDARY_LABEL mixed 入口可以连接，但监听器未归属于 $PROVIDER_NOUN ($GOOGLE_MIXED)"
   else
     CHAIN_CONFIGURED=1
     GOOGLE_EXT=""

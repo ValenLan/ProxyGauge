@@ -10,6 +10,9 @@ WINDOWS_SERVICE="$PROJECT_ROOT/Windows/Services/HealthCheckService.cs"
 WINDOWS_MAIN="$PROJECT_ROOT/Windows/MainWindow.xaml"
 TEMP_ROOT=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/proxygauge-health-ip-test.XXXXXX")
 cleanup() {
+  if [ -n "${PROVIDER_TEST_PIDS:-}" ]; then
+    kill $PROVIDER_TEST_PIDS 2>/dev/null || true
+  fi
   /bin/rm -rf "$TEMP_ROOT"
 }
 trap cleanup EXIT
@@ -89,7 +92,7 @@ generic_output=$(PROXYGAUGE_CONFIG=/dev/null \
   PROXYGAUGE_TIMEOUT=1 \
   /bin/bash "$CHECK" 2>&1 || true)
 /usr/bin/grep -Fq '检测方案: 通用检测' <<< "$generic_output"
-/usr/bin/grep -Fq 'Mihomo 核心运行中 (PID 41001)' <<< "$generic_output"
+/usr/bin/grep -Fq '代理客户端运行中 (PID 41001)' <<< "$generic_output"
 [ "$(/usr/bin/grep -c '^===== [1-7]\.' <<< "$generic_output")" = "4" ]
 if /usr/bin/grep -Fq '===== 5.' <<< "$generic_output"; then
   echo "The generic plan must not render optional placeholder sections." >&2
@@ -107,6 +110,11 @@ extended_output=$(PROXYGAUGE_CONFIG=/dev/null \
   /bin/bash "$CHECK" 2>&1 || true)
 /usr/bin/grep -Fq '检测方案: 通用检测 + Google / Gemini / Claude' <<< "$extended_output"
 [ "$(/usr/bin/grep -c '^===== [1-7]\.' <<< "$extended_output")" = "7" ]
+/usr/bin/grep -Fq '未检测到 Mihomo 控制 socket；跳过可选策略组与规则检查' <<< "$extended_output"
+if /usr/bin/grep -Fq '无法读取 Mihomo 额外分流状态' <<< "$extended_output"; then
+  echo "A missing Mihomo socket must stay a skip, not a chain-state failure." >&2
+  exit 1
+fi
 
 FAKE_CURL="$TEMP_ROOT/fake-curl"
 /usr/bin/printf '%s\n' \
@@ -144,7 +152,7 @@ unowned_listener_output=$(PROXYGAUGE_CONFIG=/dev/null \
   PROXYGAUGE_TUN_KIND=other \
   PROXYGAUGE_TIMEOUT=1 \
   /bin/bash "$CHECK" 2>&1 || true)
-/usr/bin/grep -Fq '可以连接，但监听器不属于已检测的 Mihomo 核心' <<< "$unowned_listener_output"
+/usr/bin/grep -Fq '可以连接，但监听器不属于已检测的 代理客户端或核心' <<< "$unowned_listener_output"
 
 host_mismatch_listener_output=$(PROXYGAUGE_CONFIG=/dev/null \
   PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
@@ -158,7 +166,7 @@ host_mismatch_listener_output=$(PROXYGAUGE_CONFIG=/dev/null \
   PROXYGAUGE_TUN_KIND=none \
   PROXYGAUGE_TIMEOUT=1 \
   /bin/bash "$CHECK" 2>&1 || true)
-/usr/bin/grep -Fq '可以连接，但监听器不属于已检测的 Mihomo 核心' <<< "$host_mismatch_listener_output"
+/usr/bin/grep -Fq '可以连接，但监听器不属于已检测的 代理客户端或核心' <<< "$host_mismatch_listener_output"
 
 host_exact_listener_output=$(PROXYGAUGE_CONFIG=/dev/null \
   PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
@@ -172,7 +180,7 @@ host_exact_listener_output=$(PROXYGAUGE_CONFIG=/dev/null \
   PROXYGAUGE_TUN_KIND=none \
   PROXYGAUGE_TIMEOUT=1 \
   /bin/bash "$CHECK" 2>&1 || true)
-/usr/bin/grep -Fq '监听中，且属于已检测的 Mihomo 核心' <<< "$host_exact_listener_output"
+/usr/bin/grep -Fq '监听中，且属于已检测的 代理客户端或核心' <<< "$host_exact_listener_output"
 
 dns_start=$(/bin/date +%s)
 dns_timeout_output=$(PROXYGAUGE_CONFIG=/dev/null \
@@ -428,5 +436,92 @@ if /usr/bin/grep -Fq '默认出口已由多个 IP 查询源确认' <<< "$tie_out
   echo 'A tied health-check result must not be promoted as the default exit.' >&2
   exit 1
 fi
+
+# 通用代理提供者（Shadowrocket）夹具：编译一个可改名常驻进程充当
+# Shadowrocket / MacPacketTunnel / mihomo，用真实 ps 名字解析验证
+# check.sh 的 provider 归并、归因文案与端口归属（与 test-backend.sh 同模式）。
+PROVIDER_HELPER_SRC="$TEMP_ROOT/provider-helper.c"
+/usr/bin/printf '%s\n' \
+  '#include <unistd.h>' \
+  'int main(void) { for (;;) pause(); }' > "$PROVIDER_HELPER_SRC"
+/usr/bin/clang -o "$TEMP_ROOT/provider-helper" "$PROVIDER_HELPER_SRC"
+/bin/cp "$TEMP_ROOT/provider-helper" "$TEMP_ROOT/Shadowrocket"
+/bin/cp "$TEMP_ROOT/provider-helper" "$TEMP_ROOT/MacPacketTunnel"
+/bin/cp "$TEMP_ROOT/provider-helper" "$TEMP_ROOT/mihomo"
+"$TEMP_ROOT/Shadowrocket" &
+shadowrocket_test_pid=$!
+"$TEMP_ROOT/MacPacketTunnel" &
+packet_tunnel_test_pid=$!
+"$TEMP_ROOT/mihomo" &
+mihomo_test_pid=$!
+PROVIDER_TEST_PIDS="$shadowrocket_test_pid $packet_tunnel_test_pid $mihomo_test_pid"
+shadowrocket_provider_pids="$shadowrocket_test_pid
+$packet_tunnel_test_pid"
+
+mihomo_provider_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
+  PROXYGAUGE_CURL="$FAKE_CURL" \
+  PROXYGAUGE_CORE_PIDS="$mihomo_test_pid" \
+  PROXYGAUGE_DISCOVERY_PORT_ACTIVE=1 \
+  PROXYGAUGE_DISCOVERY_LISTENER_RECORDS="p$mihomo_test_pid
+n127.0.0.1:53011" \
+  PROXYGAUGE_MIXED=127.0.0.1:53011 \
+  PROXYGAUGE_SECONDARY_ENABLED=0 \
+  PROXYGAUGE_TUN_ACTIVE=0 \
+  PROXYGAUGE_TIMEOUT=1 \
+  /bin/bash "$CHECK" 2>&1 || true)
+/usr/bin/grep -Fq "Mihomo 核心运行中 (PID $mihomo_test_pid)" <<< "$mihomo_provider_output"
+/usr/bin/grep -Fq '127.0.0.1:53011 监听中，且属于已检测的 Mihomo 核心' <<< "$mihomo_provider_output"
+
+if ! shadowrocket_provider_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 1\n  HTTPSProxy : 127.0.0.1\n  HTTPSPort : 53012\n}' \
+  PROXYGAUGE_CURL="$FAKE_CURL" \
+  PROXYGAUGE_PROVIDER_PIDS="$shadowrocket_provider_pids" \
+  PROXYGAUGE_DISCOVERY_PORT_ACTIVE=1 \
+  PROXYGAUGE_DISCOVERY_LISTENER_RECORDS="p$packet_tunnel_test_pid
+n127.0.0.1:53012" \
+  PROXYGAUGE_MIXED=127.0.0.1:53012 \
+  PROXYGAUGE_SECONDARY_ENABLED=0 \
+  PROXYGAUGE_TUN_ACTIVE=0 \
+  PROXYGAUGE_TIMEOUT=1 \
+  /bin/bash "$CHECK" 2>&1); then
+  echo 'A Shadowrocket-attributed health check must pass without failures.' >&2
+  exit 1
+fi
+/usr/bin/grep -Fq "代理客户端运行中 (Shadowrocket, PID $shadowrocket_test_pid)" <<< "$shadowrocket_provider_output"
+/usr/bin/grep -Fq '127.0.0.1:53012 监听中，且属于已检测的 Shadowrocket' <<< "$shadowrocket_provider_output"
+/usr/bin/grep -Fq '代理链路检查通过' <<< "$shadowrocket_provider_output"
+if /usr/bin/grep -Fq 'Mihomo' <<< "$shadowrocket_provider_output"; then
+  echo 'A Shadowrocket-attributed health check must not mention Mihomo.' >&2
+  exit 1
+fi
+
+no_provider_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
+  PROXYGAUGE_CURL="$FAKE_CURL" \
+  PROXYGAUGE_CORE_PIDS='' \
+  PROXYGAUGE_PROVIDER_PIDS='' \
+  PROXYGAUGE_MIXED=127.0.0.1:9 \
+  PROXYGAUGE_SECONDARY_ENABLED=0 \
+  PROXYGAUGE_TUN_ACTIVE=0 \
+  PROXYGAUGE_TIMEOUT=1 \
+  /bin/bash "$CHECK" 2>&1 || true)
+/usr/bin/grep -Fq '未发现代理客户端或核心' <<< "$no_provider_output"
+if /usr/bin/grep -Fq 'Mihomo' <<< "$no_provider_output"; then
+  echo 'A provider-less health check must not blame the Mihomo core.' >&2
+  exit 1
+fi
+
+multi_provider_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
+  PROXYGAUGE_CURL="$FAKE_CURL" \
+  PROXYGAUGE_PROVIDER_PIDS="$shadowrocket_provider_pids
+$mihomo_test_pid" \
+  PROXYGAUGE_MIXED=127.0.0.1:9 \
+  PROXYGAUGE_SECONDARY_ENABLED=0 \
+  PROXYGAUGE_TUN_ACTIVE=0 \
+  PROXYGAUGE_TIMEOUT=1 \
+  /bin/bash "$CHECK" 2>&1 || true)
+/usr/bin/grep -Fq '发现 2 个代理客户端或核心' <<< "$multi_provider_output"
 
 echo "ProxyGauge low-risk health tests passed."
