@@ -1,10 +1,12 @@
 # ProxyGauge PF Kill Switch anchor.
 # Root-owned proxy cores may use any interface. Regular applications may use
-# loopback, a route-qualified VPN/TUN path, or local-network destinations. A
-# selected user-space network extension additionally reaches its pinned public
-# tunnel endpoints (the NE endpoint rule placeholder; root-core renders omit them).
-# The final catch-all rule is intentionally interface-independent: a newly created
+# loopback, a route-qualified VPN/TUN path, or local-network destinations. The
+# final catch-all rule is intentionally interface-independent: a newly created
 # physical interface must start blocked instead of waiting for rule refresh.
+# For a selected user-space network extension the catch-all is a placeholder:
+# while the provider is alive with a public routed utun (monitoring state) the
+# NE enforces routing itself and the rule is omitted; the moment the provider
+# or its tunnel route vanishes the watcher re-renders with the block (lockdown).
 # System DNS remains available through root-owned macOS services; user-owned
 # raw DNS packets are not granted a separate bypass.
 
@@ -15,5 +17,4 @@ pass quick on lo0 all keep state (if-bound)
 pass out quick on $trusted_tunnels all keep state (if-bound)
 pass out quick from any to <proxygauge_lan> keep state (if-bound)
 pass out quick all user = 0 keep state (if-bound)
-__NE_ENDPOINT_RULES__
-block return out quick all
+__BLOCK_ALL_RULE__

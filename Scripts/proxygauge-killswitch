@@ -67,8 +67,7 @@ SELECTION_AMBIGUOUS=0
 SELECTION_MODE=AUTO
 QUALIFIED_TUNNELS=lo0
 SELECTED_NE=0
-NE_PIDS=""
-NE_ENDPOINTS=""
+NE_LOCKDOWN=0
 BOOTSTRAP_DEFAULT=0
 
 unsupported_rules_present() {
@@ -296,68 +295,6 @@ system_proxy_pid() {
   /usr/sbin/lsof -nP -t -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | /usr/bin/sort -u
 }
 
-# Public remote addresses the given NE processes currently speak to. Only
-# established TCP sessions and connected UDP sockets carry a tunnel endpoint;
-# private/reserved destinations never qualify for the physical-interface bypass.
-ne_provider_endpoints() {
-  local pids pid endpoint
-  pids="$1"
-  if [ "$TEST_MODE" -eq 1 ]; then
-    for endpoint in ${PROXYGAUGE_KILLSWITCH_TEST_NE_ENDPOINTS-}; do
-      /usr/bin/printf '%s\n' "$endpoint"
-    done | /usr/bin/sort -u
-    return 0
-  fi
-  for pid in $pids; do
-    /usr/sbin/lsof -nP -a -p "$pid" -iTCP -sTCP:ESTABLISHED -iUDP 2>/dev/null
-  done | /usr/bin/awk '
-    function is_public(addr,   oct, o1, o2) {
-      if (addr ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/) {
-        split(addr, oct, "[.]")
-        o1 = oct[1] + 0; o2 = oct[2] + 0
-        if (o1 > 255 || o2 > 255 || oct[3] + 0 > 255 || oct[4] + 0 > 255) return 0
-        if (o1 == 0 || o1 == 10 || o1 == 127 || o1 >= 224) return 0
-        if (o1 == 100 && o2 >= 64 && o2 <= 127) return 0
-        if (o1 == 169 && o2 == 254) return 0
-        if (o1 == 172 && o2 >= 16 && o2 <= 31) return 0
-        if (o1 == 192 && o2 == 0) return 0
-        if (o1 == 192 && o2 == 168) return 0
-        if (o1 == 198 && (o2 == 18 || o2 == 19)) return 0
-        if (o1 == 198 && o2 == 51 && oct[3] + 0 == 100) return 0
-        if (o1 == 203 && o2 == 0 && oct[3] + 0 == 113) return 0
-        return 1
-      }
-      if (addr !~ /:/) return 0
-      addr = tolower(addr)
-      if (addr == "::" || addr == "::1") return 0
-      if (addr ~ /^(fc|fd|ff)/) return 0
-      if (addr ~ /^fe[89ab]/) return 0
-      if (addr ~ /^2001:0?db8/) return 0
-      return 1
-    }
-    $1 == "COMMAND" { next }
-    {
-      remote = ""
-      for (i = 1; i <= NF; i++) {
-        if ($i ~ /->/) {
-          split($i, arrow, "->")
-          remote = arrow[2]
-          break
-        }
-      }
-      if (remote == "") next
-      if (remote ~ /^\[/) {
-        sub(/^\[/, "", remote)
-        sub(/\]:[0-9]+$/, "", remote)
-      } else {
-        sub(/:[0-9]+$/, "", remote)
-      }
-      sub(/%.*$/, "", remote)
-      if (is_public(remote)) print remote
-    }
-  ' 2>/dev/null | /usr/bin/sort -u
-}
-
 resolve_core_selection() {
   local records name pid uid path extra previous root_count root_paths root_pids
   local routed active_paths active_devices system_pid system_path chosen_device non_root
@@ -376,7 +313,6 @@ resolve_core_selection() {
   routed=$(public_route_tunnels)
   root_count=0; root_paths=""; root_pids=""; active_paths=""; active_devices=""; non_root=0
   ne_paths=""; ne_count=0; providers_seen=""
-  NE_RECORD_LINES=""
   system_pid=$(system_proxy_pid 2>/dev/null || true); system_path=""
   while IFS=: read -r name pid uid path extra; do
     [ -n "$name$pid$uid$path$extra" ] || continue
@@ -387,7 +323,6 @@ resolve_core_selection() {
     if [ "$extra" = ne ]; then
       ne_key=$(ne_provider_key "$name" 2>/dev/null || true)
       [ -n "$ne_key" ] || return 1
-      NE_RECORD_LINES="$NE_RECORD_LINES$ne_key:$pid:$path"$'\n'
       ne_paths="$ne_paths$path"$'\n'
       case "$providers_seen" in
         *":$ne_key:"*) ;;
@@ -409,14 +344,11 @@ $records
 EOF
   SELECTION_AMBIGUOUS=0
   SELECTED_NE=0
-  NE_PIDS=""
-  NE_ENDPOINTS=""
   if [ "$SELECTION_MODE" != AUTO ]; then
     SELECTED_CORE_PATH="$SELECTION_MODE"
     if /usr/bin/grep -Fxq "$SELECTED_CORE_PATH" <<< "$ne_paths"; then
       # A manually pinned NE path skips the root-service requirement.
       SELECTED_NE=1
-      NE_PIDS=$(ne_pids_for_path "$SELECTED_CORE_PATH" 2>/dev/null || true)
     elif ! /usr/bin/grep -Fxq "$SELECTED_CORE_PATH" <<< "$root_paths"; then
       [ "$ACTION" = restore ] || { echo 'PROXY_NOT_ROOT：所选核心未以 root 系统服务运行。'; return 1; }
     fi
@@ -434,15 +366,13 @@ EOF
   elif [ "$ne_count" = 1 ]; then
     # A single user-space NE provider qualifies below root cores but above refusal.
     SELECTED_NE=1
-    SELECTED_CORE_PATH=$(/usr/bin/awk -F: 'NF {print $3; exit}' <<< "$NE_RECORD_LINES")
-    NE_PIDS=$(/usr/bin/awk -F: 'NF {print $2}' <<< "$NE_RECORD_LINES" | /usr/bin/paste -sd ' ' -)
+    SELECTED_CORE_PATH=$(/usr/bin/awk 'NF {print;exit}' <<< "$ne_paths")
   elif [ "$ne_count" -gt 1 ]; then
     SELECTION_AMBIGUOUS=1
     [ "$ACTION" = restore ] || { echo 'PROXY_AMBIGUOUS：多个代理核心仍在运行，请选择当前使用的代理。'; return 3; }
     if [ -n "$previous" ] && /usr/bin/grep -Fxq "$previous" <<< "$ne_paths"; then
       SELECTED_CORE_PATH="$previous"
       SELECTED_NE=1
-      NE_PIDS=$(ne_pids_for_path "$previous" 2>/dev/null || true)
     fi
   elif [ "$ACTION" != restore ]; then
     echo 'PROXY_NOT_ROOT：请先开启代理客户端的系统服务或 VPN/TUN。'; return 1
@@ -473,29 +403,18 @@ EOF
         done
       fi ;;
   esac
-  if [ "$SELECTED_NE" = 1 ] && [ -n "$SELECTED_CORE_PATH" ]; then
-    NE_ENDPOINTS=$(ne_provider_endpoints "$NE_PIDS")
-    if [ -z "$NE_ENDPOINTS" ] && [ "$ACTION" != restore ]; then
-      echo 'PROXY_NE_NO_ENDPOINT：请先在代理客户端内连通节点后再开启 Kill Switch。'
+  # Monitor/lockdown state machine for NE providers. Monitoring (provider alive
+  # with a public routed utun) omits the catch-all block because the NE enforces
+  # routing itself; lockdown keeps it. Enabling requires the monitoring state.
+  NE_LOCKDOWN=0
+  if [ "$SELECTED_NE" = 1 ] && [ "$QUALIFIED_TUNNELS" = lo0 ]; then
+    NE_LOCKDOWN=1
+    if [ "$ACTION" != restore ]; then
+      echo 'PROXY_NOT_ROOT：请先开启代理客户端的系统服务或 VPN/TUN。'
       return 1
     fi
   fi
   valid_tunnel_interfaces "$QUALIFIED_TUNNELS"
-}
-
-# All live pids of the NE provider owning the given record path.
-ne_pids_for_path() {
-  local target="$1" key pid path match_key="" pids=""
-  while IFS=: read -r key pid path; do
-    [ -n "$key$pid$path" ] || continue
-    if [ "$path" = "$target" ]; then match_key="$key"; fi
-  done <<< "$NE_RECORD_LINES"
-  [ -n "$match_key" ] || return 1
-  while IFS=: read -r key pid path; do
-    [ -n "$key$pid$path" ] || continue
-    if [ "$key" = "$match_key" ]; then pids="$pids$pid "; fi
-  done <<< "$NE_RECORD_LINES"
-  /usr/bin/printf '%s\n' "${pids% }"
 }
 
 proxy_core_runs_as_root() { resolve_core_selection; }
@@ -680,17 +599,17 @@ managed_anchor_has_interface_bound_states() {
   ' "$ANCHOR_CONF"
 }
 
-# PF lines granting a selected user-space NE provider access to its pinned
-# public tunnel endpoints. Root-core renders never emit these lines.
-ne_endpoint_rules() {
-  /usr/bin/printf '%s\n' \
-    'table <proxygauge_ne_endpoints> persist' \
-    'pass out quick inet proto { tcp, udp } to <proxygauge_ne_endpoints> keep state (if-bound)' \
-    'pass out quick inet6 proto { tcp, udp } to <proxygauge_ne_endpoints> keep state (if-bound)'
+# The catch-all egress block. It is omitted only for a user-space NE provider
+# in monitoring state (provider alive with a public routed utun): the NE
+# enforces routing itself while alive, and the watcher re-arms the block the
+# moment the provider or its tunnel route disappears. Root-core renders and NE
+# lockdown renders always carry it.
+block_all_rule() {
+  /usr/bin/printf '%s\n' 'block return out quick all'
 }
 
 render_managed_rules() {
-  local template destination trusted_tunnels ne_rules
+  local template destination trusted_tunnels block_rule
   template="$1"
   destination="$2"
   trusted_tunnels="${3:-}"
@@ -700,22 +619,22 @@ render_managed_rules() {
   fi
   valid_tunnel_interfaces "$trusted_tunnels" || return 1
   if [ $# -ge 4 ]; then
-    ne_rules="$4"
-  elif [ "${SELECTED_NE:-0}" = 1 ]; then
-    ne_rules=$(ne_endpoint_rules)
+    block_rule="$4"
+  elif [ "${SELECTED_NE:-0}" = 1 ] && [ "${NE_LOCKDOWN:-0}" = 0 ]; then
+    block_rule=""
   else
-    ne_rules=""
+    block_rule=$(block_all_rule)
   fi
-  PROXYGAUGE_NE_RULES="$ne_rules" /usr/bin/awk -v tunnels="$trusted_tunnels" '
-    BEGIN { ne = ENVIRON["PROXYGAUGE_NE_RULES"] }
+  PROXYGAUGE_BLOCK_RULE="$block_rule" /usr/bin/awk -v tunnels="$trusted_tunnels" '
+    BEGIN { block = ENVIRON["PROXYGAUGE_BLOCK_RULE"] }
     { gsub(/__TUN_INTERFACES__/, tunnels) }
-    /^__NE_ENDPOINT_RULES__$/ {
-      if (ne != "") print ne
+    /^__BLOCK_ALL_RULE__$/ {
+      if (block != "") print block
       next
     }
     { print }
   ' "$template" > "$destination" || return 1
-  ! /usr/bin/grep -qE '__TUN_INTERFACES__|__NE_ENDPOINT_RULES__' "$destination"
+  ! /usr/bin/grep -qE '__TUN_INTERFACES__|__BLOCK_ALL_RULE__' "$destination"
 }
 
 config_has_safe_anchor() {
@@ -816,7 +735,7 @@ load_fail_closed_transition() {
   [ -r "$template" ] || template="$PF_TEMPLATE"
   temp_dir=$(/usr/bin/mktemp -d /tmp/proxygauge-pf-transition.XXXXXX) || return 1
   transition="$temp_dir/$ANCHOR"
-  if ! render_managed_rules "$template" "$transition" lo0 "" \
+  if ! render_managed_rules "$template" "$transition" lo0 "$(block_all_rule)" \
     || ! "$PFCTL" -a "$ANCHOR" -nf "$transition" >/dev/null 2>&1 \
     || ! "$PFCTL" -a "$ANCHOR" -f "$transition" >/dev/null 2>&1; then
     /bin/rm -rf "$temp_dir"
@@ -1150,24 +1069,6 @@ ensure_pf_reference() {
   fi
 }
 
-persist_ne_endpoints() {
-  local temp
-  /bin/mkdir -p "$PERSIST_STATE_DIR" || return 1
-  temp=$(/usr/bin/mktemp /tmp/proxygauge-ne-endpoints.XXXXXX) || return 1
-  if [ -n "$NE_ENDPOINTS" ]; then
-    /usr/bin/printf '%s\n' "$NE_ENDPOINTS" > "$temp"
-  else
-    : > "$temp"
-  fi
-  install_private_file "$temp" "$NE_ENDPOINTS_FILE" 600 || { /bin/rm -f "$temp"; return 1; }
-  /bin/rm -f "$temp"
-}
-
-load_ne_endpoints_table() {
-  [ -r "$NE_ENDPOINTS_FILE" ] || return 1
-  "$PFCTL" -a "$ANCHOR" -t proxygauge_ne_endpoints -T replace -f "$NE_ENDPOINTS_FILE" >/dev/null 2>&1
-}
-
 enable_rules() {
   local reset_public prior_hash final_hash
   reset_public=0
@@ -1189,12 +1090,8 @@ enable_rules() {
   # Atomically replace only this anchor; never flush LAN sessions on handover.
   "$PFCTL" -a "$ANCHOR" -nf "$ANCHOR_CONF" >/dev/null 2>&1 || return 1
   "$PFCTL" -a "$ANCHOR" -f "$ANCHOR_CONF" >/dev/null 2>&1 || return 1
-  if [ "${SELECTED_NE:-0}" = 1 ]; then
-    persist_ne_endpoints || return 1
-    load_ne_endpoints_table || { echo '❌ 无法更新 NE 隧道端点放行表'; return 1; }
-  else
-    /bin/rm -f "$NE_ENDPOINTS_FILE"
-  fi
+  # Legacy endpoint-pinning state from older builds is never authoritative.
+  /bin/rm -f "$NE_ENDPOINTS_FILE"
   anchor_enabled || { echo '❌ Kill Switch 启用后验证失败'; return 1; }
   echo '🛡️ Kill Switch 已开启 — 保留局域网，root 系统进程仍豁免'
 }
