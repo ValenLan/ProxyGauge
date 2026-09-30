@@ -19,6 +19,12 @@ if /usr/bin/grep -Eq \
   exit 1
 fi
 
+# Every test injection point must stay inert in production: the ps-output
+# stub may only win when TEST_MODE=1, like the CORE_RECORDS default above it.
+/usr/bin/grep -Fq \
+  'if [ "$TEST_MODE" -eq 1 ] && [ -n "${PROXYGAUGE_KILLSWITCH_TEST_PS_OUTPUT:-}" ]; then' \
+  "$HELPER"
+
 /bin/mkdir -p "$TEST_ROOT/etc/pf.anchors" "$TEST_ROOT/bin" "$TEST_ROOT/var/run"
 /usr/bin/printf '%s\n' \
   'set skip on lo0' \

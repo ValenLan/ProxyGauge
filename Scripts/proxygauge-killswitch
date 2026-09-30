@@ -222,7 +222,7 @@ proxy_core_records() {
     return 0
   fi
   # comm contains the executable path, never process arguments or subscription data.
-  if [ -n "${PROXYGAUGE_KILLSWITCH_TEST_PS_OUTPUT:-}" ]; then
+  if [ "$TEST_MODE" -eq 1 ] && [ -n "${PROXYGAUGE_KILLSWITCH_TEST_PS_OUTPUT:-}" ]; then
     /usr/bin/printf '%s\n' "$PROXYGAUGE_KILLSWITCH_TEST_PS_OUTPUT"
   else
     /bin/ps -axo pid=,uid=,comm=
