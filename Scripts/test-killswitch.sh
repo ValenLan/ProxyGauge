@@ -70,6 +70,7 @@ run_helper() {
   PROXYGAUGE_KILLSWITCH_TEST_ACTIVE_DEVICE="${PROXYGAUGE_KILLSWITCH_TEST_ACTIVE_DEVICE-${PROXYGAUGE_KILLSWITCH_TEST_TUN_INTERFACES:-utun0}}" \
   PROXYGAUGE_KILLSWITCH_TEST_STATE_ADDRESSES="${PROXYGAUGE_KILLSWITCH_TEST_STATE_ADDRESSES:-192.0.2.10 2001:db8::10}" \
   PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS="${PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS-verge-mihomo:1001:0}" \
+  PROXYGAUGE_KILLSWITCH_TEST_PS_OUTPUT="${PROXYGAUGE_KILLSWITCH_TEST_PS_OUTPUT-}" \
   PROXYGAUGE_KILLSWITCH_TEST_NE_ENDPOINTS="${PROXYGAUGE_KILLSWITCH_TEST_NE_ENDPOINTS-}" \
   PROXYGAUGE_KILLSWITCH_TEST_RUNTIME_RULES="${PROXYGAUGE_KILLSWITCH_TEST_RUNTIME_RULES:-}" \
   /bin/bash "$HELPER" "$@"
@@ -84,6 +85,7 @@ run_persisted_helper() {
   PROXYGAUGE_KILLSWITCH_TEST_ACTIVE_DEVICE="${PROXYGAUGE_KILLSWITCH_TEST_ACTIVE_DEVICE-${PROXYGAUGE_KILLSWITCH_TEST_TUN_INTERFACES:-utun0}}" \
   PROXYGAUGE_KILLSWITCH_TEST_STATE_ADDRESSES="${PROXYGAUGE_KILLSWITCH_TEST_STATE_ADDRESSES:-192.0.2.10 2001:db8::10}" \
   PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS="${PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS-verge-mihomo:1001:0}" \
+  PROXYGAUGE_KILLSWITCH_TEST_PS_OUTPUT="${PROXYGAUGE_KILLSWITCH_TEST_PS_OUTPUT-}" \
   PROXYGAUGE_KILLSWITCH_TEST_NE_ENDPOINTS="${PROXYGAUGE_KILLSWITCH_TEST_NE_ENDPOINTS-}" \
   PROXYGAUGE_KILLSWITCH_TEST_RUNTIME_RULES="${PROXYGAUGE_KILLSWITCH_TEST_RUNTIME_RULES:-}" \
   /bin/bash "$PERSIST_HELPER" "$@"
@@ -356,6 +358,22 @@ PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS="$ne_records" \
 [ "$(/usr/bin/sed -n '2p' "${RUNTIME_STATE%.state}.selection")" = '/Applications/Shadowrocket.app/Contents/PlugIns/MacPacketTunnel.appex/Contents/MacOS/MacPacketTunnel' ]
 /usr/bin/grep -Fq 'table <proxygauge_ne_endpoints> persist' "$TEST_ROOT/etc/pf.anchors/proxygauge"
 [ "$(/bin/cat "$TEST_ROOT/var/db/proxygauge/ne-endpoints")" = '198.51.100.77' ]
+
+# Record-level regression: manual NE selection must also succeed through the
+# real ps-scan branch (stubbed ps output), not only via record injection —
+# the manually pinned NE process must still carry the :ne marker.
+ne_ps_output=' 1499  501 /Applications/Shadowrocket.app/Contents/MacOS/Shadowrocket
+ 1500  501 /Applications/Shadowrocket.app/Contents/PlugIns/MacPacketTunnel.appex/Contents/MacOS/MacPacketTunnel'
+PROXYGAUGE_KILLSWITCH_TEST_PS_OUTPUT="$ne_ps_output" \
+  PROXYGAUGE_KILLSWITCH_TEST_NE_ENDPOINTS='198.51.100.77' \
+  run_helper on '/Applications/Shadowrocket.app/Contents/PlugIns/MacPacketTunnel.appex/Contents/MacOS/MacPacketTunnel' >/dev/null
+[ "$(/usr/bin/sed -n '2p' "${RUNTIME_STATE%.state}.selection")" = '/Applications/Shadowrocket.app/Contents/PlugIns/MacPacketTunnel.appex/Contents/MacOS/MacPacketTunnel' ]
+/usr/bin/grep -Fq 'table <proxygauge_ne_endpoints> persist' "$TEST_ROOT/etc/pf.anchors/proxygauge"
+# AUTO through the ps-scan branch still merges both processes into one provider.
+PROXYGAUGE_KILLSWITCH_TEST_PS_OUTPUT="$ne_ps_output" \
+  PROXYGAUGE_KILLSWITCH_TEST_NE_ENDPOINTS='198.51.100.77' \
+  run_helper on AUTO >/dev/null
+[ "$(/usr/bin/sed -n '2p' "${RUNTIME_STATE%.state}.selection")" = '/Applications/Shadowrocket.app/Contents/MacOS/Shadowrocket' ]
 
 # Enabling without an established NE endpoint must be refused before any change.
 ne_anchor_hash_before=$(/usr/bin/shasum -a 256 "$TEST_ROOT/etc/pf.anchors/proxygauge" | /usr/bin/awk '{print $1}')

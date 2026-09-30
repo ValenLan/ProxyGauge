@@ -217,20 +217,28 @@ valid_core_path() {
 }
 
 proxy_core_records() {
-  if [ "$TEST_MODE" -eq 1 ]; then
+  if [ "$TEST_MODE" -eq 1 ] && [ -z "${PROXYGAUGE_KILLSWITCH_TEST_PS_OUTPUT:-}" ]; then
     /usr/bin/printf '%s\n' "${PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS-verge-mihomo:1001:0}"
     return 0
   fi
   # comm contains the executable path, never process arguments or subscription data.
-  /bin/ps -axo pid=,uid=,comm= | while read -r pid uid path; do
+  if [ -n "${PROXYGAUGE_KILLSWITCH_TEST_PS_OUTPUT:-}" ]; then
+    /usr/bin/printf '%s\n' "$PROXYGAUGE_KILLSWITCH_TEST_PS_OUTPUT"
+  else
+    /bin/ps -axo pid=,uid=,comm=
+  fi | while read -r pid uid path; do
     [ -n "$path" ] || continue
     name="${path##*/}"
-    if known_core_name "$name" || { [ "$SELECTION_MODE" != AUTO ] && [ "$path" = "$SELECTION_MODE" ]; }; then
+    if known_core_name "$name"; then
       valid_core_path "$path" || continue
       /usr/bin/printf '%s:%s:%s:%s\n' "$name" "$pid" "$uid" "$path"
     elif ne_provider_key "$name" >/dev/null 2>&1; then
+      # NE processes always carry the :ne marker, even when manually pinned.
       valid_core_path "$path" || continue
       /usr/bin/printf '%s:%s:%s:%s:ne\n' "$name" "$pid" "$uid" "$path"
+    elif [ "$SELECTION_MODE" != AUTO ] && [ "$path" = "$SELECTION_MODE" ]; then
+      valid_core_path "$path" || continue
+      /usr/bin/printf '%s:%s:%s:%s\n' "$name" "$pid" "$uid" "$path"
     fi
   done
 }
@@ -307,6 +315,7 @@ ne_provider_endpoints() {
       if (addr ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/) {
         split(addr, oct, "[.]")
         o1 = oct[1] + 0; o2 = oct[2] + 0
+        if (o1 > 255 || o2 > 255 || oct[3] + 0 > 255 || oct[4] + 0 > 255) return 0
         if (o1 == 0 || o1 == 10 || o1 == 127 || o1 >= 224) return 0
         if (o1 == 100 && o2 >= 64 && o2 <= 127) return 0
         if (o1 == 169 && o2 == 254) return 0
