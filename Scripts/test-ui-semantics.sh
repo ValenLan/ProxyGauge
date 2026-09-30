@@ -183,6 +183,12 @@ if /usr/bin/grep -Fq 'Button("稍后", action: deferSetup)' "$APP_SOURCE"; then
   exit 1
 fi
 
+/usr/bin/grep -Fq '启动代理客户端（如 Shadowrocket、Clash Verge、Mihomo），ProxyGauge 会自动识别。' "$APP_SOURCE"
+if /usr/bin/grep -Fq '启动 Clash Verge 或 Mihomo' "$APP_SOURCE"; then
+  echo 'The connection setup guide must address generic proxy clients, not only Clash Verge or Mihomo.' >&2
+  exit 1
+fi
+
 if /usr/bin/grep -Fq '普通公网' \
   "$APP_SOURCE" "$DASHBOARD_SOURCE" "$WINDOWS_MAIN" \
   "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs" \
