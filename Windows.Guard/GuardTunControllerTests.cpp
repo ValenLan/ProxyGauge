@@ -28,7 +28,9 @@ int main()
     check(!GuardTun::ParseResponse("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n" + body).has_value());
 
     const std::wstring path = L"c:\\proxy\\verge-mihomo.exe";
-    for (int scenario = 0; scenario < 3; ++scenario)
+    const std::wstring inactiveKnownPath = L"c:\\other-proxy\\mihomo.exe";
+    const std::wstring unknownPath = L"c:\\browser.exe";
+    for (int scenario = 0; scenario < 6; ++scenario)
     {
         const auto name = L"\\\\.\\pipe\\ProxyGauge.Guard.TunTest." + std::to_wstring(GetCurrentProcessId()) + L"." + std::to_wstring(scenario);
         GuardTun::Handle server(CreateNamedPipeW(name.c_str(), PIPE_ACCESS_DUPLEX, PIPE_TYPE_BYTE | PIPE_WAIT,
@@ -47,11 +49,19 @@ int main()
             DisconnectNamedPipe(server.get());
         });
         bool identityVerified = false;
+        const std::set<std::wstring> running = scenario == 4
+            ? std::set<std::wstring>{unknownPath} : std::set<std::wstring>{path};
+        // Each negative case isolates one identity gate. The original browser
+        // case fails both known-core and running-membership checks at once.
+        if (scenario == 3) check(ProxySelection::IsClashCore(inactiveKnownPath) && !running.contains(inactiveKnownPath));
+        if (scenario == 4) check(!ProxySelection::IsClashCore(unknownPath) && running.contains(unknownPath));
         const auto started = GetTickCount64();
-        const auto result = GuardTun::Read(name.c_str(), {path}, [&](DWORD processId) -> std::optional<std::wstring>
+        const auto result = GuardTun::Read(name.c_str(), running, [&](DWORD processId) -> std::optional<std::wstring>
         {
             identityVerified = processId == GetCurrentProcessId();
-            return scenario == 1 ? L"c:\\browser.exe" : path;
+            if (scenario == 5) return std::nullopt; // The server process identity could not be read.
+            if (scenario == 3) return inactiveKnownPath; // A known core is absent from the current running snapshot.
+            return scenario == 1 || scenario == 4 ? unknownPath : path;
         });
         const auto elapsed = GetTickCount64() - started;
         responder.join();
@@ -59,7 +69,7 @@ int main()
             << ", request=" << receivedRequest << ", milliseconds=" << elapsed << std::endl;
         check(identityVerified);
         if (scenario == 0) check(result.has_value() && result->path == path && result->tun.enabled && receivedRequest);
-        if (scenario == 1) check(!result.has_value() && !receivedRequest);
+        if (scenario == 1 || scenario >= 3) check(!result.has_value() && !receivedRequest);
         if (scenario == 2) check(!result.has_value() && elapsed < 600);
     }
     std::cout << "TUN controller parsing, process identity and bounded pipe tests passed.\n";

@@ -131,13 +131,22 @@ fi
 /usr/bin/grep -Fq 'if healthExecutionIncomplete { return "检测未完成" }' "$APP_SOURCE"
 /usr/bin/grep -Fq 'healthExecutionIncomplete ? min(report.score, 49) : report.score' "$APP_SOURCE"
 /usr/bin/grep -Fq '检测进程未完整结束；以下仅为已返回的部分结果。' "$APP_SOURCE"
-/usr/bin/grep -Fq 'source: "自动检测失败"' "$APP_SOURCE"
+/usr/bin/grep -Fq 'source: "自动检测失败"' "$PROJECT_ROOT/Sources/AppStatePolicies.swift"
+/usr/bin/grep -Fq 'DiscoveryResultPolicy.make(' "$APP_SOURCE"
 /usr/bin/grep -Fq 'markProbeUnavailable(' "$APP_SOURCE"
+/usr/bin/grep -Fq 'parseDiscovery(result.output, status: result.status)' "$APP_SOURCE"
+/usr/bin/grep -Fq 'parseDiscovery(discovered.output, status: discovered.status)' "$APP_SOURCE"
 /usr/bin/grep -Fq 'if await checkForUpdates(silent: true)' "$APP_SOURCE"
 /usr/bin/grep -Fq '"其他 VPN 已连接"' "$CONNECTION_FORMATTER"
 /usr/bin/grep -Fq '"其他 VPN / 代理已连接"' "$CONNECTION_FORMATTER"
 /usr/bin/grep -Fq '"其他系统代理已启用"' "$CONNECTION_FORMATTER"
-/usr/bin/grep -Fq '"MacPacketTunnel"' "$CONNECTION_FORMATTER"
+connection_detail_binding=$(/usr/bin/sed -n '/^    var connectionDetail: String {/,/^    var currentVersion: String {/p' "$APP_SOURCE")
+if /usr/bin/grep -Eq 'guardSelection|selectedCore' <<< "$connection_detail_binding"; then
+  echo 'The proxy status subtitle must use current discovery, not the Guard application selection.' >&2
+  exit 1
+fi
+/usr/bin/grep -Fq 'client: discovery.client,' <<< "$connection_detail_binding"
+/usr/bin/grep -Fq 'core: discovery.core,' <<< "$connection_detail_binding"
 /usr/bin/grep -Fq '未发现代理客户端或核心' "$PROJECT_ROOT/Scripts/proxygauge-check.sh"
 /usr/bin/grep -Fq '未发现代理客户端或核心' "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
 /usr/bin/grep -Fq '"无网络连接"' "$PROJECT_ROOT/Sources/AppStatePolicies.swift"
@@ -282,5 +291,243 @@ fi
   "$PROJECT_ROOT/Tests/PrivilegedBridgeCheck.swift" \
   -o "$TEMP_ROOT/privileged-bridge-check"
 "$TEMP_ROOT/privileged-bridge-check"
+
+# Compile the actual activation callback with fake local/public refresh hooks.
+# This verifies lifecycle wiring without starting the app or querying any network.
+activation_refresh_method=$(/usr/bin/sed -n '/^    func applicationDidBecomeActive() {/,/^    func applicationDidResignActive() {/p' "$APP_SOURCE" | /usr/bin/sed '$d')
+/bin/cat > "$TEMP_ROOT/activation-refresh-check.swift" <<'SWIFT'
+import Foundation
+@MainActor
+final class ActivationRefreshProbe {
+    var needsExitRefreshWhenActive = false
+    var localRefreshes = 0
+    var publicExitRefreshes = 0
+    let localRefreshCompletion: AsyncStream<Bool>
+    let localRefreshSignal: AsyncStream<Bool>.Continuation
+    init() {
+        let completion = AsyncStream<Bool>.makeStream()
+        localRefreshCompletion = completion.stream
+        localRefreshSignal = completion.continuation
+    }
+    func schedulePathEvaluation() {}
+    func scheduleExitRefresh() { publicExitRefreshes += 1 }
+    func refresh() async {
+        localRefreshes += 1
+        localRefreshSignal.yield(true)
+        localRefreshSignal.finish()
+    }
+SWIFT
+/usr/bin/printf '%s\n' "$activation_refresh_method" >> "$TEMP_ROOT/activation-refresh-check.swift"
+/bin/cat >> "$TEMP_ROOT/activation-refresh-check.swift" <<'SWIFT'
+}
+@main
+struct ActivationRefreshCheck {
+    @MainActor
+    static func main() async {
+        for pendingPathChange in [false, true] {
+            let model = ActivationRefreshProbe()
+            model.needsExitRefreshWhenActive = pendingPathChange
+            model.applicationDidBecomeActive()
+            let completed = await waitForLocalRefresh(model.localRefreshCompletion)
+            guard completed, model.localRefreshes == 1,
+                  model.publicExitRefreshes == (pendingPathChange ? 1 : 0) else {
+                FileHandle.standardError.write(Data("Activation must refresh local status while preserving path-gated public exit lookup.\n".utf8))
+                exit(1)
+            }
+        }
+        print("ProxyGauge activation refresh cases: 2 passed without GUI or network.")
+    }
+    private static func waitForLocalRefresh(_ completion: AsyncStream<Bool>) async -> Bool {
+        await withTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                for await completed in completion { return completed }
+                return false
+            }
+            group.addTask {
+                do { try await Task.sleep(for: .seconds(2)) } catch { return false }
+                return false
+            }
+            let completed = await group.next() ?? false
+            group.cancelAll()
+            return completed
+        }
+    }
+}
+SWIFT
+/usr/bin/xcrun swiftc \
+  -target arm64-apple-macosx26.0 \
+  -module-cache-path "$TEMP_ROOT/module-cache" \
+  -parse-as-library \
+  "$PROJECT_ROOT/Sources/LocalEndpointPolicy.swift" \
+  "$PROJECT_ROOT/Sources/AppStatePolicies.swift" \
+  "$TEMP_ROOT/activation-refresh-check.swift" \
+  -o "$TEMP_ROOT/activation-refresh-check"
+"$TEMP_ROOT/activation-refresh-check"
+
+# Exercise the actual async discovery entry and parser adapter with mock commands.
+discovery_refresh_method=$(/usr/bin/sed -n '/^    func discoverConnection(/,/^    func confirmConnection(/p' "$APP_SOURCE" | /usr/bin/sed '$d')
+discovery_output_method=$(/usr/bin/sed -n '/^    private func parseDiscovery(/,/^    private func markProbeUnavailable(/p' "$APP_SOURCE" | /usr/bin/sed '$d')
+perform_refresh_method=$(/usr/bin/sed -n '/^    private func performRefresh(/,/^    private func startNetworkMonitoring(/p' "$APP_SOURCE" | /usr/bin/sed '$d')
+/bin/cat > "$TEMP_ROOT/discovery-refresh-check.swift" <<'SWIFT'
+import Foundation
+@MainActor
+final class DiscoveryRefreshProbe {
+    var showConnectionSetup = false
+    var isDiscoveringConnection = false
+    var refreshGeneration = RefreshGenerationGate()
+    var discoveryGeneration = RefreshGenerationGate()
+    var guardSelection: GuardSelectionSnapshot?
+    var appliedProbes = 0
+    var unavailableProbes = 0
+    var nextProbeResult: (output: String, status: Int32) = ("valid-mock-probe", 0)
+    var discovery = ProxyDiscovery(client: "Clash Verge Rev", core: "verge-mihomo", mode: "TUN")
+    var nextResult: (output: String, status: Int32)
+    var suspendExecution = false
+    var pendingResult: CheckedContinuation<(output: String, status: Int32), Never>?
+    let executionStarted: AsyncStream<Bool>
+    let executionSignal: AsyncStream<Bool>.Continuation
+    init(output: String, status: Int32) {
+        nextResult = (output, status)
+        let signal = AsyncStream<Bool>.makeStream()
+        executionStarted = signal.stream
+        executionSignal = signal.continuation
+    }
+    func refreshForTesting(generation: UInt64, discoveryGeneration: UInt64) async {
+        await performRefresh(generation: generation, discoveryGeneration: discoveryGeneration)
+    }
+    private func applyProbe(_ output: String) { appliedProbes += 1 }
+    private func markProbeUnavailable(detail message: String) { unavailableProbes += 1 }
+    private static func boundedBackendFailure(_ output: String) -> String { output }
+    private func execute(_ action: String) async -> (output: String, status: Int32) {
+        if action == "probe" { return nextProbeResult }
+        if suspendExecution {
+            return await withCheckedContinuation { continuation in
+                pendingResult = continuation
+                executionSignal.yield(true)
+                executionSignal.finish()
+            }
+        }
+        return nextResult
+    }
+SWIFT
+/usr/bin/printf '%s\n%s\n%s\n' "$discovery_refresh_method" "$discovery_output_method" "$perform_refresh_method" >> "$TEMP_ROOT/discovery-refresh-check.swift"
+/bin/cat >> "$TEMP_ROOT/discovery-refresh-check.swift" <<'SWIFT'
+}
+@main
+struct DiscoveryRefreshCheck {
+    @MainActor
+    static func main() async {
+        let valid = "found\t0\nclient\tShadowrocket\ncore\tMacPacketTunnel\nendpoint\t127.0.0.1:7890\nmode\tShadowrocket VPN\nsource\t本地运行状态\nactive\tidle\nprivacy\t仅读取本地端口与运行模式，不读取订阅和节点\n"
+        let cases: [(String, Int32)] = [
+            (valid, 1), (valid, 124), (valid, 130), ("", 0),
+            (valid + "mode\t系统代理\n", 0),
+            (valid.replacingOccurrences(of: "mode\tShadowrocket VPN", with: "mode\tgarbage"), 0)
+        ]
+        for (output, status) in cases {
+            let model = DiscoveryRefreshProbe(output: output, status: status)
+            await model.discoverConnection()
+            guard model.discovery.mode == "状态不可用", model.discovery.core.isEmpty,
+                  model.discovery.client == "未识别", !model.isDiscoveringConnection else {
+                fail("Failed or malformed discovery must replace a previous attributed proxy snapshot.")
+            }
+        }
+        let validModel = DiscoveryRefreshProbe(output: valid, status: 0)
+        await validModel.discoverConnection()
+        guard validModel.discovery.mode == "Shadowrocket VPN",
+              validModel.discovery.core == "MacPacketTunnel" else {
+            fail("Fresh discovery must retain the actual observed engine.")
+        }
+        let delayed = DiscoveryRefreshProbe(output: valid, status: 0)
+        delayed.suspendExecution = true
+        let work = Task { await delayed.discoverConnection() }
+        guard await waitForExecution(delayed.executionStarted) else {
+            fail("The suspended discovery mock did not start within two seconds.")
+        }
+        _ = delayed.discoveryGeneration.request()
+        let newer = ProxyDiscovery(client: "Clash Verge Rev", core: "verge-mihomo", mode: "TUN")
+        delayed.discovery = newer
+        delayed.pendingResult?.resume(returning: delayed.nextResult)
+        delayed.pendingResult = nil
+        await work.value
+        guard delayed.discovery == newer, !delayed.isDiscoveringConnection else {
+            fail("An older discovery result must not overwrite a newer proxy generation.")
+        }
+        for invalidateWholeRefresh in [true, false] {
+            let model = DiscoveryRefreshProbe(output: valid, status: 0)
+            model.suspendExecution = true
+            let refreshGeneration = model.refreshGeneration.request()
+            let discoveryGeneration = model.discoveryGeneration.request()
+            let refreshWork = Task {
+                await model.refreshForTesting(generation: refreshGeneration, discoveryGeneration: discoveryGeneration)
+            }
+            guard await waitForExecution(model.executionStarted) else {
+                fail("The suspended refresh mock did not start within two seconds.")
+            }
+            if invalidateWholeRefresh { _ = model.refreshGeneration.request() }
+            _ = model.discoveryGeneration.request()
+            model.discovery = newer
+            model.pendingResult?.resume(returning: model.nextResult)
+            model.pendingResult = nil
+            await refreshWork.value
+            guard model.discovery == newer,
+                  model.appliedProbes == (invalidateWholeRefresh ? 0 : 1),
+                  model.unavailableProbes == 0 else {
+                fail("Late refresh results must honor the separate refresh and discovery generations.")
+            }
+        }
+        let probeFailed = DiscoveryRefreshProbe(output: valid, status: 0)
+        probeFailed.nextProbeResult = ("mock probe timeout", 124)
+        await probeFailed.refreshForTesting(
+            generation: probeFailed.refreshGeneration.request(),
+            discoveryGeneration: probeFailed.discoveryGeneration.request())
+        guard probeFailed.discovery.mode == "Shadowrocket VPN",
+              probeFailed.discovery.core == "MacPacketTunnel",
+              probeFailed.unavailableProbes == 1, probeFailed.appliedProbes == 0,
+              ConnectionStatusPresentation.make(mode: probeFailed.discovery.mode, networkAvailable: true, probeAvailable: false)?.tone == .ok else {
+            fail("Fresh discovery evidence must remain factual when the separate health probe fails.")
+        }
+        let discoveryFailed = DiscoveryRefreshProbe(output: valid, status: 124)
+        await discoveryFailed.refreshForTesting(
+            generation: discoveryFailed.refreshGeneration.request(),
+            discoveryGeneration: discoveryFailed.discoveryGeneration.request())
+        guard discoveryFailed.discovery.mode == "状态不可用",
+              discoveryFailed.discovery.core.isEmpty,
+              discoveryFailed.appliedProbes == 1,
+              ConnectionStatusPresentation.make(mode: discoveryFailed.discovery.mode, networkAvailable: true, probeAvailable: true)?.tone == .error else {
+            fail("A successful health probe must not turn failed discovery into a confirmed proxy card.")
+        }
+        print("ProxyGauge async discovery cases: 12 passed without GUI or network.")
+    }
+    private static func waitForExecution(_ started: AsyncStream<Bool>) async -> Bool {
+        await withTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                for await started in started { return started }
+                return false
+            }
+            group.addTask {
+                do { try await Task.sleep(for: .seconds(2)) } catch { return false }
+                return false
+            }
+            let started = await group.next() ?? false
+            group.cancelAll()
+            return started
+        }
+    }
+    private static func fail(_ message: String) -> Never {
+        FileHandle.standardError.write(Data((message + "\n").utf8))
+        exit(1)
+    }
+}
+SWIFT
+/usr/bin/xcrun swiftc \
+  -target arm64-apple-macosx26.0 \
+  -module-cache-path "$TEMP_ROOT/module-cache" \
+  -parse-as-library \
+  "$PROJECT_ROOT/Sources/LocalEndpointPolicy.swift" \
+  "$PROJECT_ROOT/Sources/AppStatePolicies.swift" \
+  "$PROJECT_ROOT/Sources/ExitSummaryService.swift" \
+  "$TEMP_ROOT/discovery-refresh-check.swift" \
+  -o "$TEMP_ROOT/discovery-refresh-check"
+"$TEMP_ROOT/discovery-refresh-check"
 
 echo 'ProxyGauge dashboard semantics tests passed.'

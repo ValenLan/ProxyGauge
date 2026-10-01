@@ -30,6 +30,7 @@ public sealed record ProxySnapshot(
     public bool RouteLookupUnknown { get; init; }
     public bool VirtualNetworkDetected { get; init; }
     public string? DetectedClientName { get; init; }
+    public string? DetectedCoreName { get; init; }
     public string? ConnectionLabel { get; init; }
     public string? ConnectionSummary { get; init; }
 }

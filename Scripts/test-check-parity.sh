@@ -21,6 +21,8 @@ cleanup() {
 trap cleanup EXIT
 
 PROVIDER_FUNCTIONS='proxy_provider_pids provider_pid_name provider_keys provider_count provider_label'
+CLIENT_ROUTE_FUNCTIONS='trusted_client_tun_candidates client_tun_candidates provider_packet_tunnel_running classify_client_tunnel_route tun_route_table'
+ROUTE_QUERY_FUNCTIONS='route_lookup_interface representative_route_interface'
 
 extract_function() {
   /usr/bin/awk -v name="$2" '
@@ -32,7 +34,7 @@ extract_function() {
 
 # --- 第一部分：五函数源码逐字节对拍（静态门禁，辅助） ---
 # core_pids 是 proxy_provider_pids 的共享委派对象，一并纳入对拍。
-for fn in core_pids $PROVIDER_FUNCTIONS; do
+for fn in core_pids $PROVIDER_FUNCTIONS $CLIENT_ROUTE_FUNCTIONS; do
   [ "$(/usr/bin/grep -c "^${fn}() {" "$CHECK")" = "1" ]
   [ "$(/usr/bin/grep -c "^${fn}() {" "$BACKEND")" = "1" ]
   extract_function "$CHECK" "$fn" > "$TEST_ROOT/check.$fn"
@@ -51,7 +53,7 @@ done
 # 环境下分别执行并逐字节比较输出，保证"平行副本"永远同步演进。
 CHECK_FNS="$TEST_ROOT/check-provider-fns.sh"
 BACKEND_FNS="$TEST_ROOT/backend-provider-fns.sh"
-for fn in core_pids $PROVIDER_FUNCTIONS; do
+for fn in core_pids $PROVIDER_FUNCTIONS $CLIENT_ROUTE_FUNCTIONS $ROUTE_QUERY_FUNCTIONS; do
   extract_function "$CHECK" "$fn" >> "$CHECK_FNS"
   /usr/bin/printf '\n' >> "$CHECK_FNS"
   extract_function "$BACKEND" "$fn" >> "$BACKEND_FNS"
@@ -316,6 +318,45 @@ fi
 # backend probe / discover 在同一注入下必须给出相同的归因。
 ROUTES_UTUN7=$'inet 1.1.1.1 utun7\ninet 8.8.8.8 utun7\ninet 9.9.9.9 utun7\ninet 208.67.222.222 utun7\ninet6 2606:4700:4700::1111 unavailable\ninet6 2001:4860:4860::8888 unavailable\ninet6 2620:fe::fe unavailable\ninet6 2620:119:35::35 unavailable'
 client_route_table=$'default            10.0.0.1           UGScg                 utun7'
+
+# Exercise the real shared client classifier for both available address
+# families and incomplete/contradictory route evidence. No route command or
+# HTTP request is used: every representative lookup is injected.
+assert_client_route_scenario() {
+  local label expected routes provider_pids check_kind backend_kind
+  label="$1"
+  expected="$2"
+  routes="$3"
+  provider_pids="${4:-$shadowrocket_provider_pids}"
+  check_kind=$(env PROXYGAUGE_PROVIDER_PIDS="$provider_pids" \
+    PROXYGAUGE_TRUSTED_CLIENT_TUNS='' \
+    PROXYGAUGE_TUN_ROUTE_TABLE="$client_route_table" \
+    PROXYGAUGE_ROUTE_LOOKUP_RESULTS="$routes" \
+    /bin/bash -c '. "$1"; classify_client_tunnel_route' -- "$CHECK_FNS")
+  backend_kind=$(env PROXYGAUGE_PROVIDER_PIDS="$provider_pids" \
+    PROXYGAUGE_TRUSTED_CLIENT_TUNS='' \
+    PROXYGAUGE_TUN_ROUTE_TABLE="$client_route_table" \
+    PROXYGAUGE_ROUTE_LOOKUP_RESULTS="$routes" \
+    /bin/bash -c '. "$1"; classify_client_tunnel_route' -- "$BACKEND_FNS")
+  if [ "$check_kind" != "$expected" ] || [ "$backend_kind" != "$expected" ]; then
+    echo "$label client route disagreement: check=$check_kind backend=$backend_kind expected=$expected" >&2
+    exit 1
+  fi
+}
+ROUTES_CLIENT_V6_ONLY=$(printf '%s\n' "$ROUTES_UTUN7" \
+  | /usr/bin/awk '$1 == "inet" { $3 = "unavailable" } $1 == "inet6" { $3 = "utun7" } { print }')
+ROUTES_CLIENT_DUAL=${ROUTES_UTUN7// unavailable/ utun7}
+assert_client_route_scenario ipv4-only client "$ROUTES_UTUN7"
+assert_client_route_scenario ipv6-only client "$ROUTES_CLIENT_V6_ONLY"
+assert_client_route_scenario dual-same-interface client "$ROUTES_CLIENT_DUAL"
+assert_client_route_scenario same-family-split other "${ROUTES_UTUN7/inet 8.8.8.8 utun7/inet 8.8.8.8 en0}"
+assert_client_route_scenario dual-family-split other "${ROUTES_CLIENT_V6_ONLY// unavailable/ utun8}"
+assert_client_route_scenario one-query-unknown other "${ROUTES_UTUN7/inet 9.9.9.9 utun7/inet 9.9.9.9 unknown}"
+assert_client_route_scenario partial-family-unavailable other "${ROUTES_UTUN7/inet 9.9.9.9 utun7/inet 9.9.9.9 unavailable}"
+assert_client_route_scenario both-families-unavailable other "${ROUTES_UTUN7// utun7/ unavailable}"
+assert_client_route_scenario known-v4-unknown-v6 other "${ROUTES_UTUN7// unavailable/ unknown}"
+assert_client_route_scenario gui-with-foreign-tunnel other "$ROUTES_UTUN7" "$shadowrocket_test_pid"
+assert_client_route_scenario mihomo-without-tun-evidence other "$ROUTES_UTUN7" "$mihomo_test_pid"
 
 client_check=$(run_check \
   PROXYGAUGE_CORE_PIDS='' \

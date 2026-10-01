@@ -666,6 +666,10 @@ shadowrocket_discovery=$(PROXYGAUGE_CONFIG=/dev/null \
 /usr/bin/grep -Fq $'client\tShadowrocket' <<< "$shadowrocket_discovery"
 /usr/bin/grep -Fq $'endpoint\t127.0.0.1:1082' <<< "$shadowrocket_discovery"
 /usr/bin/grep -Fq $'mode\t系统代理 + Shadowrocket VPN' <<< "$shadowrocket_discovery"
+if ! /usr/bin/grep -Fxq $'core\tMacPacketTunnel' <<< "$shadowrocket_discovery"; then
+  echo 'Discovery must report the observed MacPacketTunnel engine, not a client alias.' >&2
+  exit 1
+fi
 /usr/bin/grep -Fq $'active\tok' <<< "$shadowrocket_discovery"
 
 shadowrocket_listener_discovery=$(PROXYGAUGE_CONFIG=/dev/null \
@@ -816,5 +820,137 @@ if /usr/bin/grep -Fq 'Mihomo' <<< "$unattributed_system_probe"; then
   echo 'An unattributed system-proxy path must not be blamed on Mihomo.' >&2
   exit 1
 fi
+
+# The current provider snapshot, rather than a GUI name or unrelated host
+# process, determines whether a real packet-tunnel engine was observed.
+shadowrocket_core_discovery() {
+  PROXYGAUGE_CONFIG=/dev/null \
+    PROXYGAUGE_CORE_PIDS='' \
+    PROXYGAUGE_PROVIDER_PIDS="$1" \
+    PROXYGAUGE_DISCOVERY_CLIENT=Shadowrocket \
+    PROXYGAUGE_DISCOVERY_CONFIG="$TEMP_DIR/missing.yaml" \
+    PROXYGAUGE_DISCOVERY_SOCKET="$TEMP_DIR/missing.sock" \
+    PROXYGAUGE_DISCOVERY_PORT_ACTIVE=0 \
+    PROXYGAUGE_SYSTEM_PROXY_ACTIVE=0 \
+    PROXYGAUGE_TUN_ROUTE_TABLE="${2:-}" \
+    PROXYGAUGE_ROUTE_LOOKUP_RESULTS="$ROUTES_UTUN5_V4" \
+    /bin/bash "$BACKEND" discover
+}
+gui_only_discovery=$(shadowrocket_core_discovery "$shadowrocket_test_pid")
+/usr/bin/grep -Fxq $'core\t' <<< "$gui_only_discovery"
+/usr/bin/grep -Fxq $'mode\t未开启' <<< "$gui_only_discovery"
+ne_only_discovery=$(shadowrocket_core_discovery "$packet_tunnel_test_pid" "$SHADOWROCKET_ROUTE_TABLE")
+/usr/bin/grep -Fxq $'core\tMacPacketTunnel' <<< "$ne_only_discovery"
+/usr/bin/grep -Fxq $'mode\tShadowrocket VPN' <<< "$ne_only_discovery"
+gui_with_other_vpn=$(shadowrocket_core_discovery "$shadowrocket_test_pid" "$SHADOWROCKET_ROUTE_TABLE")
+/usr/bin/grep -Fxq $'core\t' <<< "$gui_with_other_vpn"
+/usr/bin/grep -Fxq $'mode\t其他 VPN / TUN' <<< "$gui_with_other_vpn"
+/usr/bin/grep -Fxq $'client\t未识别' <<< "$gui_with_other_vpn" || {
+  echo 'A running GUI must not identify another VPN path as its own.' >&2
+  exit 1
+}
+absent_core_discovery=$(shadowrocket_core_discovery '')
+/usr/bin/grep -Fxq $'core\t' <<< "$absent_core_discovery"
+conflicting_core_discovery=$(shadowrocket_core_discovery "$shadowrocket_provider_pids
+$mihomo_test_pid")
+/usr/bin/grep -Fxq $'core\t' <<< "$conflicting_core_discovery"
+
+# Only a currently owned system listener or a confirmed client tunnel may
+# attribute the active path to running processes. A fallback port alone does
+# not establish that it is the system proxy's selected endpoint.
+system_listener_discovery() {
+  local provider_pids listener_pid system_active route_table listener_records
+  provider_pids="$1"
+  listener_pid="$2"
+  system_active="$3"
+  route_table="${4:-}"
+  listener_records="${6:-p$listener_pid
+n127.0.0.1:1082}"
+  PROXYGAUGE_CONFIG=/dev/null \
+    PROXYGAUGE_CORE_PIDS='' \
+    PROXYGAUGE_PROVIDER_PIDS="$provider_pids" \
+    PROXYGAUGE_DISCOVERY_CLIENT=Shadowrocket \
+    PROXYGAUGE_DISCOVERY_SYSTEM_PROXY="${5:-127.0.0.1:1082}" \
+    PROXYGAUGE_DISCOVERY_CONFIG="$TEMP_DIR/missing.yaml" \
+    PROXYGAUGE_DISCOVERY_SOCKET="$TEMP_DIR/missing.sock" \
+    PROXYGAUGE_DISCOVERY_PORT_ACTIVE=1 \
+    PROXYGAUGE_DISCOVERY_LISTENER_RECORDS="$listener_records" \
+    PROXYGAUGE_SYSTEM_PROXY_ACTIVE="$system_active" \
+    PROXYGAUGE_SYSTEM_PROXY_DYNAMIC=0 \
+    PROXYGAUGE_TUN_ROUTE_TABLE="$route_table" \
+    PROXYGAUGE_ROUTE_LOOKUP_RESULTS="$ROUTES_UTUN5_V4" \
+    /bin/bash "$BACKEND" discover
+}
+assert_identity() {
+  local label expected_client expected_core actual
+  label="$1"
+  expected_client="$2"
+  expected_core="$3"
+  actual="$4"
+  if ! /usr/bin/grep -Fxq $'client\t'"$expected_client" <<< "$actual" \
+    || ! /usr/bin/grep -Fxq $'core\t'"$expected_core" <<< "$actual"; then
+    echo "$label returned an identity without current path attribution:" >&2
+    /usr/bin/printf '%s\n' "$actual" >&2
+    exit 1
+  fi
+}
+gui_unowned_system=$(system_listener_discovery "$shadowrocket_test_pid" "$mihomo_test_pid" 1)
+assert_identity gui-unowned-system 未识别 '' "$gui_unowned_system"
+/usr/bin/grep -Fxq $'mode\t系统代理' <<< "$gui_unowned_system"
+ne_unowned_system=$(system_listener_discovery "$shadowrocket_provider_pids" "$mihomo_test_pid" 1)
+assert_identity ne-unowned-system 未识别 '' "$ne_unowned_system"
+gui_owned_system=$(system_listener_discovery "$shadowrocket_test_pid" "$shadowrocket_test_pid" 1)
+assert_identity gui-owned-system Shadowrocket '' "$gui_owned_system"
+ne_owned_system=$(system_listener_discovery "$shadowrocket_provider_pids" "$packet_tunnel_test_pid" 1)
+assert_identity ne-owned-system Shadowrocket MacPacketTunnel "$ne_owned_system"
+gui_owned_system_foreign_core=$(system_listener_discovery "$shadowrocket_test_pid
+$mihomo_test_pid" "$shadowrocket_test_pid" 1)
+assert_identity gui-owned-system-foreign-core Shadowrocket '' "$gui_owned_system_foreign_core"
+mihomo_owned_system=$(system_listener_discovery "$shadowrocket_test_pid
+$mihomo_test_pid" "$mihomo_test_pid" 1)
+assert_identity mihomo-owned-system 'Clash / Mihomo' mihomo "$mihomo_owned_system"
+multiple_system_owners=$(system_listener_discovery "$shadowrocket_provider_pids" "$shadowrocket_test_pid" 1 '' '127.0.0.1:1082' "p$shadowrocket_test_pid
+n127.0.0.1:1082
+p$packet_tunnel_test_pid
+n127.0.0.1:1082")
+assert_identity multiple-system-owners 未识别 '' "$multiple_system_owners"
+unknown_system_owner=$(system_listener_discovery "$$" "$$" 1)
+assert_identity unknown-system-owner 未识别 '' "$unknown_system_owner"
+owned_system_other_vpn=$(system_listener_discovery "$shadowrocket_test_pid" "$shadowrocket_test_pid" 1 "$SHADOWROCKET_ROUTE_TABLE")
+assert_identity owned-system-other-vpn Shadowrocket '' "$owned_system_other_vpn"
+/usr/bin/grep -Fxq $'mode\t系统代理 + 其他 VPN / TUN' <<< "$owned_system_other_vpn"
+unused_owned_listener=$(system_listener_discovery "$shadowrocket_test_pid" "$shadowrocket_test_pid" 0 "$SHADOWROCKET_ROUTE_TABLE")
+assert_identity unused-owned-listener 未识别 '' "$unused_owned_listener"
+foreign_core_discovery=$(PROXYGAUGE_DISCOVERY_CORE=mihomo \
+  shadowrocket_core_discovery "$mihomo_test_pid" "$SHADOWROCKET_ROUTE_TABLE")
+assert_identity unrelated-core-other-vpn 未识别 '' "$foreign_core_discovery"
+/usr/bin/grep -Fxq $'mode\t其他 VPN / TUN' <<< "$foreign_core_discovery"
+confirmed_mihomo_discovery=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_CORE_PIDS="$mihomo_test_pid" \
+  PROXYGAUGE_PROVIDER_PIDS="$mihomo_test_pid" \
+  PROXYGAUGE_DISCOVERY_CLIENT='Clash / Mihomo' \
+  PROXYGAUGE_DISCOVERY_CONFIG="$TEMP_DIR/missing.yaml" \
+  PROXYGAUGE_DISCOVERY_SOCKET="$TEMP_DIR/missing.sock" \
+  PROXYGAUGE_DISCOVERY_PORT_ACTIVE=0 \
+  PROXYGAUGE_SYSTEM_PROXY_ACTIVE=0 \
+  PROXYGAUGE_TUN_ROUTE_TABLE="$SHADOWROCKET_ROUTE_TABLE" \
+  PROXYGAUGE_ROUTE_LOOKUP_RESULTS="$ROUTES_UTUN5_V4" \
+  PROXYGAUGE_MIHOMO_TUN_ACTIVE=1 \
+  PROXYGAUGE_MIHOMO_TUN_DEVICE=utun5 \
+  /bin/bash "$BACKEND" discover)
+assert_identity confirmed-mihomo-route 'Clash / Mihomo' mihomo "$confirmed_mihomo_discovery"
+/usr/bin/grep -Fxq $'mode\tTUN' <<< "$confirmed_mihomo_discovery"
+conflicting_path_identity=$(PROXYGAUGE_MIHOMO_TUN_ACTIVE=1 \
+  PROXYGAUGE_MIHOMO_TUN_DEVICE=utun5 \
+  PROXYGAUGE_CORE_PIDS="$mihomo_test_pid" \
+  PROXYGAUGE_DISCOVERY_CORE=mihomo \
+  system_listener_discovery "$shadowrocket_test_pid
+$mihomo_test_pid" "$shadowrocket_test_pid" 1 "$SHADOWROCKET_ROUTE_TABLE")
+assert_identity different-system-tun-owners 未识别 '' "$conflicting_path_identity"
+/usr/bin/grep -Fxq $'mode\t双重入口' <<< "$conflicting_path_identity"
+assert_identity confirmed-client-route Shadowrocket MacPacketTunnel "$ne_only_discovery"
+remote_system_local_listener=$(system_listener_discovery "$shadowrocket_test_pid" "$shadowrocket_test_pid" 1 '' '203.0.113.7:8080')
+assert_identity remote-system-local-listener 未识别 '' "$remote_system_local_listener"
+/usr/bin/grep -Fxq $'endpoint\t127.0.0.1:1082' <<< "$remote_system_local_listener"
 
 echo 'ProxyGauge backend state parsing tests passed.'

@@ -6,6 +6,7 @@ struct AppStatePoliciesCheck {
         try checkHealthPlanPolicy()
         try checkHealthPlanPreferences()
         try checkProbeParser()
+        try checkDiscoveryParser()
         try checkRefreshLifecyclePolicy()
         try checkUpdateSchedule()
         try checkGuardSelection()
@@ -44,8 +45,158 @@ struct AppStatePoliciesCheck {
         try require(direct == .init(value: "未检测到代理", detailOverride: "当前使用直连网络", tone: .idle),
                     "A connected network without a proxy must be a neutral direct connection.")
         try require(ConnectionStatusPresentation.make(
-            mode: "状态不可用", networkAvailable: true, probeAvailable: false) == nil,
-                    "A failed probe must not be misreported as confirmed direct networking.")
+            mode: "状态不可用", networkAvailable: true, probeAvailable: false)
+                    == .init(value: "代理状态不可用", detailOverride: "暂时无法确认当前代理状态", tone: .error),
+                    "Failed discovery must remain unavailable independently of health-probe results.")
+        var pathMatrixCases = 0
+        for (mode, expectedValue, expectedTone): (String, String, ConnectionStatusTone) in [
+            ("系统代理", "系统代理", .ok),
+            ("Shadowrocket VPN", "虚拟网卡", .ok),
+            ("系统代理 + Shadowrocket VPN", "系统代理 + 虚拟网卡", .warning)
+        ] {
+            for network: Bool? in [true, false, nil] {
+                for healthProbeAvailable in [true, false] {
+                    let expected: ConnectionStatusPresentation = network == false
+                        ? .init(value: "无网络连接", detailOverride: "请检查网络连接", tone: .error)
+                        : .init(value: expectedValue, detailOverride: nil, tone: expectedTone)
+                    try require(ConnectionStatusPresentation.make(
+                        mode: mode, networkAvailable: network, probeAvailable: healthProbeAvailable) == expected,
+                        "A fresh path stays factual when health diagnostics fail; known disconnection always takes precedence.")
+                    pathMatrixCases += 1
+                }
+            }
+        }
+        for healthProbeAvailable in [true, false] {
+            try require(ConnectionStatusPresentation.make(
+                mode: "未开启", networkAvailable: nil, probeAvailable: healthProbeAvailable) == nil,
+                "An unknown network must not be presented as confirmed direct networking.")
+            pathMatrixCases += 1
+        }
+        for network: Bool? in [true, false, nil] {
+            for healthProbeAvailable in [true, false] {
+                let expected: ConnectionStatusPresentation = network == false
+                    ? .init(value: "无网络连接", detailOverride: "请检查网络连接", tone: .error)
+                    : .init(value: "代理状态不可用", detailOverride: "暂时无法确认当前代理状态", tone: .error)
+                try require(ConnectionStatusPresentation.make(
+                    mode: "状态不可用", networkAvailable: network, probeAvailable: healthProbeAvailable) == expected,
+                    "Failed discovery must not inherit a successful health-probe card; known disconnection still wins.")
+                pathMatrixCases += 1
+            }
+        }
+        print("Connection presentation matrix cases: \(pathMatrixCases).")
+    }
+
+    private static func checkDiscoveryParser() throws {
+        let valid = "found\t1\nclient\tShadowrocket\ncore\tMacPacketTunnel\nendpoint\t127.0.0.1:1082\nmode\t系统代理 + Shadowrocket VPN\nsource\tmacOS 系统代理\nactive\tok\nprivacy\t仅读取本地端口与运行模式，不读取订阅和节点\n"
+        let records = valid.split(separator: "\n").map(String.init)
+        var positiveCases = 0
+        var rejectedCases = 0
+        var resultCases = 0
+        let parsed = DiscoveryOutputParser.parse(valid)
+        try require(parsed?.client == "Shadowrocket" && parsed?.core == "MacPacketTunnel"
+                    && parsed?.found == true && parsed?.active == true,
+                    "A complete discovery must retain the actual client, core and listener state.")
+        positiveCases += 1
+        for mode in ["Shadowrocket VPN", "其他 VPN / TUN", "Mihomo TUN（代表性路由不一致）"] {
+            let tunnelOnly = valid.replacingOccurrences(of: "found\t1", with: "found\t0")
+                .replacingOccurrences(of: "active\tok", with: "active\tidle")
+                .replacingOccurrences(of: "mode\t系统代理 + Shadowrocket VPN", with: "mode\t\(mode)")
+            try require(DiscoveryOutputParser.parse(tunnelOnly)?.mode == mode,
+                        "A virtual path without a local listening endpoint is a valid discovery.")
+            positiveCases += 1
+        }
+        let unknown = valid.replacingOccurrences(of: "client\tShadowrocket", with: "client\t未识别")
+            .replacingOccurrences(of: "core\tMacPacketTunnel", with: "core\t")
+        try require(DiscoveryOutputParser.parse(unknown)?.core == "",
+                    "An empty core is valid unknown attribution, not a missing record.")
+        positiveCases += 1
+        let direct = unknown.replacingOccurrences(of: "mode\t系统代理 + Shadowrocket VPN", with: "mode\t未开启")
+            .replacingOccurrences(of: "found\t1", with: "found\t0")
+            .replacingOccurrences(of: "active\tok", with: "active\tidle")
+        try require(DiscoveryOutputParser.parse(direct)?.mode == "未开启",
+                    "Confirmed direct networking must remain distinguishable from failed discovery.")
+        positiveCases += 1
+        try require(DiscoveryOutputParser.parse(valid.replacingOccurrences(of: "active\tok", with: "active\tidle"))?.found == true,
+                    "A discovered configured endpoint may be idle without invalidating the snapshot.")
+        positiveCases += 1
+        try require(DiscoveryOutputParser.parse(records.reversed().joined(separator: "\n")) == parsed,
+                    "Discovery records form an atomic snapshot regardless of record order.")
+        positiveCases += 1
+
+        for mode in [
+            "未开启", "系统代理", "PAC / 自动代理", "双重入口", "TUN",
+            "系统代理 + 其他 VPN / TUN", "其他 VPN / TUN",
+            "系统代理 + Shadowrocket VPN", "Shadowrocket VPN",
+            "系统代理 + Mihomo VPN", "Mihomo VPN",
+            "PAC / 自动代理 + Mihomo TUN", "系统代理路径 + Mihomo TUN",
+            "系统代理 + Mihomo TUN（路由待确认）",
+            "系统代理 + Mihomo TUN（代表性路由不一致）",
+            "系统代理 + Mihomo TUN（路由查询失败）",
+            "Mihomo TUN（路由待确认）", "Mihomo TUN（代表性路由不一致）",
+            "Mihomo TUN（路由查询失败）"
+        ] {
+            let modeFixture = valid.replacingOccurrences(of: "mode\t系统代理 + Shadowrocket VPN", with: "mode\t\(mode)")
+            try require(DiscoveryOutputParser.parse(modeFixture)?.mode == mode,
+                        "Every current backend mode must retain its existing presentation semantics: \(mode).")
+            positiveCases += 1
+        }
+
+        for record in records {
+            let incomplete = records.filter { $0 != record }.joined(separator: "\n")
+            try require(DiscoveryOutputParser.parse(incomplete) == nil,
+                        "Missing discovery record must invalidate the snapshot: \(record.prefix { $0 != "\t" }).")
+            rejectedCases += 1
+            try require(DiscoveryOutputParser.parse(valid + record + "\n") == nil,
+                        "A duplicate discovery record must not overwrite an earlier observation.")
+            rejectedCases += 1
+        }
+        let malformed = [
+            "",
+            valid + "extra\tvalue\n",
+            valid + "malformed-line\n",
+            valid.replacingOccurrences(of: "client\tShadowrocket", with: "client\tShadowrocket\textra"),
+            valid.replacingOccurrences(of: "found\t1", with: "found\ttrue"),
+            valid.replacingOccurrences(of: "active\tok", with: "active\tunknown"),
+            valid.replacingOccurrences(of: "found\t1", with: "found\t0"),
+            valid.replacingOccurrences(of: "mode\t系统代理 + Shadowrocket VPN", with: "mode\t"),
+            valid.replacingOccurrences(of: "mode\t系统代理 + Shadowrocket VPN", with: "mode\tgarbage"),
+            valid.replacingOccurrences(of: "mode\t系统代理 + Shadowrocket VPN", with: "mode\t未开启 VPN"),
+            valid.replacingOccurrences(of: "client\tShadowrocket", with: "client\t"),
+            valid.replacingOccurrences(of: "endpoint\t127.0.0.1:1082", with: "endpoint\t10.0.0.1:1082"),
+            valid.replacingOccurrences(of: "client\tShadowrocket", with: "client\tShadow\0rocket"),
+            valid.replacingOccurrences(of: "core\tMacPacketTunnel", with: "core\t\u{202E}MacPacketTunnel"),
+            valid.replacingOccurrences(of: "client\tShadowrocket", with: "client\t" + String(repeating: "x", count: 257)),
+            String(repeating: valid, count: 1_000)
+        ]
+        for output in malformed {
+            try require(DiscoveryOutputParser.parse(output) == nil,
+                        "Malformed, contradictory or unsafe discovery output must not fabricate a path.")
+            rejectedCases += 1
+        }
+        for status: Int32 in [1, 124, 130] {
+            var current = parsed!
+            current = DiscoveryResultPolicy.make(status: status, output: valid, fallbackEndpoint: "localhost:1082")
+            try require(current.mode == "状态不可用" && !current.found && !current.active
+                        && current.client == "未识别" && current.core.isEmpty
+                        && current.endpoint == "127.0.0.1:1082",
+                        "A failed, timed out or cancelled command must discard stale client and path evidence.")
+            try require(ConnectionStatusPresentation.make(mode: current.mode, networkAvailable: true, probeAvailable: false)?.tone == .error,
+                        "Unavailable discovery must not be presented as confirmed direct networking.")
+            resultCases += 1
+        }
+        for output in ["", valid + "mode\tShadowrocket VPN\n"] {
+            let unavailable = DiscoveryResultPolicy.make(status: 0, output: output, fallbackEndpoint: nil)
+            try require(unavailable.mode == "状态不可用" && unavailable.core.isEmpty,
+                        "Exit zero alone must not make incomplete or duplicate discovery output trustworthy.")
+            resultCases += 1
+        }
+        try require(DiscoveryResultPolicy.make(status: 0, output: valid, fallbackEndpoint: "localhost:7890") == parsed,
+                    "Fresh valid discovery must retain its own endpoint rather than a saved endpoint.")
+        resultCases += 1
+        try require(DiscoveryResultPolicy.make(status: 1, output: "", fallbackEndpoint: "10.0.0.1:1082").endpoint == "127.0.0.1:7890",
+                    "The unavailable snapshot must not retain a nonlocal fallback endpoint.")
+        resultCases += 1
+        print("Discovery snapshot cases: \(positiveCases) valid, \(rejectedCases) rejected, \(resultCases) result transitions.")
     }
 
     private static func checkGuardSelection() throws {

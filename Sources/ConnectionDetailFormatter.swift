@@ -1,11 +1,6 @@
 import Foundation
 
 enum ConnectionDetailFormatter {
-    private static func engineDisplayName(client: String, core: String) -> String {
-        guard client == "Shadowrocket", !core.isEmpty, core != "未识别" else { return core }
-        return "MacPacketTunnel"
-    }
-
     static func format(
         client: String,
         core: String,
@@ -20,7 +15,7 @@ enum ConnectionDetailFormatter {
         entryHealthy: Bool
     ) -> String {
         let knownClient = client != "未识别" && client != "未识别客户端"
-        let engine = engineDisplayName(client: client, core: core)
+        let engine = core
         let knownEngine = !engine.isEmpty && engine != "未识别"
         let presentation = ConnectionPathPresentation.make(mode: mode)
         if presentation.isActive {

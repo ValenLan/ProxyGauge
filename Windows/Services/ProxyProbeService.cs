@@ -254,8 +254,10 @@ public sealed class ProxyProbeService
         var detectedClientName = ResolveDetectedClientName(
             config,
             portAttribution,
+            systemProxy,
             detection,
-            out var listenerClientName);
+            out var listenerClientName,
+            out var detectedCoreName);
         return CreateSnapshot(
             config,
             coreCount,
@@ -263,28 +265,82 @@ public sealed class ProxyProbeService
             systemProxy,
             detection,
             detectedClientName,
-            listenerClientName);
+            listenerClientName,
+            detectedCoreName,
+            clientAttributionChecked: true);
     }
 
     internal static string? ResolveDetectedClientName(
         AppConfig config,
         TcpListenerAttribution portAttribution,
+        SystemProxyConfiguration systemProxy,
         RouteDetection detection,
-        out string? listenerClientName)
+        out string? listenerClientName,
+        out string? detectedCoreName)
     {
-        listenerClientName = portAttribution == TcpListenerAttribution.Closed
-            ? null
-            : DetectClientName(TcpListenerOwnership.GetListenerOwnerProcessNames(
-                config.MixedHost,
-                config.MixedPort));
-        return listenerClientName ?? detection.ClientName ?? DetectRunningProxyClientName();
+        IReadOnlyList<string> configuredOwnerNames = portAttribution == TcpListenerAttribution.Closed
+            ? Array.Empty<string>()
+            : TcpListenerOwnership.GetListenerOwnerProcessNames(config.MixedHost, config.MixedPort);
+        listenerClientName = DetectClientName(configuredOwnerNames);
+        // The saved mixed endpoint can belong to a resident, inactive client.
+        // Attribute the card only to the current explicit OS proxy or routed
+        // adapter; PAC/WPAD/environment targets are not resolved by this probe.
+        IReadOnlyList<string> systemOwnerNames = [];
+        if (systemProxy.HasValidExplicitEndpoint && !systemProxy.UsesDynamicResolution &&
+            !systemProxy.EnvironmentProxyEnabled &&
+            LocalEndpointPolicy.IsLoopbackHost(systemProxy.ExplicitHost))
+        {
+            systemOwnerNames = systemProxy.Matches(config.MixedHost, config.MixedPort)
+                ? configuredOwnerNames
+                : TcpListenerOwnership.GetListenerOwnerProcessNames(
+                    systemProxy.ExplicitHost!, systemProxy.ExplicitPort!.Value);
+        }
+        var identity = ResolvePathIdentity(systemProxy.Enabled, detection, systemOwnerNames);
+        detectedCoreName = identity.CoreName;
+        return identity.ClientName;
+    }
+
+    internal static (string? ClientName, string? CoreName) ResolvePathIdentity(
+        bool systemProxyEnabled,
+        RouteDetection detection,
+        IEnumerable<string> systemProxyOwnerNames)
+    {
+        var ownerNames = systemProxyEnabled ? systemProxyOwnerNames.ToArray() : Array.Empty<string>();
+        // Each name comes from a distinct listener PID. Even equal names do
+        // not prove one owner, and unsupported owners cannot be filtered away.
+        if (ownerNames.Length > 1)
+        {
+            return (null, null);
+        }
+        var listenerClientName = DetectClientName(ownerNames);
+        var routedClientName = detection.Coverage == TunnelKind.None ? null : detection.ClientName;
+        if (ownerNames.Length > 0 && listenerClientName is null)
+        {
+            return (null, null);
+        }
+        if (listenerClientName is not null && detection.Coverage != TunnelKind.None &&
+            (routedClientName is null ||
+             !listenerClientName.Equals(routedClientName, StringComparison.OrdinalIgnoreCase)))
+        {
+            return (null, null);
+        }
+        return (listenerClientName ?? routedClientName, DetectCoreName(ownerNames));
+    }
+
+    internal static string? DetectCoreName(IEnumerable<string> processNames)
+    {
+        var names = processNames.ToArray();
+        return names.Length == 1 && CoreProcessNames.Contains(names[0], StringComparer.OrdinalIgnoreCase)
+            ? names[0] : null;
     }
 
     internal static ProxySnapshot CreateSnapshot(AppConfig config, int coreCount,
         TcpListenerAttribution portAttribution, SystemProxyConfiguration systemProxy, RouteDetection detection,
-        string? detectedClientName = null, string? portOwnerClientName = null)
+        string? detectedClientName = null, string? portOwnerClientName = null,
+        string? detectedCoreName = null, bool clientAttributionChecked = false)
     {
-        var resolvedClientName = detectedClientName ?? detection.ClientName;
+        var resolvedClientName = clientAttributionChecked
+            ? detectedClientName : detectedClientName ?? detection.ClientName;
         var snapshot = BuildSnapshot(
             config,
             coreCount,
@@ -298,6 +354,7 @@ public sealed class ProxyProbeService
             RouteLookupUnknown = detection.LookupUnknown || detection.Coverage == TunnelKind.Unknown,
             VirtualNetworkDetected = detection.Coverage != TunnelKind.None,
             DetectedClientName = resolvedClientName,
+            DetectedCoreName = detectedCoreName,
             ConnectionLabel = coreCount > 1 ? null : detection.OtherTunnelDetected ? "VPN 已检测"
                 : detection.MihomoDetected && (detection.Coverage == TunnelKind.Split || detection.LookupUnknown)
                     ? "TUN 已检测" : null,

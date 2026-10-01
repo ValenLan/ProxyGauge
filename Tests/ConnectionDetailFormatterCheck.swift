@@ -151,23 +151,41 @@ struct ConnectionDetailFormatterCheck {
 
         require(detail(
             client: "Shadowrocket",
-            core: "Shadowrocket",
+            core: "MacPacketTunnel",
             endpoint: "127.0.0.1:1082",
             mode: "Shadowrocket VPN",
             entryTitle: "Shadowrocket VPN",
             entryValue: "代表性路由已确认",
             entryHealthy: true
-        ) == "Shadowrocket · MacPacketTunnel", "A Shadowrocket path must name its packet-tunnel engine.")
+        ) == "Shadowrocket · MacPacketTunnel", "A detected Shadowrocket packet-tunnel engine must retain its actual process name.")
 
         require(detail(
             client: "Shadowrocket",
-            core: "Shadowrocket",
+            core: "MacPacketTunnel",
             endpoint: "127.0.0.1:1082",
             mode: "系统代理 + Shadowrocket VPN",
             entryTitle: "双重入口",
             entryValue: "同时开启",
             entryHealthy: false
-        ) == "Shadowrocket · MacPacketTunnel", "A Shadowrocket combined path must name its packet-tunnel engine.")
+        ) == "Shadowrocket · MacPacketTunnel", "A combined Shadowrocket path must retain its detected packet-tunnel engine.")
+
+        require(detail(
+            client: "Shadowrocket",
+            core: "Shadowrocket",
+            mode: "系统代理",
+            entryTitle: "系统代理",
+            entryValue: "已启用",
+            entryHealthy: true
+        ) == "Shadowrocket", "A running Shadowrocket GUI must not fabricate a MacPacketTunnel process.")
+
+        require(detail(
+            client: "Shadowrocket",
+            core: "sing-box",
+            mode: "系统代理 + 其他 VPN / TUN",
+            entryTitle: "系统代理 + 其他 VPN / TUN",
+            entryValue: "同时检测",
+            entryHealthy: false
+        ) == "Shadowrocket · sing-box", "The client label must not rewrite another observed core process as MacPacketTunnel.")
 
         require(detail(
             client: "Shadowrocket",
@@ -187,6 +205,44 @@ struct ConnectionDetailFormatterCheck {
             entryValue: "代表性路由已确认",
             entryHealthy: true
         ) == "Shadowrocket", "An unknown engine must not be fabricated as MacPacketTunnel.")
+
+        // Current path attribution is independent of listener/health diagnostics.
+        for mode in ["系统代理", "Shadowrocket VPN", "系统代理 + Shadowrocket VPN"] {
+            for unknownClient in ["未识别", "未识别客户端"] {
+                require(detail(
+                    client: unknownClient,
+                    core: "MacPacketTunnel",
+                    mode: mode,
+                    found: false,
+                    active: false,
+                    coreHealthy: false,
+                    portHealthy: false,
+                    entryTitle: "流量入口",
+                    entryValue: "状态不可用",
+                    entryHealthy: false
+                ) == "MacPacketTunnel", "Only a known core must be shown when the client is unknown: \(mode).")
+            }
+            require(detail(
+                client: "Shadowrocket",
+                core: "MacPacketTunnel",
+                mode: mode,
+                found: false,
+                active: false,
+                coreHealthy: false,
+                portHealthy: false,
+                entryTitle: "流量入口",
+                entryValue: "状态不可用",
+                entryHealthy: false
+            ) == "Shadowrocket · MacPacketTunnel", "Failed health diagnostics must not rewrite current path attribution: \(mode).")
+        }
+        require(detail(
+            client: "SING-BOX",
+            core: "sing-box",
+            mode: "TUN",
+            entryTitle: "TUN 路由",
+            entryValue: "代表性路由已确认",
+            entryHealthy: true
+        ) == "sing-box", "Case-equivalent client and core names must show the actual core only once.")
 
         print("ProxyGauge connection detail formatter tests passed.")
     }

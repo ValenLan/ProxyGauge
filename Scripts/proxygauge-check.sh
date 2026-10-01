@@ -715,10 +715,25 @@ client_tun_candidates() {
   ' | /usr/bin/awk 'NF && !seen[$0]++'
 }
 
+provider_packet_tunnel_running() {
+  local pid name
+  while IFS= read -r pid; do
+    name=$(provider_pid_name "$pid" 2>/dev/null || true)
+    [ "$name" = MacPacketTunnel ] && return 0
+  done < <(proxy_provider_pids)
+  return 1
+}
+
 classify_client_tunnel_route() {
   local label candidates inet_route inet6_route available_count route_interface
   label=$(provider_label)
   if [ -z "$label" ]; then
+    /usr/bin/printf '%s\n' other
+    return
+  fi
+  # Mihomo requires its controller/device evidence above. Its process alone,
+  # like a client window without its packet tunnel, cannot claim another VPN.
+  if [ "$label" != Shadowrocket ] || ! provider_packet_tunnel_running; then
     /usr/bin/printf '%s\n' other
     return
   fi
@@ -990,7 +1005,11 @@ elif [ "$TUN_KIND" = unknown ]; then
   MODE_OK=1
   UNKNOWN_TUN_ACTIVE=1
 elif [ "$TUN_KIND" = other ]; then
-  echo "  ℹ️ 其他 VPN / TUN: 检测到隧道路由，但不能归因于 Mihomo"
+  if [ -n "$PROVIDER_LABEL" ]; then
+    echo "  ℹ️ 其他 VPN / TUN: 检测到隧道路由，但不能归因于 $PROVIDER_LABEL"
+  else
+    echo "  ℹ️ 其他 VPN / TUN: 检测到隧道路由，归属客户端未确认"
+  fi
   MODE_OK=1
   OTHER_TUN_ACTIVE=1
 else
