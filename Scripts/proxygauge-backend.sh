@@ -515,10 +515,25 @@ client_tun_candidates() {
   ' | /usr/bin/awk 'NF && !seen[$0]++'
 }
 
+provider_packet_tunnel_running() {
+  local pid name
+  while IFS= read -r pid; do
+    name=$(provider_pid_name "$pid" 2>/dev/null || true)
+    [ "$name" = MacPacketTunnel ] && return 0
+  done < <(proxy_provider_pids)
+  return 1
+}
+
 classify_client_tunnel_route() {
   local label candidates inet_route inet6_route available_count route_interface
   label=$(provider_label)
   if [ -z "$label" ]; then
+    /usr/bin/printf '%s\n' other
+    return
+  fi
+  # Mihomo requires its controller/device evidence above. Its process alone,
+  # like a client window without its packet tunnel, cannot claim another VPN.
+  if [ "$label" != Shadowrocket ] || ! provider_packet_tunnel_running; then
     /usr/bin/printf '%s\n' other
     return
   fi
@@ -759,6 +774,21 @@ listener_owned_by_mihomo() {
   listener_owned_by_proxy "$@"
 }
 
+listener_path_identity() {
+  local owner_pids owner_name
+  owner_pids=$(matching_listener_pids "$1" "$2") || return 1
+  [ "$(/usr/bin/awk 'NF { count++ } END { print count+0 }' <<< "$owner_pids")" = 1 ] \
+    || return 1
+  owner_name=$(provider_pid_name "$owner_pids" 2>/dev/null) || return 1
+  case "$owner_name" in
+    Shadowrocket) /usr/bin/printf 'Shadowrocket\t\n' ;;
+    MacPacketTunnel) /usr/bin/printf 'Shadowrocket\tMacPacketTunnel\n' ;;
+    verge-mihomo) /usr/bin/printf 'Clash Verge Rev\tverge-mihomo\n' ;;
+    mihomo|clash-meta) /usr/bin/printf 'Clash / Mihomo\t%s\n' "$owner_name" ;;
+    *) return 1 ;;
+  esac
+}
+
 core_listener_records() {
   local core_pid
   if [ -n "${PROXYGAUGE_DISCOVERY_LISTENER_RECORDS+x}" ]; then
@@ -872,19 +902,28 @@ detected_running_client() {
 }
 
 detected_running_core() {
+  local core_name pid name supported_core_names
+  supported_core_names="verge-mihomo mihomo clash-meta clash sing-box singbox xray v2ray iKuuuVPNCore ikuuuvpncore MacPacketTunnel"
   {
-    for core_name in verge-mihomo mihomo clash-meta clash sing-box singbox xray v2ray iKuuuVPNCore ikuuuvpncore; do
-      if /usr/bin/pgrep -x "$core_name" >/dev/null 2>&1; then
-        /usr/bin/printf '%s\n' "$core_name"
-      fi
-    done
-    if /usr/bin/pgrep -x Shadowrocket >/dev/null 2>&1 \
-      || /usr/bin/pgrep -x MacPacketTunnel >/dev/null 2>&1; then /usr/bin/printf '%s\n' "Shadowrocket"; fi
-  } | /usr/bin/awk '!seen[$0]++ { count++; core=$0 } END { if (count == 1) print core }'
+    if [ -n "${PROXYGAUGE_PROVIDER_PIDS+x}${PROXYGAUGE_CORE_PIDS+x}" ]; then
+      proxy_provider_pids
+    else
+      for core_name in $supported_core_names; do
+        /usr/bin/pgrep -x "$core_name" 2>/dev/null || true
+      done
+    fi
+  } | while IFS= read -r pid; do
+    name=$(provider_pid_name "$pid" 2>/dev/null || true)
+    [ -n "$name" ] || continue
+    case " $supported_core_names " in
+      *" $name "*) /usr/bin/printf '%s\n' "$name" ;;
+    esac
+  done | /usr/bin/awk '!seen[$0]++ { count++; core=$0 } END { if (count == 1) print core }'
 }
 
 discover() {
-  local client core endpoint source active mode config_path port candidate
+  local client core endpoint source active mode config_path port candidate identity
+  local system_client system_core
   local system_active tun_active mihomo_tun_unconfirmed split_tun_active
   local unknown_tun_active other_tun_active tunnel_kind
   local client_tun_active client_label
@@ -1023,6 +1062,50 @@ discover() {
     endpoint="127.0.0.1:7890"
     source="手动设置"
     /usr/bin/printf 'found\t0\n'
+  fi
+
+  # Process discovery does not establish who owns an active path. Read the
+  # system proxy's actual endpoint owner rather than any fallback listener.
+  identity=""
+  candidate=""
+  if [ -n "$system_active" ] && [ "$active" = ok ] && ! system_proxy_dynamic; then
+    candidate=$(normalize_local_endpoint "$(system_proxy_endpoint)" 2>/dev/null || true)
+    if [ -n "$candidate" ] && [ "$candidate" = "$endpoint" ]; then
+      identity=$(listener_path_identity "${endpoint%:*}" "${endpoint##*:}" 2>/dev/null || true)
+    fi
+  fi
+
+  if [ -n "$tun_active" ]; then
+    case "$core" in
+      verge-mihomo|mihomo|clash-meta) ;;
+      *) core=$(PROXYGAUGE_PROVIDER_PIDS="$(core_pids)" detected_running_core) ;;
+    esac
+    case "$core" in
+      verge-mihomo) client="Clash Verge Rev" ;;
+      mihomo|clash-meta) client="Clash / Mihomo" ;;
+      *) client="未识别"; core="" ;;
+    esac
+  elif [ -n "$client_tun_active" ]; then
+    client="$client_label"
+    core=""
+    if provider_packet_tunnel_running; then core=MacPacketTunnel; fi
+  elif [ -n "$system_active$other_tun_active$mihomo_tun_unconfirmed$split_tun_active$unknown_tun_active" ]; then
+    client="未识别"
+    core=""
+    if [ -n "$identity" ]; then
+      IFS=$'\t' read -r client core <<< "$identity"
+    fi
+  fi
+
+  # Two confirmed paths owned by different providers cannot be presented as
+  # one client's friendly name combined with the other provider's core.
+  if [ -n "$tun_active$client_tun_active" ] && [ -n "$identity" ]; then
+    IFS=$'\t' read -r system_client system_core <<< "$identity"
+    if [ "$client" != "$system_client" ] \
+      || { [ -n "$core" ] && [ -n "$system_core" ] && [ "$core" != "$system_core" ]; }; then
+      client="未识别"
+      core=""
+    fi
   fi
 
   /usr/bin/printf 'client\t%s\n' "$client"

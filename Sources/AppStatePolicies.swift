@@ -1,5 +1,100 @@
 import Foundation
 
+struct ProxyDiscovery: Sendable, Equatable {
+    var found = false
+    var client = "正在检测"
+    var core = ""
+    var endpoint = "127.0.0.1:7890"
+    var mode = "正在读取"
+    var source = "本地运行状态"
+    var active = false
+    var privacy = "仅读取本地端口与运行模式，不读取订阅和节点"
+}
+
+enum DiscoveryOutputParser {
+    private static let allowedKeys: Set<String> = [
+        "found", "client", "core", "endpoint", "mode", "source", "active", "privacy"
+    ]
+    private static let allowedModes: Set<String> = [
+        "未开启", "系统代理", "PAC / 自动代理", "双重入口", "TUN",
+        "系统代理 + 其他 VPN / TUN", "其他 VPN / TUN",
+        "系统代理 + Shadowrocket VPN", "Shadowrocket VPN",
+        "系统代理 + Mihomo VPN", "Mihomo VPN",
+        "PAC / 自动代理 + Mihomo TUN", "系统代理路径 + Mihomo TUN",
+        "系统代理 + Mihomo TUN（路由待确认）",
+        "系统代理 + Mihomo TUN（代表性路由不一致）",
+        "系统代理 + Mihomo TUN（路由查询失败）",
+        "Mihomo TUN（路由待确认）", "Mihomo TUN（代表性路由不一致）",
+        "Mihomo TUN（路由查询失败）"
+    ]
+    private static let forbiddenDirectionalScalars: Set<UInt32> = [
+        0x061C, 0x200E, 0x200F, 0x202A, 0x202B, 0x202C, 0x202D, 0x202E,
+        0x2066, 0x2067, 0x2068, 0x2069
+    ]
+
+    static func parse(_ output: String) -> ProxyDiscovery? {
+        guard !output.isEmpty, output.utf8.count <= 64 * 1_024 else { return nil }
+        var records: [String: String] = [:]
+        for rawLine in output.split(separator: "\n", omittingEmptySubsequences: true) {
+            guard rawLine.utf8.count <= 1_024 else { return nil }
+            let fields = rawLine.split(separator: "\t", omittingEmptySubsequences: false)
+            guard fields.count == 2,
+                  allowedKeys.contains(String(fields[0])),
+                  records[String(fields[0])] == nil else { return nil }
+            let key = String(fields[0])
+            let value = String(fields[1])
+            guard isSafeField(value, permitsEmpty: key == "core") else { return nil }
+            records[key] = value
+        }
+        guard records.count == allowedKeys.count,
+              let found = records["found"], ["0", "1"].contains(found),
+              let client = records["client"],
+              let core = records["core"],
+              let endpoint = records["endpoint"].flatMap(LocalEndpointPolicy.normalize),
+              let mode = records["mode"], allowedModes.contains(mode),
+              let source = records["source"],
+              let active = records["active"], ["ok", "idle"].contains(active),
+              active != "ok" || found == "1",
+              let privacy = records["privacy"] else { return nil }
+        return .init(
+            found: found == "1",
+            client: client,
+            core: core,
+            endpoint: endpoint,
+            mode: mode,
+            source: source,
+            active: active == "ok",
+            privacy: privacy
+        )
+    }
+
+    private static func isSafeField(_ value: String, permitsEmpty: Bool) -> Bool {
+        guard (permitsEmpty || !value.isEmpty), value.unicodeScalars.count <= 256 else { return false }
+        return value.unicodeScalars.allSatisfy { scalar in
+            !CharacterSet.controlCharacters.contains(scalar)
+                && !CharacterSet.newlines.contains(scalar)
+                && !forbiddenDirectionalScalars.contains(scalar.value)
+        }
+    }
+}
+
+enum DiscoveryResultPolicy {
+    static func make(status: Int32, output: String, fallbackEndpoint: String?) -> ProxyDiscovery {
+        guard status == 0, let discovered = DiscoveryOutputParser.parse(output) else {
+            return .init(
+                found: false,
+                client: "未识别",
+                core: "",
+                endpoint: fallbackEndpoint.flatMap(LocalEndpointPolicy.normalize) ?? "127.0.0.1:7890",
+                mode: "状态不可用",
+                source: "自动检测失败",
+                active: false
+            )
+        }
+        return discovered
+    }
+}
+
 struct HealthCheckPlan: Sendable, Equatable {
     var secondaryEnabled = false
     var secondaryLabel = "Google / Gemini / Claude"
@@ -402,6 +497,9 @@ struct ConnectionStatusPresentation: Equatable, Sendable {
     ) -> ConnectionStatusPresentation? {
         if networkAvailable == false {
             return .init(value: "无网络连接", detailOverride: "请检查网络连接", tone: .error)
+        }
+        if mode == "状态不可用" {
+            return .init(value: "代理状态不可用", detailOverride: "暂时无法确认当前代理状态", tone: .error)
         }
         let path = ConnectionPathPresentation.make(mode: mode)
         if let value = path.value {

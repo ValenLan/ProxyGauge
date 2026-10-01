@@ -111,17 +111,6 @@ struct ResultSheet: Identifiable {
     let status: Int32
 }
 
-struct ProxyDiscovery: Sendable, Equatable {
-    var found = false
-    var client = "正在检测"
-    var core = ""
-    var endpoint = "127.0.0.1:7890"
-    var mode = "正在读取"
-    var source = "本地运行状态"
-    var active = false
-    var privacy = "仅读取本地端口与运行模式，不读取订阅和节点"
-}
-
 @MainActor
 final class ProxyModel: ObservableObject {
     @Published var headline = "正在读取状态"
@@ -237,14 +226,9 @@ final class ProxyModel: ObservableObject {
         ).flatMap(LocalEndpointPolicy.normalize)
             ?? LocalEndpointPolicy.normalize(discovery.endpoint)
             ?? "127.0.0.1:7890"
-        let selectedCore = guardSelection.flatMap { selection in
-            selection.ambiguous || selection.path.isEmpty
-                ? nil
-                : URL(fileURLWithPath: selection.path).lastPathComponent
-        }
         return ConnectionDetailFormatter.format(
-            client: guardSelection?.detectedClientName ?? discovery.client,
-            core: selectedCore ?? discovery.core,
+            client: discovery.client,
+            core: discovery.core,
             endpoint: endpoint,
             mode: discovery.mode,
             discoveryFound: discovery.found,
@@ -338,22 +322,7 @@ final class ProxyModel: ObservableObject {
             isDiscoveringConnection = false
             return
         }
-        if result.status == 0 {
-            discovery = parseDiscovery(result.output)
-        } else {
-            let savedEndpoint = UserDefaults.standard.string(
-                forKey: ProxyGaugePreferences.selectedEndpointKey
-            ).flatMap(LocalEndpointPolicy.normalize) ?? "127.0.0.1:7890"
-            discovery = ProxyDiscovery(
-                found: false,
-                client: "未发现代理客户端",
-                core: "",
-                endpoint: savedEndpoint,
-                mode: "未开启",
-                source: "请手动设置",
-                active: false
-            )
-        }
+        discovery = parseDiscovery(result.output, status: result.status)
         isDiscoveringConnection = false
     }
 
@@ -414,6 +383,9 @@ final class ProxyModel: ObservableObject {
 
     func applicationDidBecomeActive() {
         schedulePathEvaluation()
+        Task { [weak self] in
+            await self?.refresh()
+        }
         guard ExitRefreshTriggerPolicy.shouldStartLookup(
             isApplicationActive: true,
             hasPendingPathChange: needsExitRefreshWhenActive
@@ -438,21 +410,7 @@ final class ProxyModel: ObservableObject {
         guard refreshGeneration.accepts(generation) else { return }
 
         if self.discoveryGeneration.accepts(discoveryGeneration) {
-            if discovered.status == 0 {
-                discovery = parseDiscovery(discovered.output)
-            } else {
-                discovery = ProxyDiscovery(
-                    found: false,
-                    client: "未识别",
-                    core: "",
-                    endpoint: UserDefaults.standard.string(
-                        forKey: ProxyGaugePreferences.selectedEndpointKey
-                    ).flatMap(LocalEndpointPolicy.normalize) ?? "未配置",
-                    mode: "状态不可用",
-                    source: "自动检测失败",
-                    active: false
-                )
-            }
+            discovery = parseDiscovery(discovered.output, status: discovered.status)
         }
 
         guard result.status == 0 else {
@@ -832,28 +790,13 @@ final class ProxyModel: ObservableObject {
         killSwitch.level = killSwitchLevel
     }
 
-    private func parseDiscovery(_ output: String) -> ProxyDiscovery {
-        var fields: [String: String] = [:]
-        for line in output.split(separator: "\n") {
-            let parts = line.split(separator: "\t", maxSplits: 1, omittingEmptySubsequences: false)
-            guard parts.count == 2 else { continue }
-            fields[String(parts[0])] = String(parts[1])
-        }
-
-        let endpoint = LocalEndpointPolicy.normalize(fields["endpoint"] ?? "")
-            ?? UserDefaults.standard.string(
+    private func parseDiscovery(_ output: String, status: Int32) -> ProxyDiscovery {
+        DiscoveryResultPolicy.make(
+            status: status,
+            output: output,
+            fallbackEndpoint: UserDefaults.standard.string(
                 forKey: ProxyGaugePreferences.selectedEndpointKey
-            ).flatMap(LocalEndpointPolicy.normalize)
-            ?? "127.0.0.1:7890"
-        return ProxyDiscovery(
-            found: fields["found"] == "1",
-            client: fields["client"] ?? "未识别",
-            core: fields["core"] ?? "",
-            endpoint: endpoint,
-            mode: fields["mode"] ?? "未开启",
-            source: fields["source"] ?? "手动设置",
-            active: fields["active"] == "ok",
-            privacy: fields["privacy"] ?? "仅读取本地端口与运行模式，不读取订阅和节点"
+            )
         )
     }
 

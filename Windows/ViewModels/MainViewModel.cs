@@ -43,6 +43,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private bool _connectionHasSystemProxy;
     private bool _connectionHasVirtualAdapter;
     private string? _detectedClientName;
+    private string? _detectedCoreName;
     private bool _proxyStatusAvailable;
 
     public MainViewModel(
@@ -122,7 +123,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Headline).Level;
     public Brush ConnectionBrush => Palette.ForLevel(ConnectionLevel);
     public string ConnectionDetail => BuildConnectionClientDetail(
-        _activeGuardApplication,
+        _detectedCoreName,
         _detectedClientName,
         _connectionHasSystemProxy,
         _connectionHasVirtualAdapter,
@@ -153,7 +154,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     }
 
     internal static string BuildConnectionClientDetail(
-        string? selectedApplication,
+        string? detectedCoreName,
         string? detectedClientName,
         bool hasSystemProxy,
         bool hasVirtualAdapter,
@@ -163,17 +164,13 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         if (networkDisconnected) return "请检查网络连接";
         if (!hasSystemProxy && !hasVirtualAdapter)
             return probeAvailable ? "当前使用直连网络" : "代理状态暂时不可用";
-        var selectedCore = string.IsNullOrWhiteSpace(selectedApplication)
-            ? null
-            : Path.GetFileNameWithoutExtension(selectedApplication);
-        var selectedName = selectedCore is null
-            ? null
-            : ProxyProbeService.DetectClientName([selectedCore]);
-        var client = selectedName ?? detectedClientName;
-        if (!string.IsNullOrWhiteSpace(client) && !string.IsNullOrWhiteSpace(selectedCore) &&
-            !client.Equals(selectedCore, StringComparison.OrdinalIgnoreCase))
-            return $"{client} · {selectedCore}";
-        if (!string.IsNullOrWhiteSpace(selectedCore)) return selectedCore;
+        var core = string.IsNullOrWhiteSpace(detectedCoreName) || detectedCoreName == "未识别"
+            ? null : detectedCoreName;
+        var client = detectedClientName;
+        if (!string.IsNullOrWhiteSpace(client) && !string.IsNullOrWhiteSpace(core) &&
+            !client.Equals(core, StringComparison.OrdinalIgnoreCase))
+            return $"{client} · {core}";
+        if (!string.IsNullOrWhiteSpace(core)) return core;
         if (!string.IsNullOrWhiteSpace(client)) return client;
         if (hasSystemProxy && hasVirtualAdapter) return "其他 VPN / 代理已连接";
         if (hasVirtualAdapter) return "其他 VPN 已连接";
@@ -701,6 +698,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         _connectionHasVirtualAdapter = snapshot.VirtualNetworkDetected || snapshot.TunDetected ||
             snapshot.OtherTunnelDetected || snapshot.SplitTunnelDetected;
         _detectedClientName = snapshot.DetectedClientName;
+        _detectedCoreName = snapshot.DetectedCoreName;
         Headline = snapshot.Headline;
         Detail = snapshot.Detail;
         OverallLevel = snapshot.OverallLevel;
@@ -719,6 +717,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         _connectionHasSystemProxy = false;
         _connectionHasVirtualAdapter = false;
         _detectedClientName = null;
+        _detectedCoreName = null;
         Headline = "暂时无法读取状态";
         Detail = "请稍后刷新，或检查 Windows 网络组件";
         OverallLevel = HealthLevel.Error;

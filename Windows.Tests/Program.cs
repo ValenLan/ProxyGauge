@@ -1040,7 +1040,8 @@ var wpfThread = new Thread(() =>
         {
             SystemProxyEnabled = false,
             TunDetected = true,
-            DetectedClientName = "Clash Verge Rev"
+            DetectedClientName = "Clash Verge Rev",
+            DetectedCoreName = "verge-mihomo"
         }]);
         applyGuard.Invoke(mainViewModel, [new GuardStatus(GuardStatusKind.Enabled, true, 17)
             { AutomaticSelection = true, ProxyExecutablePath = @"C:\Clash\verge-mihomo.exe" }]);
@@ -1051,6 +1052,42 @@ var wpfThread = new Thread(() =>
                 !mainViewModel.ShowGuardApplicationAction &&
                 guardApplicationButton.Visibility == Visibility.Collapsed,
             "The proxy card must show the client and core while the normal guard card has no secondary action text.");
+        // The guard retains its selected application independently of the
+        // current OS path. A newer proxy snapshot must control the subtitle.
+        applyProxy.Invoke(mainViewModel, [TestSnapshot(10808) with
+        {
+            SystemProxyEnabled = true,
+            TunDetected = false,
+            DetectedClientName = "v2rayN",
+            DetectedCoreName = "xray"
+        }]);
+        Require(mainViewModel.ConnectionDetail == "v2rayN · xray",
+            "A saved Clash guard selection must not replace the current v2rayN/Xray identity.");
+        applyGuard.Invoke(mainViewModel, [new GuardStatus(GuardStatusKind.Enabled, true, 17)
+            { AutomaticSelection = true, ProxyExecutablePath = @"C:\Clash\verge-mihomo.exe" }]);
+        Require(mainViewModel.ConnectionDetail == "v2rayN · xray",
+            "Receiving the saved guard selection after the current probe must not revive stale attribution.");
+        applyProxy.Invoke(mainViewModel, [TestSnapshot(10808) with
+        {
+            SystemProxyEnabled = false,
+            TunDetected = true,
+            DetectedClientName = "iKuuuVPN",
+            DetectedCoreName = null
+        }]);
+        Require(mainViewModel.ConnectionDetail == "iKuuuVPN",
+            "A TUN-only adapter identity must not borrow a core name from the guard selection.");
+        var applyUnavailableProxy = typeof(MainViewModel).GetMethod(
+            "ApplyUnavailableProbe", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        applyUnavailableProxy.Invoke(mainViewModel, null);
+        Require(mainViewModel.ConnectionDetail == "代理状态暂时不可用",
+            "An unavailable probe must clear the previously detected client and core.");
+        applyProxy.Invoke(mainViewModel, [TestSnapshot(7890) with
+        {
+            SystemProxyEnabled = false,
+            TunDetected = true,
+            DetectedClientName = "Clash Verge Rev",
+            DetectedCoreName = "verge-mihomo"
+        }]);
         applyExit.Invoke(mainViewModel, [ExitSummary.Disconnected()]);
         RenderPixels(mainRoot, 820, 550, Artifact("main-disconnected-guard-on.png"));
         Require(mainViewModel.ExitAddress == "已断开网络连接" && ipVersionBorder.Visibility == Visibility.Collapsed &&
@@ -1624,7 +1661,7 @@ Require(systemProxyStatus == ("系统代理", HealthLevel.Ok) &&
         offlineStatus == ("无网络连接", HealthLevel.Error),
     "The connection card must distinguish system proxy, virtual adapter, dual path, direct network, and no network.");
 Require(MainViewModel.BuildConnectionClientDetail(
-            @"C:\Program Files\v2rayN\v2rayN.exe", null, false, true, false, true) == "v2rayN" &&
+            null, "v2rayN", false, true, false, true) == "v2rayN" &&
         MainViewModel.BuildConnectionClientDetail(
             null, null, false, true, false, true) == "其他 VPN 已连接" &&
         MainViewModel.BuildConnectionClientDetail(
@@ -1632,11 +1669,50 @@ Require(MainViewModel.BuildConnectionClientDetail(
         MainViewModel.BuildConnectionClientDetail(
             null, null, true, true, false, true) == "其他 VPN / 代理已连接" &&
         MainViewModel.BuildConnectionClientDetail(
-            @"C:\Program Files\Clash Verge\verge-mihomo.exe", "Clash Verge Rev",
+            "verge-mihomo", "Clash Verge Rev",
             false, false, false, true) == "当前使用直连网络" &&
         MainViewModel.BuildConnectionClientDetail(
             null, null, true, true, true, true) == "请检查网络连接",
     "The connection subtitle must name one active client and use neutral fallbacks without stale attribution.");
+Require(MainViewModel.BuildConnectionClientDetail(
+            "xray", "v2rayN", true, false, false, true) == "v2rayN · xray" &&
+        MainViewModel.BuildConnectionClientDetail(
+            "xray", null, true, false, false, true) == "xray" &&
+        MainViewModel.BuildConnectionClientDetail(
+            "未识别", "v2rayN", true, false, false, true) == "v2rayN" &&
+        MainViewModel.BuildConnectionClientDetail(
+            null, null, true, true, false, true) == "其他 VPN / 代理已连接",
+    "The subtitle must preserve an actual core name without inventing one when only a client is known.");
+Require(ProxyProbeService.DetectCoreName(["v2rayN"]) is null &&
+        ProxyProbeService.DetectCoreName(["xray"]) == "xray" &&
+        ProxyProbeService.DetectCoreName(["xray", "xray"]) is null &&
+        ProxyProbeService.DetectCoreName(["xray", "unrelated"]) is null &&
+        ProxyProbeService.DetectCoreName(["xray", "sing-box"]) is null &&
+        ProxyProbeService.DetectCoreName([]) is null,
+    "A GUI, missing owner or ambiguous engines must not become a fabricated traffic-core name.");
+var noTunnelIdentity = new RouteDetection(TunnelKind.None, false, false);
+Require(ProxyProbeService.ResolvePathIdentity(true, noTunnelIdentity, ["xray"]) == ("Xray", "xray") &&
+        ProxyProbeService.ResolvePathIdentity(true, noTunnelIdentity, []) == (null, null) &&
+        ProxyProbeService.ResolvePathIdentity(true, noTunnelIdentity, ["xray", "unrelated"]) == (null, null) &&
+        ProxyProbeService.ResolvePathIdentity(true, noTunnelIdentity, ["xray", "xray"]) == (null, null) &&
+        ProxyProbeService.ResolvePathIdentity(true, noTunnelIdentity, ["xray", "sing-box"]) == (null, null) &&
+        ProxyProbeService.ResolvePathIdentity(false, noTunnelIdentity, ["verge-mihomo"]) == (null, null),
+    "Only owners of the active system proxy may identify its core; inactive saved ports supply no attribution.");
+var ikuuuIdentityRoute = new RouteDetection(TunnelKind.Other, false, true, ClientName: "iKuuuVPN");
+Require(ProxyProbeService.ResolvePathIdentity(false, ikuuuIdentityRoute, ["verge-mihomo"]) == ("iKuuuVPN", null) &&
+        ProxyProbeService.ResolvePathIdentity(true, ikuuuIdentityRoute, ["xray"]) == (null, null) &&
+        ProxyProbeService.ResolvePathIdentity(true, ikuuuIdentityRoute, ["xray", "unrelated"]) == (null, null) &&
+        ProxyProbeService.ResolvePathIdentity(true, ikuuuIdentityRoute, ["xray", "sing-box"]) == (null, null),
+    "TUN-only routing must not borrow a saved core, and conflicting current paths must retain neutral identity.");
+Require(ProxyProbeService.ResolvePathIdentity(true,
+            new RouteDetection(TunnelKind.Split, true, true), ["xray"]) == (null, null),
+    "Multiple routed clients without a unique adapter identity must not inherit a system listener's client or core.");
+var identityCheckedSnapshot = ProxyProbeService.CreateSnapshot(
+    new AppConfig(), 1, TcpListenerAttribution.MihomoOwned,
+    ProxyProbeService.ParseSystemProxyConfiguration(1, "127.0.0.1:7890", null), ikuuuIdentityRoute,
+    detectedClientName: null, detectedCoreName: null, clientAttributionChecked: true);
+Require(identityCheckedSnapshot.DetectedClientName is null && identityCheckedSnapshot.DetectedCoreName is null,
+    "A checked ambiguous identity must not be replaced by an adapter fallback while building the snapshot.");
 Require(ProxyProbeService.DetectClientName(["v2rayN", "unrelated"]) == "v2rayN" &&
         ProxyProbeService.DetectClientName(["Clash Verge", "v2rayN"]) is null &&
         ProxyProbeService.DetectClientName(["Wintun Userspace Tunnel", "iKuuu VPN"]) == "iKuuuVPN",

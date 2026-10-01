@@ -631,4 +631,49 @@ fi
 /usr/bin/grep -Fq '出口 IP (TUN 系统路径)' <<< "$client_tun_only_success"
 /usr/bin/grep -Fq '代理链路检查通过' <<< "$client_tun_only_success"
 
+# A running GUI cannot claim another VPN's route without its packet tunnel.
+gui_with_other_vpn=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_CORE_PIDS='' \
+  PROXYGAUGE_PROVIDER_PIDS="$shadowrocket_test_pid" \
+  PROXYGAUGE_CURL="$FAKE_CURL" \
+  PROXYGAUGE_TUN_ROUTE_TABLE=$'default 10.0.0.1 UGScg utun7' \
+  PROXYGAUGE_ROUTE_LOOKUP_RESULTS="$ROUTES_UTUN7_V4" \
+  PROXYGAUGE_MIXED=127.0.0.1:9 \
+  PROXYGAUGE_DISCOVERY_PORT_ACTIVE=0 \
+  PROXYGAUGE_SECONDARY_ENABLED=0 \
+  PROXYGAUGE_TIMEOUT=1 \
+  /bin/bash "$CHECK" 2>&1 || true)
+if ! /usr/bin/grep -Fq '检测到其他 VPN / TUN' <<< "$gui_with_other_vpn"; then
+  echo 'A GUI without its packet-tunnel process must leave other VPN routes unattributed.' >&2
+  exit 1
+fi
+if /usr/bin/grep -Fq 'Shadowrocket VPN: 代表性隧道路由已确认' <<< "$gui_with_other_vpn"; then
+  echo 'A GUI alone must not claim another VPN tunnel as Shadowrocket.' >&2
+  exit 1
+fi
+/usr/bin/grep -Fq '检测到隧道路由，但不能归因于 Shadowrocket' <<< "$gui_with_other_vpn" || {
+  echo 'An unattributed route must refer to the observed provider, not a fixed Mihomo label.' >&2
+  exit 1
+}
+if /usr/bin/grep -Fq 'Mihomo' <<< "$gui_with_other_vpn"; then
+  echo 'A Shadowrocket-only diagnostic must not invent a Mihomo provider.' >&2
+  exit 1
+fi
+no_provider_other_vpn=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_CORE_PIDS='' \
+  PROXYGAUGE_PROVIDER_PIDS='' \
+  PROXYGAUGE_CURL="$FAKE_CURL" \
+  PROXYGAUGE_TUN_ROUTE_TABLE=$'default 10.0.0.1 UGScg utun7' \
+  PROXYGAUGE_ROUTE_LOOKUP_RESULTS="$ROUTES_UTUN7_V4" \
+  PROXYGAUGE_MIXED=127.0.0.1:9 \
+  PROXYGAUGE_DISCOVERY_PORT_ACTIVE=0 \
+  PROXYGAUGE_SECONDARY_ENABLED=0 \
+  PROXYGAUGE_TIMEOUT=1 \
+  /bin/bash "$CHECK" 2>&1 || true)
+/usr/bin/grep -Fq '检测到隧道路由，归属客户端未确认' <<< "$no_provider_other_vpn"
+if /usr/bin/grep -Fq '不能归因于 Mihomo' <<< "$no_provider_other_vpn"; then
+  echo 'An unknown provider must retain a neutral diagnostic.' >&2
+  exit 1
+fi
+
 echo "ProxyGauge low-risk health tests passed."

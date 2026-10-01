@@ -423,6 +423,75 @@ PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS="$NE_RECORDS" \
 [ "$(/usr/bin/head -1 "$RUNTIME_STATE")" = enabled ]
 ! /usr/bin/grep -Fq 'block return out quick all' "$MOCK_ANCHOR"
 
+# --- Repeated failed purges remain pending until a healthy NE recovery -------
+# Each restore is a fresh helper process. A still-failed purge must survive in
+# the runtime file, even though the previous cycle has already loaded a block.
+for round in 1 2; do
+  : > "$PFCTL_LOG"
+  if PROXYGAUGE_KILLSWITCH_TEST_FAIL_PURGE=1 \
+    PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS="$BAD_RECORDS" \
+    run_persisted_helper restore >/dev/null 2>&1; then
+    echo "第 $round 轮公网状态清理失败不得报告成功" >&2
+    exit 1
+  fi
+  assert_single_purge_pass
+  /usr/bin/grep -Eq '^fault[[:space:]]+selection-failed/public-state-purge-pending$' "$RUNTIME_STATE"
+  /usr/bin/grep -Fq 'block return out quick all' "$MOCK_ANCHOR"
+  retry_status_output=$(run_helper status)
+  /usr/bin/grep -Fq 'Kill Switch: Fault' <<< "$retry_status_output"
+  /usr/bin/grep -Fq 'public-state-purge-pending' "$RUNTIME_STATE"
+done
+# Selection now succeeds, so enable_rules must consume the persisted pending
+# marker before reopening the NE monitoring anchor. A fresh steady cycle must
+# not retry a purge which has already succeeded.
+: > "$PFCTL_LOG"
+PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS="$NE_RECORDS" \
+  run_persisted_helper restore >/dev/null
+assert_single_purge_pass
+[ "$(/usr/bin/head -1 "$RUNTIME_STATE")" = enabled ]
+! /usr/bin/grep -Fq 'public-state-purge-pending' "$RUNTIME_STATE"
+! /usr/bin/grep -Fq 'block return out quick all' "$MOCK_ANCHOR"
+: > "$PFCTL_LOG"
+PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS="$NE_RECORDS" \
+  run_persisted_helper restore >/dev/null
+assert_no_purge
+
+# --- Pending purge recovery while handing over from NE to a root core -------
+# A fault fallback updates live PF but deliberately leaves the managed disk
+# render alone. Recovery starts with a block-less disk render and a live block.
+: > "$PFCTL_LOG"
+if PROXYGAUGE_KILLSWITCH_TEST_FAIL_PURGE=1 \
+  PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS="$BAD_RECORDS" \
+  run_persisted_helper restore >/dev/null 2>&1; then
+  echo '切换前的公网状态清理失败不得报告成功' >&2
+  exit 1
+fi
+assert_single_purge_pass
+/usr/bin/grep -Fq 'public-state-purge-pending' "$RUNTIME_STATE"
+/usr/bin/grep -Fq 'block return out quick all' "$MOCK_ANCHOR"
+! /usr/bin/grep -Fq 'block return out quick all' "$ANCHOR_CONF"
+: > "$PFCTL_LOG"
+PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS="$ROOT_RECORDS" \
+  run_persisted_helper restore >/dev/null
+recovery_sweeps=$(/usr/bin/grep -Fc -- '-k 0.0.0.0/0 -k 0.0.0.0/5' "$PFCTL_LOG")
+if [ "$recovery_sweeps" -ne 1 ]; then
+  echo "pending 恢复并切换 root 时应清理一次，实际清理 $recovery_sweeps 次" >&2
+  exit 1
+fi
+assert_single_purge_pass
+[ "$(/usr/bin/head -1 "$RUNTIME_STATE")" = enabled ]
+! /usr/bin/grep -Fq 'public-state-purge-pending' "$RUNTIME_STATE"
+/usr/bin/grep -Fq 'block return out quick all' "$MOCK_ANCHOR"
+/usr/bin/cmp -s "$ANCHOR_CONF" "$MOCK_ANCHOR"
+[ "$(/usr/bin/sed -n '2p' "$SELECTION_RUNTIME")" = "$ROOT_PATH" ]
+: > "$PFCTL_LOG"
+PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS="$ROOT_RECORDS" \
+  run_persisted_helper restore >/dev/null
+assert_no_purge
+# Return to the NE monitoring precondition used by the upgrade/on test below.
+PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS="$NE_RECORDS" \
+  run_persisted_helper restore >/dev/null
+
 # --- Legacy ne-endpoints leftovers are cleaned on enable ----------------------
 /usr/bin/printf '%s\n' '203.0.113.9' > "$NE_ENDPOINTS_FILE"
 : > "$PFCTL_LOG"

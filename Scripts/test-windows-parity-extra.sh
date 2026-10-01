@@ -64,7 +64,23 @@ fi
 
 # The connection detail must be composed from the detected client, never a constant.
 /usr/bin/grep -Fq 'BuildConnectionClientDetail(' "$MAIN_VIEW_MODEL"
-/usr/bin/grep -Fq 'return $"{client} · {selectedCore}";' "$MAIN_VIEW_MODEL"
+/usr/bin/grep -Fq 'return $"{client} · {core}";' "$MAIN_VIEW_MODEL"
+connection_detail_block=$(/usr/bin/awk '/public string ConnectionDetail =>/,/^$/ { print }' "$MAIN_VIEW_MODEL")
+/usr/bin/grep -Fq '_detectedCoreName,' <<< "$connection_detail_block"
+/usr/bin/grep -Fq '_detectedClientName,' <<< "$connection_detail_block"
+if /usr/bin/grep -Fq '_activeGuardApplication' <<< "$connection_detail_block"; then
+  echo 'The current proxy subtitle must not be sourced from a saved guard application.' >&2
+  exit 1
+fi
+/usr/bin/grep -Fq '_detectedCoreName = snapshot.DetectedCoreName;' "$MAIN_VIEW_MODEL"
+/usr/bin/grep -Fq '_detectedCoreName = null;' "$MAIN_VIEW_MODEL"
+/usr/bin/grep -Fq 'DetectedCoreName = detectedCoreName,' "$PROBE_SERVICE"
+identity_resolver_block=$(/usr/bin/awk '/internal static string\? ResolveDetectedClientName\(/,/internal static string\? DetectCoreName\(/ { print }' "$PROBE_SERVICE")
+/usr/bin/grep -Fq 'systemProxy.ExplicitHost!, systemProxy.ExplicitPort!.Value' <<< "$identity_resolver_block"
+if /usr/bin/grep -Fq 'DetectRunningProxyClientName' <<< "$identity_resolver_block"; then
+  echo 'A resident GUI must not supply attribution for an unrelated current OS route.' >&2
+  exit 1
+fi
 if /usr/bin/grep -Fq 'Mihomo ·' "$MAIN_VIEW_MODEL"; then
   echo 'ConnectionDetail must not hardcode a Mihomo client label.' >&2
   exit 1

@@ -19,7 +19,7 @@ PFCTL_LOG="$TEST_ROOT/var/run/pfctl.log"
 # restore fault paths must stay in place for these transitions to be safe.
 /usr/bin/grep -Fq 'NE_LOCKDOWN=1' "$HELPER"
 /usr/bin/grep -Fq 'elif [ "${SELECTED_NE:-0}" = 1 ] && [ "${NE_LOCKDOWN:-0}" = 0 ]; then' "$HELPER"
-/usr/bin/grep -Fq 'if [ "$prior_block" -eq 0 ] && [ "$final_block" -eq 1 ]; then' "$HELPER"
+/usr/bin/grep -Fq 'if [ "$reset_public" -eq 0 ] && [ "$prior_block" -eq 0 ] && [ "$final_block" -eq 1 ]; then' "$HELPER"
 /usr/bin/grep -Fq 'write_runtime_state fault selection-failed' "$HELPER"
 /usr/bin/grep -Fq 'write_runtime_state fault restore-failed' "$HELPER"
 

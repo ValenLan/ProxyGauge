@@ -1150,9 +1150,11 @@ enable_rules() {
   # Atomically replace only this anchor; never flush LAN sessions on handover.
   "$PFCTL" -a "$ANCHOR" -nf "$ANCHOR_CONF" >/dev/null 2>&1 || return 1
   "$PFCTL" -a "$ANCHOR" -f "$ANCHOR_CONF" >/dev/null 2>&1 || return 1
-  if [ "$prior_block" -eq 0 ] && [ "$final_block" -eq 1 ]; then
+  if [ "$reset_public" -eq 0 ] && [ "$prior_block" -eq 0 ] && [ "$final_block" -eq 1 ]; then
     # Entering lockdown from a block-less monitoring anchor: physical states
     # established while egress was open would otherwise outlive the tunnel.
+    # A reset above already purged while a blocking transition was live, so
+    # do not kill freshly re-established trusted connections a second time.
     clear_existing_physical_states || { echo '❌ 无法在进入锁定前清理物理公网状态'; return 1; }
   fi
   # Legacy endpoint-pinning state from older builds is never authoritative.
