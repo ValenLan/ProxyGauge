@@ -88,7 +88,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         _observedExitPathFingerprint = persistedExit.PathFingerprint;
         _exitSummary = persistedExit.Summary ?? ExitSummary.WaitingForPathChange();
 
-        Core = new MetricViewModel(new MetricSnapshot("代理核心", "检查中", "正在查找 Mihomo", "核", HealthLevel.Idle));
+        Core = new MetricViewModel(new MetricSnapshot("代理核心", "检查中", "正在查找代理客户端或核心", "核", HealthLevel.Idle));
         Port = new MetricViewModel(new MetricSnapshot(
             "本地端口",
             "检查中",

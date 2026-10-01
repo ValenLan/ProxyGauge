@@ -179,6 +179,61 @@ core_pids() {
   } | /usr/bin/awk 'NF && !seen[$0]++'
 }
 
+proxy_provider_pids() {
+  if [ -n "${PROXYGAUGE_PROVIDER_PIDS+x}" ]; then
+    /usr/bin/printf '%s\n' "$PROXYGAUGE_PROVIDER_PIDS"
+    return
+  fi
+  if [ -n "${PROXYGAUGE_CORE_PIDS+x}" ]; then
+    /usr/bin/printf '%s\n' "$PROXYGAUGE_CORE_PIDS"
+    return
+  fi
+  {
+    core_pids
+    /usr/bin/pgrep -x Shadowrocket 2>/dev/null || true
+    /usr/bin/pgrep -x MacPacketTunnel 2>/dev/null || true
+  } | /usr/bin/awk 'NF && !seen[$0]++'
+}
+
+provider_pid_name() {
+  local pid name
+  pid="$1"
+  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  name=$(/bin/ps -p "$pid" -o ucomm= 2>/dev/null || true)
+  name=$(/usr/bin/printf '%s' "$name" \
+    | /usr/bin/sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
+  [ -n "$name" ] || return 1
+  /usr/bin/printf '%s\n' "$name"
+}
+
+provider_keys() {
+  local pid name
+  while IFS= read -r pid; do
+    case "$pid" in ''|*[!0-9]*) continue ;; esac
+    name=$(provider_pid_name "$pid" 2>/dev/null || true)
+    case "$name" in
+      Shadowrocket|MacPacketTunnel) /usr/bin/printf '%s\n' shadowrocket ;;
+      verge-mihomo|mihomo|clash-meta) /usr/bin/printf 'mihomo:%s\n' "$pid" ;;
+      *) /usr/bin/printf 'unknown:%s\n' "$pid" ;;
+    esac
+  done < <(proxy_provider_pids) | /usr/bin/awk 'NF && !seen[$0]++'
+}
+
+provider_count() {
+  provider_keys | /usr/bin/awk 'NF { count++ } END { print count+0 }'
+}
+
+provider_label() {
+  local keys
+  keys=$(provider_keys)
+  [ "$(/usr/bin/awk 'NF { count++ } END { print count+0 }' <<< "$keys")" = 1 ] \
+    || return 0
+  case "$(/usr/bin/awk 'NF { print; exit }' <<< "$keys")" in
+    shadowrocket) /usr/bin/printf '%s\n' Shadowrocket ;;
+    mihomo:*) /usr/bin/printf '%s\n' Mihomo ;;
+  esac
+}
+
 local_port_open() {
   local host port
   host="$1"
@@ -190,14 +245,14 @@ local_port_open() {
   (exec 3<>/dev/tcp/"$host"/"$port") 2>/dev/null
 }
 
-listener_owned_by_mihomo() {
-  local host port family selector records owner_pids core_pid owner_pid
+listener_owned_by_proxy() {
+  local host port family selector records owner_pids provider_pid owner_pid
   host="$1"
   port="$2"
   host="${host#[}"
   host="${host%]}"
   case "${PROXYGAUGE_DISCOVERY_PORT_OWNER:-}" in
-    mihomo) return 0 ;;
+    mihomo|proxy) return 0 ;;
     other|unknown) return 1 ;;
   esac
   case "$host" in
@@ -242,12 +297,12 @@ listener_owned_by_mihomo() {
       ' -- "$host" "$port" "$family" \
     | /usr/bin/awk 'NF && !seen[$0]++') || return 1
   [ -n "$owner_pids" ] || return 1
-  while IFS= read -r core_pid; do
-    case "$core_pid" in ''|*[!0-9]*) continue ;; esac
+  while IFS= read -r provider_pid; do
+    case "$provider_pid" in ''|*[!0-9]*) continue ;; esac
     while IFS= read -r owner_pid; do
-      [ "$core_pid" = "$owner_pid" ] && return 0
+      [ "$provider_pid" = "$owner_pid" ] && return 0
     done <<< "$owner_pids"
-  done <<< "$CORE_PIDS"
+  done <<< "$PROVIDER_PIDS"
   return 1
 }
 
@@ -526,7 +581,7 @@ fake_ip_route_interface() {
 }
 
 route_lookup_interface() {
-  local family destination result
+  local family destination result route_output route_status
   family="$1"
   destination="$2"
   if [ -n "${PROXYGAUGE_ROUTE_LOOKUP_RESULTS+x}" ]; then
@@ -541,12 +596,19 @@ route_lookup_interface() {
     esac
     return
   fi
-  if result=$(/sbin/route -n get "-$family" "$destination" 2>/dev/null \
-    | /usr/bin/awk '/^[[:space:]]*interface:[[:space:]]*/ { print $2; exit }'); then
+  route_status=0
+  route_output=$(/sbin/route -n get "-$family" "$destination" 2>&1) || route_status=$?
+  if [ "$route_status" -eq 0 ]; then
+    result=$(/usr/bin/awk '/^[[:space:]]*interface:[[:space:]]*/ { print $2; exit }' \
+      <<< "$route_output")
     if /usr/bin/grep -Eq '^[A-Za-z0-9._-]+$' <<< "$result"; then
       /usr/bin/printf '%s\n' "$result"
       return
     fi
+  fi
+  if /usr/bin/grep -Fq 'not in table' <<< "$route_output"; then
+    /usr/bin/printf '%s\n' unavailable
+    return
   fi
   if route_family_has_default "$family"; then
     /usr/bin/printf '%s\n' unknown
@@ -623,6 +685,72 @@ mihomo_tun_device() {
   return 0
 }
 
+trusted_client_tun_candidates() {
+  local raw candidate count normalized
+  local -a candidate_list
+  raw="${PROXYGAUGE_TRUSTED_CLIENT_TUNS:-}"
+  [ -n "$raw" ] || return 1
+  /usr/bin/grep -Eq '^utun[0-9]+(,utun[0-9]+){0,62}$' <<< "$raw" || return 1
+  IFS=',' read -r -a candidate_list <<< "$raw"
+  count=0
+  normalized=""
+  for candidate in "${candidate_list[@]}"; do
+    count=$((count + 1))
+    [ "$count" -le 63 ] || return 1
+    if ! /usr/bin/grep -Fxq "$candidate" <<< "$normalized"; then
+      normalized="${normalized}${normalized:+$'\n'}${candidate}"
+    fi
+  done
+  [ -n "$normalized" ] || return 1
+  /usr/bin/printf '%s\n' "$normalized"
+}
+
+client_tun_candidates() {
+  tun_route_table | /usr/bin/awk '
+    tolower($1) == "default" {
+      for (column = 1; column <= NF; column++) {
+        if ($column ~ /^utun[0-9]+$/) { print $column; break }
+      }
+    }
+  ' | /usr/bin/awk 'NF && !seen[$0]++'
+}
+
+classify_client_tunnel_route() {
+  local label candidates inet_route inet6_route available_count route_interface
+  label=$(provider_label)
+  if [ -z "$label" ]; then
+    /usr/bin/printf '%s\n' other
+    return
+  fi
+  if ! candidates=$(trusted_client_tun_candidates 2>/dev/null); then
+    candidates=$(client_tun_candidates 2>/dev/null || true)
+  fi
+  if [ -z "$candidates" ]; then
+    /usr/bin/printf '%s\n' other
+    return
+  fi
+
+  inet_route=$(representative_route_interface inet \
+    1.1.1.1 8.8.8.8 9.9.9.9 208.67.222.222)
+  inet6_route=$(representative_route_interface inet6 \
+    2606:4700:4700::1111 2001:4860:4860::8888 2620:fe::fe 2620:119:35::35)
+
+  available_count=0
+  for route_interface in "$inet_route" "$inet6_route"; do
+    [ "$route_interface" = unavailable ] && continue
+    available_count=$((available_count + 1))
+    if ! /usr/bin/grep -Fxq "$route_interface" <<< "$candidates"; then
+      /usr/bin/printf '%s\n' other
+      return
+    fi
+  done
+  if [ "$available_count" -eq 0 ]; then
+    /usr/bin/printf '%s\n' other
+  else
+    /usr/bin/printf '%s\n' client
+  fi
+}
+
 classify_tunnel_route() {
   local device fake_device candidate inet_route inet6_route available_count route_interface
   if ! has_tun_route; then
@@ -630,13 +758,13 @@ classify_tunnel_route() {
     return
   fi
   case "${PROXYGAUGE_TUN_KIND:-}" in
-    mihomo|mihomo-unconfirmed|split|unknown|other|none)
+    mihomo|mihomo-unconfirmed|split|unknown|other|client|none)
       /usr/bin/printf '%s\n' "$PROXYGAUGE_TUN_KIND"
       return
       ;;
   esac
   if ! device=$(mihomo_tun_device 2>/dev/null); then
-    /usr/bin/printf '%s\n' other
+    classify_client_tunnel_route
     return
   fi
   fake_device=$(fake_ip_route_interface 2>/dev/null || true)
@@ -716,7 +844,8 @@ SYSTEM_PROXY_STATE=$(/usr/bin/printf '%s\n' "$RAW_SYSTEM_PROXY_STATE" \
   | top_level_system_proxy_state)
 TUN_KIND=$(classify_tunnel_route)
 PURE_TUN_ONLY=""
-if [ "$TUN_KIND" = mihomo ] && ! /usr/bin/printf '%s\n' "$SYSTEM_PROXY_STATE" \
+if { [ "$TUN_KIND" = mihomo ] || [ "$TUN_KIND" = client ]; } \
+  && ! /usr/bin/printf '%s\n' "$SYSTEM_PROXY_STATE" \
   | /usr/bin/grep -qE '(HTTP|HTTPS|SOCKS)Enable : 1|ProxyAuto(Config|Discovery)Enable : 1'; then
   PURE_TUN_ONLY=1
 fi
@@ -731,18 +860,30 @@ else
 fi
 
 echo "===== 1. 代理核心进程 ====="
-CORE_PIDS=$(core_pids)
-CORE_COUNT=$(printf '%s\n' "$CORE_PIDS" | /usr/bin/awk 'NF {count++} END {print count+0}')
-if [ "$CORE_COUNT" -eq 1 ]; then
-  CORE_PID=$(printf '%s\n' "$CORE_PIDS" | /usr/bin/head -1)
-  check ok "Mihomo 核心运行中 (PID $CORE_PID)"
-elif [ "$CORE_COUNT" -gt 1 ]; then
-  echo "$CORE_PIDS" | while IFS= read -r pid; do
+PROVIDER_PIDS=$(proxy_provider_pids)
+PROVIDER_COUNT=$(provider_count)
+PROVIDER_LABEL=$(provider_label)
+case "$PROVIDER_LABEL" in
+  Mihomo) PROVIDER_NOUN="Mihomo 核心" ;;
+  "") PROVIDER_NOUN="代理客户端或核心" ;;
+  *) PROVIDER_NOUN="$PROVIDER_LABEL" ;;
+esac
+if [ "$PROVIDER_COUNT" -eq 1 ]; then
+  PROVIDER_PID=$(printf '%s\n' "$PROVIDER_PIDS" | /usr/bin/awk 'NF { print; exit }')
+  if [ "$PROVIDER_LABEL" = "Mihomo" ]; then
+    check ok "Mihomo 核心运行中 (PID $PROVIDER_PID)"
+  elif [ -n "$PROVIDER_LABEL" ]; then
+    check ok "代理客户端运行中 ($PROVIDER_LABEL, PID $PROVIDER_PID)"
+  else
+    check ok "代理客户端运行中 (PID $PROVIDER_PID)"
+  fi
+elif [ "$PROVIDER_COUNT" -gt 1 ]; then
+  echo "$PROVIDER_PIDS" | while IFS= read -r pid; do
     [ -n "$pid" ] && /bin/ps -p "$pid" -o '  user=,pid=,command=' 2>/dev/null
   done
-  check no "发现 $CORE_COUNT 个 Mihomo 核心 — 可能是双核心分裂"
+  check no "发现 $PROVIDER_COUNT 个代理客户端或核心 — 可能存在多核心冲突"
 else
-  check no "未发现 Mihomo 核心 — helper 进程不会被误判为核心"
+  check no "未发现代理客户端或核心 — helper 进程不会被误判为核心"
 fi
 
 echo "===== 2. mixed 端口监听 ($MIXED) ====="
@@ -754,11 +895,11 @@ if [ -n "$MIXED_CONFIG_INVALID" ]; then
     check no "默认 mixed 入口配置无效或不是本机回环地址 ($RAW_MIXED)"
   fi
 elif local_port_open "$MIXED_HOST" "$MIXED_PORT"; then
-  if listener_owned_by_mihomo "$MIXED_HOST" "$MIXED_PORT"; then
-    check ok "$MIXED 监听中，且属于已检测的 Mihomo 核心"
+  if listener_owned_by_proxy "$MIXED_HOST" "$MIXED_PORT"; then
+    check ok "$MIXED 监听中，且属于已检测的 $PROVIDER_NOUN"
     MIXED_LISTENER_CONFIRMED=1
   else
-    check warn "$MIXED 可以连接，但监听器不属于已检测的 Mihomo 核心"
+    check warn "$MIXED 可以连接，但监听器不属于已检测的 $PROVIDER_NOUN"
   fi
 else
   if [ -n "$PURE_TUN_ONLY" ]; then
@@ -775,6 +916,7 @@ echo "===== 3. 代理入口 (系统代理 / TUN, 至少一个) ====="
 MODE_OK=""
 SYSTEM_ACTIVE=""
 TUN_ACTIVE=""
+CLIENT_TUN_ACTIVE=""
 OTHER_TUN_ACTIVE=""
 MIHOMO_TUN_UNCONFIRMED=""
 SPLIT_TUN_ACTIVE=""
@@ -827,6 +969,14 @@ if [ "$TUN_KIND" = mihomo ]; then
   echo "  ℹ️ TUN: 代表性 IPv4 / IPv6 路由已确认"
   MODE_OK=1
   TUN_ACTIVE=1
+elif [ "$TUN_KIND" = client ] && [ -n "$PROVIDER_LABEL" ]; then
+  echo "  ℹ️ $PROVIDER_LABEL VPN: 代表性隧道路由已确认"
+  MODE_OK=1
+  CLIENT_TUN_ACTIVE=1
+elif [ "$TUN_KIND" = client ]; then
+  echo "  ℹ️ 其他 VPN / TUN: 检测到隧道路由，归属客户端未知"
+  MODE_OK=1
+  OTHER_TUN_ACTIVE=1
 elif [ "$TUN_KIND" = mihomo-unconfirmed ]; then
   echo "  ℹ️ Mihomo TUN: 配置已启用，但活动路由无法匹配具体 utun 设备"
   MODE_OK=1
@@ -847,7 +997,7 @@ else
   echo "  ℹ️ TUN: 未检测到有效隧道路由"
 fi
 if [ -n "$SYSTEM_ACTIVE" ] \
-  && [ -n "$TUN_ACTIVE$MIHOMO_TUN_UNCONFIRMED$SPLIT_TUN_ACTIVE$UNKNOWN_TUN_ACTIVE$OTHER_TUN_ACTIVE" ]; then
+  && [ -n "$TUN_ACTIVE$CLIENT_TUN_ACTIVE$MIHOMO_TUN_UNCONFIRMED$SPLIT_TUN_ACTIVE$UNKNOWN_TUN_ACTIVE$OTHER_TUN_ACTIVE" ]; then
   check warn "系统代理与 TUN 同时开启 — 通常只需保留一个流量入口"
 elif [ -n "$SYSTEM_DYNAMIC" ]; then
   check warn "PAC / 自动代理会按目标地址选择路径 — 请以系统实际出口为准"
@@ -1000,8 +1150,8 @@ if [ -n "$GOOGLE_MIXED_CONFIG_INVALID" ]; then
 elif [ "$GOOGLE_MIXED" = "$MIXED" ]; then
   check no "$SECONDARY_LABEL 入口与默认 mixed 端口相同，无法区分两个出口"
 elif local_port_open "$GOOGLE_MIXED_HOST" "$GOOGLE_MIXED_PORT"; then
-  if ! listener_owned_by_mihomo "$GOOGLE_MIXED_HOST" "$GOOGLE_MIXED_PORT"; then
-    check warn "$SECONDARY_LABEL mixed 入口可以连接，但监听器未归属于 Mihomo ($GOOGLE_MIXED)"
+  if ! listener_owned_by_proxy "$GOOGLE_MIXED_HOST" "$GOOGLE_MIXED_PORT"; then
+    check warn "$SECONDARY_LABEL mixed 入口可以连接，但监听器未归属于 $PROVIDER_NOUN ($GOOGLE_MIXED)"
   else
     CHAIN_CONFIGURED=1
     GOOGLE_EXT=""

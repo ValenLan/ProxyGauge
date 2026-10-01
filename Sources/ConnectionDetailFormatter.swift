@@ -1,6 +1,11 @@
 import Foundation
 
 enum ConnectionDetailFormatter {
+    private static func engineDisplayName(client: String, core: String) -> String {
+        guard client == "Shadowrocket", !core.isEmpty, core != "未识别" else { return core }
+        return "MacPacketTunnel"
+    }
+
     static func format(
         client: String,
         core: String,
@@ -15,13 +20,14 @@ enum ConnectionDetailFormatter {
         entryHealthy: Bool
     ) -> String {
         let knownClient = client != "未识别" && client != "未识别客户端"
-        let knownCore = !core.isEmpty && core != "未识别"
+        let engine = engineDisplayName(client: client, core: core)
+        let knownEngine = !engine.isEmpty && engine != "未识别"
         let presentation = ConnectionPathPresentation.make(mode: mode)
         if presentation.isActive {
-            if knownClient && knownCore && client.caseInsensitiveCompare(core) != .orderedSame {
-                return "\(client) · \(core)"
+            if knownClient && knownEngine && client.caseInsensitiveCompare(engine) != .orderedSame {
+                return "\(client) · \(engine)"
             }
-            if knownCore { return core }
+            if knownEngine { return engine }
             if knownClient { return client }
             if presentation.isCombined { return "其他 VPN / 代理已连接" }
             return presentation.hasVirtualAdapter ? "其他 VPN 已连接" : "其他系统代理已启用"

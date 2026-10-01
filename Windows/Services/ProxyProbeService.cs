@@ -203,7 +203,12 @@ public sealed class ProxyProbeService
         "verge-mihomo",
         "mihomo",
         "clash-meta",
-        "clash"
+        "clash",
+        "xray",
+        "v2ray",
+        "sing-box",
+        "singbox",
+        "Shadowsocksr"
     ];
 
     private static readonly string[] MihomoTunKeywords =
@@ -244,28 +249,55 @@ public sealed class ProxyProbeService
         var tunTask = DetectRouteAsync(cancellationToken);
         var systemProxy = ReadSystemProxyConfiguration();
         await Task.WhenAll(portAttributionTask, tunTask);
+        var portAttribution = await portAttributionTask;
         var detection = await tunTask;
+        var detectedClientName = ResolveDetectedClientName(
+            config,
+            portAttribution,
+            detection,
+            out var listenerClientName);
         return CreateSnapshot(
             config,
             coreCount,
-            await portAttributionTask,
+            portAttribution,
             systemProxy,
             detection,
-            detection.ClientName ?? DetectRunningProxyClientName());
+            detectedClientName,
+            listenerClientName);
+    }
+
+    internal static string? ResolveDetectedClientName(
+        AppConfig config,
+        TcpListenerAttribution portAttribution,
+        RouteDetection detection,
+        out string? listenerClientName)
+    {
+        listenerClientName = portAttribution == TcpListenerAttribution.Closed
+            ? null
+            : DetectClientName(TcpListenerOwnership.GetListenerOwnerProcessNames(
+                config.MixedHost,
+                config.MixedPort));
+        return listenerClientName ?? detection.ClientName ?? DetectRunningProxyClientName();
     }
 
     internal static ProxySnapshot CreateSnapshot(AppConfig config, int coreCount,
         TcpListenerAttribution portAttribution, SystemProxyConfiguration systemProxy, RouteDetection detection,
-        string? detectedClientName = null)
+        string? detectedClientName = null, string? portOwnerClientName = null)
     {
-        var snapshot = BuildSnapshot(config, coreCount, portAttribution, systemProxy, detection);
+        var resolvedClientName = detectedClientName ?? detection.ClientName;
+        var snapshot = BuildSnapshot(
+            config,
+            coreCount,
+            portAttribution,
+            systemProxy,
+            detection,
+            portOwnerClientName);
         return snapshot with
         {
             SplitTunnelDetected = detection.Coverage == TunnelKind.Split,
             RouteLookupUnknown = detection.LookupUnknown || detection.Coverage == TunnelKind.Unknown,
             VirtualNetworkDetected = detection.Coverage != TunnelKind.None,
-            DetectedClientName = detectedClientName ?? detection.ClientName
-                ?? (coreCount > 0 ? "Clash / Mihomo" : null),
+            DetectedClientName = resolvedClientName,
             ConnectionLabel = coreCount > 1 ? null : detection.OtherTunnelDetected ? "VPN 已检测"
                 : detection.MihomoDetected && (detection.Coverage == TunnelKind.Split || detection.LookupUnknown)
                     ? "TUN 已检测" : null,
@@ -278,7 +310,8 @@ public sealed class ProxyProbeService
     }
 
     private static ProxySnapshot BuildSnapshot(AppConfig config, int coreCount,
-        TcpListenerAttribution portAttribution, SystemProxyConfiguration systemProxy, RouteDetection detection)
+        TcpListenerAttribution portAttribution, SystemProxyConfiguration systemProxy, RouteDetection detection,
+        string? ownerClientName = null)
     {
         var systemProxyEnabled = systemProxy.Enabled;
         var explicitMismatch = systemProxy.ExplicitEnabled && !systemProxy.UsesDynamicResolution && !systemProxy.Matches(
@@ -304,7 +337,7 @@ public sealed class ProxyProbeService
         {
             0 when otherTunnelDetected => new MetricSnapshot("代理核心", "VPN / TUN 已检测",
                 "已确认活动 VPN 路由；该客户端不要求使用 Mihomo 或保存的 mixed 端口", "核", HealthLevel.Warning),
-            0 => new MetricSnapshot("代理核心", "未运行", "未发现 Clash / Mihomo 进程或活动 VPN 路由", "核", HealthLevel.Error),
+            0 => new MetricSnapshot("代理核心", "未运行", "未发现代理客户端或核心，也未发现活动 VPN 路由", "核", HealthLevel.Error),
             1 => new MetricSnapshot("代理核心", "运行中", "检测到一个核心进程", "核", HealthLevel.Ok),
             _ => new MetricSnapshot("代理核心", $"{coreCount} 个进程", "可能存在双核心冲突", "核", HealthLevel.Warning)
         };
@@ -321,7 +354,8 @@ public sealed class ProxyProbeService
             portAttribution,
             mihomoTunHealthy,
             alternateSystemPath: otherTunnelDetected || (tunDetected && !mihomoTunHealthy) ||
-                pacManaged || autoManaged || environmentManaged);
+                pacManaged || autoManaged || environmentManaged,
+            ownerClientName: ownerClientName);
         MetricSnapshot route;
         if (anyTunnelDetected && systemProxyEnabled)
         {
@@ -426,9 +460,9 @@ public sealed class ProxyProbeService
                 var endpointIsListening = portAttribution == TcpListenerAttribution.OtherOrUnknown;
                 route = new MetricSnapshot(
                     "系统代理",
-                    endpointIsListening ? "本地代理（未归属 Mihomo）" : "端点不可用",
+                    endpointIsListening ? "本地代理（未归属核心）" : "端点不可用",
                     endpointIsListening
-                        ? $"Windows 指向 {systemProxy.ExplicitEndpoint}，但该监听 PID 未归属于已检测的 Mihomo 进程"
+                        ? $"Windows 指向 {systemProxy.ExplicitEndpoint}，但该监听 PID 未归属于已检测的代理核心"
                         : $"Windows 指向 {systemProxy.ExplicitEndpoint}，但该端点未监听",
                     "入",
                     HealthLevel.Warning);
@@ -487,7 +521,7 @@ public sealed class ProxyProbeService
                                                     : routeLookupUnknown
                                                         ? "系统路由状态无法确认"
                                                         : configuredPortConflict
-                                                            ? "本地端口未归属 Mihomo"
+                                                            ? "本地端口未归属核心"
                                                             : "系统路径需确认";
                 var portConflictIsPrimary = configuredPortConflict &&
                     !environmentManaged && !httpsCoverageMissing && !explicitMismatch &&
@@ -746,18 +780,19 @@ public sealed class ProxyProbeService
         int port,
         TcpListenerAttribution attribution,
         bool healthyMihomoTunRoute,
-        bool alternateSystemPath = false) => attribution switch
+        bool alternateSystemPath = false,
+        string? ownerClientName = null) => attribution switch
         {
             TcpListenerAttribution.MihomoOwned => new MetricSnapshot(
                 "本地端口",
-                $"{port} 由 Mihomo 监听",
+                ownerClientName is null ? $"{port} 由代理核心监听" : $"{port} 由 {ownerClientName} 监听",
                 LocalEndpointPolicy.FormatEndpoint(host, port),
                 "端",
                 HealthLevel.Ok),
             TcpListenerAttribution.OtherOrUnknown => new MetricSnapshot(
                 "本地端口",
                 $"{port} 监听者未归属",
-                "端口可连接，但监听 PID 未归属于已检测的 Mihomo 进程",
+                "端口可连接，但监听 PID 未归属于已检测的代理核心",
                 "端",
                 HealthLevel.Warning),
             _ when healthyMihomoTunRoute => new MetricSnapshot(

@@ -343,6 +343,7 @@ struct GuardSelectionSnapshot: Equatable, Sendable {
         case "xray": "Xray"
         case "v2ray": "V2Ray"
         case "ikuuuvpncore": "iKuuuVPN"
+        case "macpackettunnel", "shadowrocket": "Shadowrocket"
         default: URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
         }
     }

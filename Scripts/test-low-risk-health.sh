@@ -10,9 +10,20 @@ WINDOWS_SERVICE="$PROJECT_ROOT/Windows/Services/HealthCheckService.cs"
 WINDOWS_MAIN="$PROJECT_ROOT/Windows/MainWindow.xaml"
 TEMP_ROOT=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/proxygauge-health-ip-test.XXXXXX")
 cleanup() {
+  if [ -n "${PROVIDER_TEST_PIDS:-}" ]; then
+    kill $PROVIDER_TEST_PIDS 2>/dev/null || true
+  fi
   /bin/rm -rf "$TEMP_ROOT"
 }
 trap cleanup EXIT
+
+# Keep unconfigured fixtures independent of the host's running proxy and routes.
+# Individual scenarios below explicitly override these snapshots as needed.
+export PROXYGAUGE_CORE_PIDS=''
+export PROXYGAUGE_TUN_ROUTE_TABLE=''
+export PROXYGAUGE_ROUTE_LOOKUP_RESULTS=''
+export PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}'
+export PROXYGAUGE_MIHOMO_SOCKET="$TEMP_ROOT/missing.sock"
 
 /usr/bin/grep -Fq 'ACTIVE_AI_PROBES="${PROXYGAUGE_ACTIVE_AI_PROBES:-0}"' "$CHECK"
 /usr/bin/grep -Fq 'GEMINI_PROBE_PROXY="$MIXED_PROXY_ENDPOINT"' "$CHECK"
@@ -81,6 +92,7 @@ if /usr/bin/grep -Fq 'Click="HealthButton_Click"' "$WINDOWS_MAIN"; then
 fi
 
 generic_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CORE_PIDS=41001 \
   PROXYGAUGE_MIXED=127.0.0.1:9 \
   PROXYGAUGE_SECONDARY_ENABLED=0 \
@@ -88,7 +100,7 @@ generic_output=$(PROXYGAUGE_CONFIG=/dev/null \
   PROXYGAUGE_TIMEOUT=1 \
   /bin/bash "$CHECK" 2>&1 || true)
 /usr/bin/grep -Fq '检测方案: 通用检测' <<< "$generic_output"
-/usr/bin/grep -Fq 'Mihomo 核心运行中 (PID 41001)' <<< "$generic_output"
+/usr/bin/grep -Fq '代理客户端运行中 (PID 41001)' <<< "$generic_output"
 [ "$(/usr/bin/grep -c '^===== [1-7]\.' <<< "$generic_output")" = "4" ]
 if /usr/bin/grep -Fq '===== 5.' <<< "$generic_output"; then
   echo "The generic plan must not render optional placeholder sections." >&2
@@ -96,6 +108,7 @@ if /usr/bin/grep -Fq '===== 5.' <<< "$generic_output"; then
 fi
 
 extended_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_MIXED=127.0.0.1:9 \
   PROXYGAUGE_SECONDARY_ENABLED=1 \
   PROXYGAUGE_SECONDARY_MIXED=127.0.0.1:10 \
@@ -105,6 +118,11 @@ extended_output=$(PROXYGAUGE_CONFIG=/dev/null \
   /bin/bash "$CHECK" 2>&1 || true)
 /usr/bin/grep -Fq '检测方案: 通用检测 + Google / Gemini / Claude' <<< "$extended_output"
 [ "$(/usr/bin/grep -c '^===== [1-7]\.' <<< "$extended_output")" = "7" ]
+/usr/bin/grep -Fq '未检测到 Mihomo 控制 socket；跳过可选策略组与规则检查' <<< "$extended_output"
+if /usr/bin/grep -Fq '无法读取 Mihomo 额外分流状态' <<< "$extended_output"; then
+  echo "A missing Mihomo socket must stay a skip, not a chain-state failure." >&2
+  exit 1
+fi
 
 FAKE_CURL="$TEMP_ROOT/fake-curl"
 /usr/bin/printf '%s\n' \
@@ -131,6 +149,7 @@ FAKE_DNS="$TEMP_ROOT/fake-dscacheutil"
 /bin/chmod 755 "$FAKE_DNS"
 
 unowned_listener_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CURL="$FAKE_CURL" \
   PROXYGAUGE_CORE_PIDS=41001 \
   PROXYGAUGE_DISCOVERY_PORT_ACTIVE=1 \
@@ -141,9 +160,10 @@ unowned_listener_output=$(PROXYGAUGE_CONFIG=/dev/null \
   PROXYGAUGE_TUN_KIND=other \
   PROXYGAUGE_TIMEOUT=1 \
   /bin/bash "$CHECK" 2>&1 || true)
-/usr/bin/grep -Fq '可以连接，但监听器不属于已检测的 Mihomo 核心' <<< "$unowned_listener_output"
+/usr/bin/grep -Fq '可以连接，但监听器不属于已检测的 代理客户端或核心' <<< "$unowned_listener_output"
 
 host_mismatch_listener_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CURL="$FAKE_CURL" \
   PROXYGAUGE_CORE_PIDS=41001 \
   PROXYGAUGE_DISCOVERY_PORT_ACTIVE=1 \
@@ -154,9 +174,10 @@ host_mismatch_listener_output=$(PROXYGAUGE_CONFIG=/dev/null \
   PROXYGAUGE_TUN_KIND=none \
   PROXYGAUGE_TIMEOUT=1 \
   /bin/bash "$CHECK" 2>&1 || true)
-/usr/bin/grep -Fq '可以连接，但监听器不属于已检测的 Mihomo 核心' <<< "$host_mismatch_listener_output"
+/usr/bin/grep -Fq '可以连接，但监听器不属于已检测的 代理客户端或核心' <<< "$host_mismatch_listener_output"
 
 host_exact_listener_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CURL="$FAKE_CURL" \
   PROXYGAUGE_CORE_PIDS=41001 \
   PROXYGAUGE_DISCOVERY_PORT_ACTIVE=1 \
@@ -167,10 +188,11 @@ host_exact_listener_output=$(PROXYGAUGE_CONFIG=/dev/null \
   PROXYGAUGE_TUN_KIND=none \
   PROXYGAUGE_TIMEOUT=1 \
   /bin/bash "$CHECK" 2>&1 || true)
-/usr/bin/grep -Fq '监听中，且属于已检测的 Mihomo 核心' <<< "$host_exact_listener_output"
+/usr/bin/grep -Fq '监听中，且属于已检测的 代理客户端或核心' <<< "$host_exact_listener_output"
 
 dns_start=$(/bin/date +%s)
 dns_timeout_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CURL="$FAKE_CURL" \
   PROXYGAUGE_DSCACHEUTIL="$FAKE_DNS" \
   PROXYGAUGE_TUN_ACTIVE=1 \
@@ -188,6 +210,7 @@ dns_elapsed=$(( $(/bin/date +%s) - dns_start ))
 /usr/bin/grep -Fq '出口 IP (TUN 系统路径)' <<< "$dns_timeout_output"
 
 other_tunnel_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CURL="$FAKE_CURL" \
   PROXYGAUGE_TUN_ACTIVE=1 \
   PROXYGAUGE_TUN_KIND=other \
@@ -203,6 +226,7 @@ if /usr/bin/grep -Fq 'TUN DNS 返回 Fake-IP' <<< "$other_tunnel_output"; then
 fi
 
 generic_route_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CURL="$FAKE_CURL" \
   PROXYGAUGE_TUN_ROUTE_TABLE=$'default            10.0.0.1           UGScg                 utun7' \
   PROXYGAUGE_MIHOMO_SOCKET="$TEMP_ROOT/missing.sock" \
@@ -218,6 +242,7 @@ TUN_CONFIG_WITHOUT_DEVICE="$TEMP_ROOT/tun-config-without-device.json"
 ROUTES_UTUN7_V4=$'inet 1.1.1.1 utun7\ninet 8.8.8.8 utun7\ninet 9.9.9.9 utun7\ninet 208.67.222.222 utun7\ninet6 2606:4700:4700::1111 unavailable\ninet6 2001:4860:4860::8888 unavailable\ninet6 2620:fe::fe unavailable\ninet6 2620:119:35::35 unavailable'
 ROUTES_PHYSICAL_V4=${ROUTES_UTUN7_V4//utun7/en0}
 enabled_config_generic_route_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CURL="$FAKE_CURL" \
   PROXYGAUGE_TUN_ROUTE_TABLE=$'default            10.0.0.1           UGScg                 utun7' \
   PROXYGAUGE_DISCOVERY_SOCKET_JSON="$TUN_CONFIG_WITHOUT_DEVICE" \
@@ -229,6 +254,7 @@ enabled_config_generic_route_output=$(PROXYGAUGE_CONFIG=/dev/null \
 /usr/bin/grep -Fq 'Mihomo TUN 已启用，但路由归属仍需确认；请以系统实际出口为准' <<< "$enabled_config_generic_route_output"
 
 enabled_config_fake_ip_route_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CURL="$FAKE_CURL" \
   PROXYGAUGE_TUN_ROUTE_TABLE=$'198.18/15          link#24            UCS                   utun7' \
   PROXYGAUGE_DISCOVERY_SOCKET_JSON="$TUN_CONFIG_WITHOUT_DEVICE" \
@@ -245,6 +271,7 @@ if /usr/bin/grep -Fq '代表性 IPv4 / IPv6 路由已确认' <<< "$enabled_confi
 fi
 
 confirmed_fake_ip_route_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CURL="$FAKE_CURL" \
   PROXYGAUGE_DSCACHEUTIL=/usr/bin/true \
   PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
@@ -264,6 +291,7 @@ FAKE_TUN_DNS="$TEMP_ROOT/fake-tun-dns"
 /usr/bin/printf '%s\n' '#!/bin/bash' 'echo "ip_address: 198.18.0.2"' > "$FAKE_TUN_DNS"
 /bin/chmod 755 "$FAKE_TUN_DNS"
 if ! tun_only_success_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CURL="$FAKE_CURL" \
   PROXYGAUGE_DSCACHEUTIL="$FAKE_TUN_DNS" \
   PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
@@ -283,6 +311,7 @@ fi
 /usr/bin/grep -Fq '代理链路检查通过' <<< "$tun_only_success_output"
 
 mismatched_mihomo_route_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CURL="$FAKE_CURL" \
   PROXYGAUGE_TUN_ROUTE_TABLE=$'default            10.0.0.1           UGScg                 utun7' \
   PROXYGAUGE_MIHOMO_TUN_ACTIVE=1 \
@@ -300,6 +329,7 @@ if /usr/bin/grep -Fq '代表性 IPv4 / IPv6 路由已确认' <<< "$mismatched_mi
 fi
 
 mismatched_mihomo_fake_ip_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CURL="$FAKE_CURL" \
   PROXYGAUGE_TUN_ROUTE_TABLE=$'198.18/15          link#24            UCS                   utun7' \
   PROXYGAUGE_MIHOMO_TUN_ACTIVE=1 \
@@ -326,6 +356,7 @@ ipv6_output=$(NO_PROXY='*' no_proxy='*' \
 
 wildcard_proxy_state=$'<dictionary> {\n  HTTPSEnable : 1\n  HTTPSProxy : 127.0.0.1\n  HTTPSPort : 9\n  ExceptionsList : <array> {\n    0 : *config*\n  }\n}'
 wildcard_bypass_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CURL="$FAKE_CURL" \
   PROXYGAUGE_MIXED=127.0.0.1:9 \
   PROXYGAUGE_SYSTEM_PROXY_STATE="$wildcard_proxy_state" \
@@ -336,6 +367,7 @@ wildcard_bypass_output=$(PROXYGAUGE_CONFIG=/dev/null \
 
 scoped_only_proxy_state=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n  __SCOPED__ : <dictionary> {\n    en0 : <dictionary> {\n      HTTPSEnable : 1\n      HTTPSProxy : 127.0.0.1\n      HTTPSPort : 9\n    }\n  }\n}'
 scoped_only_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CURL="$FAKE_CURL" \
   PROXYGAUGE_MIXED=127.0.0.1:9 \
   PROXYGAUGE_SYSTEM_PROXY_STATE="$scoped_only_proxy_state" \
@@ -361,6 +393,7 @@ equivalent_loopback_output=$(NO_PROXY='*' no_proxy='*' \
 /usr/bin/grep -Fq '入口与默认 mixed 端口相同，无法区分两个出口' <<< "$equivalent_loopback_output"
 
 remote_endpoint_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CURL="$FAKE_CURL" \
   PROXYGAUGE_MIXED='192.0.2.1:7890' \
   PROXYGAUGE_SECONDARY_ENABLED=0 \
@@ -411,5 +444,191 @@ if /usr/bin/grep -Fq '默认出口已由多个 IP 查询源确认' <<< "$tie_out
   echo 'A tied health-check result must not be promoted as the default exit.' >&2
   exit 1
 fi
+
+# 通用代理提供者（Shadowrocket）夹具：编译一个可改名常驻进程充当
+# Shadowrocket / MacPacketTunnel / mihomo，用真实 ps 名字解析验证
+# check.sh 的 provider 归并、归因文案与端口归属（与 test-backend.sh 同模式）。
+PROVIDER_HELPER_SRC="$TEMP_ROOT/provider-helper.c"
+/usr/bin/printf '%s\n' \
+  '#include <unistd.h>' \
+  'int main(void) { for (;;) pause(); }' > "$PROVIDER_HELPER_SRC"
+/usr/bin/clang -o "$TEMP_ROOT/provider-helper" "$PROVIDER_HELPER_SRC"
+/bin/cp "$TEMP_ROOT/provider-helper" "$TEMP_ROOT/Shadowrocket"
+/bin/cp "$TEMP_ROOT/provider-helper" "$TEMP_ROOT/MacPacketTunnel"
+/bin/cp "$TEMP_ROOT/provider-helper" "$TEMP_ROOT/mihomo"
+"$TEMP_ROOT/Shadowrocket" &
+shadowrocket_test_pid=$!
+"$TEMP_ROOT/MacPacketTunnel" &
+packet_tunnel_test_pid=$!
+"$TEMP_ROOT/mihomo" &
+mihomo_test_pid=$!
+PROVIDER_TEST_PIDS="$shadowrocket_test_pid $packet_tunnel_test_pid $mihomo_test_pid"
+shadowrocket_provider_pids="$shadowrocket_test_pid
+$packet_tunnel_test_pid"
+
+mihomo_provider_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
+  PROXYGAUGE_CURL="$FAKE_CURL" \
+  PROXYGAUGE_CORE_PIDS="$mihomo_test_pid" \
+  PROXYGAUGE_DISCOVERY_PORT_ACTIVE=1 \
+  PROXYGAUGE_DISCOVERY_LISTENER_RECORDS="p$mihomo_test_pid
+n127.0.0.1:53011" \
+  PROXYGAUGE_MIXED=127.0.0.1:53011 \
+  PROXYGAUGE_SECONDARY_ENABLED=0 \
+  PROXYGAUGE_TUN_ACTIVE=0 \
+  PROXYGAUGE_TIMEOUT=1 \
+  /bin/bash "$CHECK" 2>&1 || true)
+/usr/bin/grep -Fq "Mihomo 核心运行中 (PID $mihomo_test_pid)" <<< "$mihomo_provider_output"
+/usr/bin/grep -Fq '127.0.0.1:53011 监听中，且属于已检测的 Mihomo 核心' <<< "$mihomo_provider_output"
+
+if ! shadowrocket_provider_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 1\n  HTTPSProxy : 127.0.0.1\n  HTTPSPort : 53012\n}' \
+  PROXYGAUGE_CURL="$FAKE_CURL" \
+  PROXYGAUGE_PROVIDER_PIDS="$shadowrocket_provider_pids" \
+  PROXYGAUGE_DISCOVERY_PORT_ACTIVE=1 \
+  PROXYGAUGE_DISCOVERY_LISTENER_RECORDS="p$packet_tunnel_test_pid
+n127.0.0.1:53012" \
+  PROXYGAUGE_MIXED=127.0.0.1:53012 \
+  PROXYGAUGE_SECONDARY_ENABLED=0 \
+  PROXYGAUGE_TUN_ACTIVE=0 \
+  PROXYGAUGE_TIMEOUT=1 \
+  /bin/bash "$CHECK" 2>&1); then
+  echo 'A Shadowrocket-attributed health check must pass without failures.' >&2
+  exit 1
+fi
+/usr/bin/grep -Fq "代理客户端运行中 (Shadowrocket, PID $shadowrocket_test_pid)" <<< "$shadowrocket_provider_output"
+/usr/bin/grep -Fq '127.0.0.1:53012 监听中，且属于已检测的 Shadowrocket' <<< "$shadowrocket_provider_output"
+/usr/bin/grep -Fq '代理链路检查通过' <<< "$shadowrocket_provider_output"
+if /usr/bin/grep -Fq 'Mihomo' <<< "$shadowrocket_provider_output"; then
+  echo 'A Shadowrocket-attributed health check must not mention Mihomo.' >&2
+  exit 1
+fi
+
+no_provider_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
+  PROXYGAUGE_CURL="$FAKE_CURL" \
+  PROXYGAUGE_CORE_PIDS='' \
+  PROXYGAUGE_PROVIDER_PIDS='' \
+  PROXYGAUGE_MIXED=127.0.0.1:9 \
+  PROXYGAUGE_SECONDARY_ENABLED=0 \
+  PROXYGAUGE_TUN_ACTIVE=0 \
+  PROXYGAUGE_TIMEOUT=1 \
+  /bin/bash "$CHECK" 2>&1 || true)
+/usr/bin/grep -Fq '未发现代理客户端或核心' <<< "$no_provider_output"
+if /usr/bin/grep -Fq 'Mihomo' <<< "$no_provider_output"; then
+  echo 'A provider-less health check must not blame the Mihomo core.' >&2
+  exit 1
+fi
+
+multi_provider_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
+  PROXYGAUGE_CURL="$FAKE_CURL" \
+  PROXYGAUGE_PROVIDER_PIDS="$shadowrocket_provider_pids
+$mihomo_test_pid" \
+  PROXYGAUGE_MIXED=127.0.0.1:9 \
+  PROXYGAUGE_SECONDARY_ENABLED=0 \
+  PROXYGAUGE_TUN_ACTIVE=0 \
+  PROXYGAUGE_TIMEOUT=1 \
+  /bin/bash "$CHECK" 2>&1 || true)
+/usr/bin/grep -Fq '发现 2 个代理客户端或核心' <<< "$multi_provider_output"
+
+# --- client 隧道归因夹具：无 Mihomo socket、Shadowrocket 提供隧道路由时，
+# 第 3 节必须归属提供者并按已确认处理，不得再说"不能归因于 Mihomo"。
+shadowrocket_client_route_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
+  PROXYGAUGE_CURL="$FAKE_CURL" \
+  PROXYGAUGE_PROVIDER_PIDS="$shadowrocket_provider_pids" \
+  PROXYGAUGE_MIHOMO_SOCKET="$TEMP_ROOT/missing.sock" \
+  PROXYGAUGE_TUN_ROUTE_TABLE=$'default            10.0.0.1           UGScg                 utun7' \
+  PROXYGAUGE_ROUTE_LOOKUP_RESULTS="$ROUTES_UTUN7_V4" \
+  PROXYGAUGE_MIXED=127.0.0.1:9 \
+  PROXYGAUGE_SECONDARY_ENABLED=0 \
+  PROXYGAUGE_TIMEOUT=1 \
+  /bin/bash "$CHECK" 2>&1 || true)
+/usr/bin/grep -Fq 'Shadowrocket VPN: 代表性隧道路由已确认' <<< "$shadowrocket_client_route_output"
+/usr/bin/grep -Fq '代理入口已生效' <<< "$shadowrocket_client_route_output"
+if /usr/bin/grep -Fq '不能归因于 Mihomo' <<< "$shadowrocket_client_route_output"; then
+  echo 'A provider-owned client tunnel must not be reported as unattributable to Mihomo.' >&2
+  exit 1
+fi
+
+ROUTES_UTUN9_V4=${ROUTES_UTUN7_V4//utun7/utun9}
+trusted_client_route_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
+  PROXYGAUGE_CURL="$FAKE_CURL" \
+  PROXYGAUGE_PROVIDER_PIDS="$shadowrocket_provider_pids" \
+  PROXYGAUGE_MIHOMO_SOCKET="$TEMP_ROOT/missing.sock" \
+  PROXYGAUGE_TUN_ROUTE_TABLE=$'default            10.0.0.1           UGScg                 utun7' \
+  PROXYGAUGE_TRUSTED_CLIENT_TUNS=utun9 \
+  PROXYGAUGE_ROUTE_LOOKUP_RESULTS="$ROUTES_UTUN9_V4" \
+  PROXYGAUGE_MIXED=127.0.0.1:9 \
+  PROXYGAUGE_SECONDARY_ENABLED=0 \
+  PROXYGAUGE_TIMEOUT=1 \
+  /bin/bash "$CHECK" 2>&1 || true)
+/usr/bin/grep -Fq 'Shadowrocket VPN: 代表性隧道路由已确认' <<< "$trusted_client_route_output"
+
+untrusted_client_route_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
+  PROXYGAUGE_CURL="$FAKE_CURL" \
+  PROXYGAUGE_PROVIDER_PIDS="$shadowrocket_provider_pids" \
+  PROXYGAUGE_MIHOMO_SOCKET="$TEMP_ROOT/missing.sock" \
+  PROXYGAUGE_TUN_ROUTE_TABLE=$'default            10.0.0.1           UGScg                 utun9' \
+  PROXYGAUGE_TRUSTED_CLIENT_TUNS=utun9 \
+  PROXYGAUGE_ROUTE_LOOKUP_RESULTS="$ROUTES_UTUN7_V4" \
+  PROXYGAUGE_MIXED=127.0.0.1:9 \
+  PROXYGAUGE_SECONDARY_ENABLED=0 \
+  PROXYGAUGE_TIMEOUT=1 \
+  /bin/bash "$CHECK" 2>&1 || true)
+/usr/bin/grep -Fq '检测到其他 VPN / TUN；请以系统实际出口确认当前路径' <<< "$untrusted_client_route_output"
+if /usr/bin/grep -Fq 'VPN: 代表性隧道路由已确认' <<< "$untrusted_client_route_output"; then
+  echo 'Routes outside the trusted client tunnels must not be attributed to the client.' >&2
+  exit 1
+fi
+
+injected_client_kind_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
+  PROXYGAUGE_CURL="$FAKE_CURL" \
+  PROXYGAUGE_PROVIDER_PIDS="$shadowrocket_provider_pids" \
+  PROXYGAUGE_TUN_ACTIVE=1 \
+  PROXYGAUGE_TUN_KIND=client \
+  PROXYGAUGE_MIXED=127.0.0.1:9 \
+  PROXYGAUGE_SECONDARY_ENABLED=0 \
+  PROXYGAUGE_TIMEOUT=1 \
+  /bin/bash "$CHECK" 2>&1 || true)
+/usr/bin/grep -Fq 'Shadowrocket VPN: 代表性隧道路由已确认' <<< "$injected_client_kind_output"
+
+dual_entry_client_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 1\n  HTTPSProxy : 127.0.0.1\n  HTTPSPort : 53012\n}' \
+  PROXYGAUGE_CURL="$FAKE_CURL" \
+  PROXYGAUGE_PROVIDER_PIDS="$shadowrocket_provider_pids" \
+  PROXYGAUGE_MIHOMO_SOCKET="$TEMP_ROOT/missing.sock" \
+  PROXYGAUGE_TUN_ROUTE_TABLE=$'default            10.0.0.1           UGScg                 utun7' \
+  PROXYGAUGE_ROUTE_LOOKUP_RESULTS="$ROUTES_UTUN7_V4" \
+  PROXYGAUGE_MIXED=127.0.0.1:53012 \
+  PROXYGAUGE_SECONDARY_ENABLED=0 \
+  PROXYGAUGE_TIMEOUT=1 \
+  /bin/bash "$CHECK" 2>&1 || true)
+/usr/bin/grep -Fq 'Shadowrocket VPN: 代表性隧道路由已确认' <<< "$dual_entry_client_output"
+/usr/bin/grep -Fq '系统代理与 TUN 同时开启 — 通常只需保留一个流量入口' <<< "$dual_entry_client_output"
+
+# A confirmed Shadowrocket TUN with no mixed listener uses the system path.
+if ! client_tun_only_success=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
+  PROXYGAUGE_CURL="$FAKE_CURL" \
+  PROXYGAUGE_CORE_PIDS='' \
+  PROXYGAUGE_PROVIDER_PIDS="$shadowrocket_provider_pids" \
+  PROXYGAUGE_MIHOMO_SOCKET="$TEMP_ROOT/missing.sock" \
+  PROXYGAUGE_TUN_ROUTE_TABLE=$'default 10.0.0.1 UGScg utun7' \
+  PROXYGAUGE_ROUTE_LOOKUP_RESULTS="$ROUTES_UTUN7_V4" \
+  PROXYGAUGE_MIXED=127.0.0.1:9 \
+  PROXYGAUGE_DISCOVERY_PORT_ACTIVE=0 \
+  PROXYGAUGE_SECONDARY_ENABLED=0 \
+  PROXYGAUGE_TIMEOUT=1 \
+  /bin/bash "$CHECK" 2>&1); then
+  echo 'Confirmed Shadowrocket TUN-only health must pass without a mixed listener.' >&2
+  exit 1
+fi
+/usr/bin/grep -Fq '出口 IP (TUN 系统路径)' <<< "$client_tun_only_success"
+/usr/bin/grep -Fq '代理链路检查通过' <<< "$client_tun_only_success"
 
 echo "ProxyGauge low-risk health tests passed."

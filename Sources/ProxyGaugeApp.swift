@@ -2420,7 +2420,7 @@ struct ConnectionSetupView: View {
                         .font(.system(size: 21, weight: .semibold, design: .rounded))
                     Text(discovery.found
                          ? "确认一次即可开始使用 ProxyGauge。"
-                         : "启动 Clash Verge 或 Mihomo，ProxyGauge 会自动识别。")
+                         : "启动代理客户端（如 Shadowrocket、Clash Verge、Mihomo），ProxyGauge 会自动识别。")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }

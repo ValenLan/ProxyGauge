@@ -23,6 +23,16 @@ struct AppStatePoliciesCheck {
         let combined = ConnectionPathPresentation.make(mode: "系统代理 + 其他 VPN / TUN")
         try require(combined.value == "系统代理 + 虚拟网卡" && combined.isCombined,
                     "A simultaneous system proxy and virtual adapter must remain orange.")
+        let clientTunnel = ConnectionPathPresentation.make(mode: "Shadowrocket VPN")
+        try require(clientTunnel.value == "虚拟网卡" && clientTunnel.isActive && !clientTunnel.isCombined,
+                    "An attributed client VPN path must be presented as a virtual adapter.")
+        let clientCombined = ConnectionPathPresentation.make(mode: "系统代理 + Shadowrocket VPN")
+        try require(clientCombined.value == "系统代理 + 虚拟网卡" && clientCombined.isCombined,
+                    "An attributed client VPN combined with a system proxy must remain orange.")
+        let clientStatus = ConnectionStatusPresentation.make(
+            mode: "Shadowrocket VPN", networkAvailable: true, probeAvailable: true)
+        try require(clientStatus == .init(value: "虚拟网卡", detailOverride: nil, tone: .ok),
+                    "An attributed client VPN path must be a green single-path status.")
         try require(ConnectionPathPresentation.make(mode: "未开启").value == nil,
                     "An inactive path must not fabricate a connection type.")
         let offline = ConnectionStatusPresentation.make(
@@ -44,6 +54,16 @@ struct AppStatePoliciesCheck {
         try require(snapshot?.tunnels == ["lo0", "utun0"], "Trusted runtime TUN selection must parse.")
         try require(snapshot?.trustedMihomoTunnels == ["utun0"], "A root-selected Mihomo core must export only its TUN interfaces.")
         try require(snapshot?.detectedClientName == "Clash Verge Rev", "The selected core must provide a privacy-safe client label.")
+        let neSelection = GuardSelectionSnapshot.parse(
+            "AUTO\n/Applications/Shadowrocket.app/Contents/PlugIns/MacPacketTunnel.appex/Contents/MacOS/MacPacketTunnel\n0\nlo0 utun5\n")
+        try require(neSelection?.detectedClientName == "Shadowrocket",
+                    "A selected MacPacketTunnel engine must map to the Shadowrocket client name.")
+        let shadowrocketSelection = GuardSelectionSnapshot.parse(
+            "AUTO\n/Applications/Shadowrocket.app/Contents/MacOS/Shadowrocket\n0\nlo0 utun5\n")
+        try require(shadowrocketSelection?.detectedClientName == "Shadowrocket",
+                    "A selected Shadowrocket executable must map to the Shadowrocket client name.")
+        try require(neSelection?.trustedMihomoTunnels == nil,
+                    "A selected NE client must not export Mihomo tunnel trust.")
         let otherCore = GuardSelectionSnapshot.parse(sample.replacingOccurrences(of: "verge-mihomo", with: "other-vpn"))
         try require(otherCore?.trustedMihomoTunnels == nil, "Another VPN selection must not be attributed to Mihomo.")
         let ambiguous = GuardSelectionSnapshot.parse(sample.replacingOccurrences(of: "\n0\n", with: "\n1\n"))

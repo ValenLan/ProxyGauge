@@ -45,6 +45,7 @@ fi
 PERSIST_LABEL=com.valenlan.proxygauge.killswitch
 PERSIST_MARKER="$PERSIST_STATE_DIR/enabled"
 MANAGED_MARKER="$PERSIST_STATE_DIR/managed-anchor.sha256"
+NE_ENDPOINTS_FILE="$PERSIST_STATE_DIR/ne-endpoints"
 
 ANCHOR=proxygauge
 ANCHOR_CONF="$ANCHOR_DIR/proxygauge"
@@ -65,6 +66,9 @@ SELECTED_CORE_PATH=""
 SELECTION_AMBIGUOUS=0
 SELECTION_MODE=AUTO
 QUALIFIED_TUNNELS=lo0
+SELECTED_NE=0
+NE_LOCKDOWN=0
+PUBLIC_STATE_PURGE_FAILED=0
 BOOTSTRAP_DEFAULT=0
 
 unsupported_rules_present() {
@@ -200,6 +204,12 @@ known_core_name() {
   case "$1" in verge-mihomo|mihomo|clash-meta|clash|sing-box|singbox|xray|v2ray|iKuuuVPNCore|ikuuuvpncore) return 0 ;; *) return 1 ;; esac
 }
 
+# User-space network extension processes. Shadowrocket.app and its packet
+# tunnel both map to the same provider so they count as one candidate.
+ne_provider_key() {
+  case "$1" in MacPacketTunnel|Shadowrocket) /usr/bin/printf '%s\n' shadowrocket ;; *) return 1 ;; esac
+}
+
 valid_core_path() {
   case "$1" in /*) ;; *) return 1 ;; esac
   case "$1" in *$'\n'*|*$'\r'*|*$'\t'*|*:*|*/../*|*/./*|*//*|*/..|*/.) return 1 ;; esac
@@ -207,15 +217,26 @@ valid_core_path() {
 }
 
 proxy_core_records() {
-  if [ "$TEST_MODE" -eq 1 ]; then
+  if [ "$TEST_MODE" -eq 1 ] && [ -z "${PROXYGAUGE_KILLSWITCH_TEST_PS_OUTPUT:-}" ]; then
     /usr/bin/printf '%s\n' "${PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS-verge-mihomo:1001:0}"
     return 0
   fi
   # comm contains the executable path, never process arguments or subscription data.
-  /bin/ps -axo pid=,uid=,comm= | while read -r pid uid path; do
+  if [ "$TEST_MODE" -eq 1 ] && [ -n "${PROXYGAUGE_KILLSWITCH_TEST_PS_OUTPUT:-}" ]; then
+    /usr/bin/printf '%s\n' "$PROXYGAUGE_KILLSWITCH_TEST_PS_OUTPUT"
+  else
+    /bin/ps -axo pid=,uid=,comm=
+  fi | while read -r pid uid path; do
     [ -n "$path" ] || continue
     name="${path##*/}"
-    if known_core_name "$name" || { [ "$SELECTION_MODE" != AUTO ] && [ "$path" = "$SELECTION_MODE" ]; }; then
+    if known_core_name "$name"; then
+      valid_core_path "$path" || continue
+      /usr/bin/printf '%s:%s:%s:%s\n' "$name" "$pid" "$uid" "$path"
+    elif ne_provider_key "$name" >/dev/null 2>&1; then
+      # NE processes always carry the :ne marker, even when manually pinned.
+      valid_core_path "$path" || continue
+      /usr/bin/printf '%s:%s:%s:%s:ne\n' "$name" "$pid" "$uid" "$path"
+    elif [ "$SELECTION_MODE" != AUTO ] && [ "$path" = "$SELECTION_MODE" ]; then
       valid_core_path "$path" || continue
       /usr/bin/printf '%s:%s:%s:%s\n' "$name" "$pid" "$uid" "$path"
     fi
@@ -278,6 +299,7 @@ system_proxy_pid() {
 resolve_core_selection() {
   local records name pid uid path extra previous root_count root_paths root_pids
   local routed active_paths active_devices system_pid system_path chosen_device non_root
+  local ne_key ne_paths ne_count providers_seen
   if [ -n "$SELECTION_REQUEST" ]; then
     SELECTION_MODE="$SELECTION_REQUEST"
   elif [ -r "$SELECTION_FILE" ]; then
@@ -291,13 +313,24 @@ resolve_core_selection() {
   records=$(proxy_core_records) || return 1
   routed=$(public_route_tunnels)
   root_count=0; root_paths=""; root_pids=""; active_paths=""; active_devices=""; non_root=0
+  ne_paths=""; ne_count=0; providers_seen=""
   system_pid=$(system_proxy_pid 2>/dev/null || true); system_path=""
   while IFS=: read -r name pid uid path extra; do
     [ -n "$name$pid$uid$path$extra" ] || continue
     case "$pid:$uid" in *[!0-9:]*|:*) return 1 ;; esac
-    [ -n "$pid" ] && [ -n "$uid" ] && [ -z "$extra" ] || return 1
+    [ -n "$pid" ] && [ -n "$uid" ] && { [ -z "$extra" ] || [ "$extra" = ne ]; } || return 1
     [ -n "$path" ] || path="/Applications/$name"
     valid_core_path "$path" || return 1
+    if [ "$extra" = ne ]; then
+      ne_key=$(ne_provider_key "$name" 2>/dev/null || true)
+      [ -n "$ne_key" ] || return 1
+      ne_paths="$ne_paths$path"$'\n'
+      case "$providers_seen" in
+        *":$ne_key:"*) ;;
+        *) providers_seen="$providers_seen:$ne_key:"; ne_count=$((ne_count + 1)) ;;
+      esac
+      continue
+    fi
     if [ "$uid" != 0 ]; then non_root=1; continue; fi
     root_count=$((root_count + 1)); root_paths="$root_paths$path"$'\n'; root_pids="$root_pids$pid"$'\n'
     if [ "$pid" = "$system_pid" ]; then system_path="$path"; fi
@@ -311,9 +344,13 @@ resolve_core_selection() {
 $records
 EOF
   SELECTION_AMBIGUOUS=0
+  SELECTED_NE=0
   if [ "$SELECTION_MODE" != AUTO ]; then
     SELECTED_CORE_PATH="$SELECTION_MODE"
-    if ! /usr/bin/grep -Fxq "$SELECTED_CORE_PATH" <<< "$root_paths"; then
+    if /usr/bin/grep -Fxq "$SELECTED_CORE_PATH" <<< "$ne_paths"; then
+      # A manually pinned NE path skips the root-service requirement.
+      SELECTED_NE=1
+    elif ! /usr/bin/grep -Fxq "$SELECTED_CORE_PATH" <<< "$root_paths"; then
       [ "$ACTION" = restore ] || { echo 'PROXY_NOT_ROOT：所选核心未以 root 系统服务运行。'; return 1; }
     fi
   elif [ -n "$system_path" ]; then
@@ -327,6 +364,17 @@ EOF
     [ "$ACTION" = restore ] || { echo 'PROXY_AMBIGUOUS：多个代理核心仍在运行，请选择当前使用的代理。'; return 3; }
     if [ -n "$previous" ] && /usr/bin/grep -Fxq "$previous" <<< "$root_paths"; then SELECTED_CORE_PATH="$previous"
     elif [ "$ACTION" != restore ]; then echo 'PROXY_AMBIGUOUS：多个代理核心仍在运行，请选择当前使用的代理。'; return 3; fi
+  elif [ "$ne_count" = 1 ]; then
+    # A single user-space NE provider qualifies below root cores but above refusal.
+    SELECTED_NE=1
+    SELECTED_CORE_PATH=$(/usr/bin/awk 'NF {print;exit}' <<< "$ne_paths")
+  elif [ "$ne_count" -gt 1 ]; then
+    SELECTION_AMBIGUOUS=1
+    [ "$ACTION" = restore ] || { echo 'PROXY_AMBIGUOUS：多个代理核心仍在运行，请选择当前使用的代理。'; return 3; }
+    if [ -n "$previous" ] && /usr/bin/grep -Fxq "$previous" <<< "$ne_paths"; then
+      SELECTED_CORE_PATH="$previous"
+      SELECTED_NE=1
+    fi
   elif [ "$ACTION" != restore ]; then
     echo 'PROXY_NOT_ROOT：请先开启代理客户端的系统服务或 VPN/TUN。'; return 1
   fi
@@ -346,14 +394,27 @@ EOF
       ;;
     *)
       # Other VPNs retain the accepted OS-tunnel trust boundary. Only interfaces
-      # currently selected by public routes qualify; dormant utuns never do.
-      if [ -n "$SELECTED_CORE_PATH" ] && /usr/bin/grep -Fxq "$SELECTED_CORE_PATH" <<< "$root_paths"; then
+      # currently selected by public routes qualify; dormant utuns never do. A
+      # selected NE provider uses the same boundary without root membership.
+      if [ -n "$SELECTED_CORE_PATH" ] && { /usr/bin/grep -Fxq "$SELECTED_CORE_PATH" <<< "$root_paths" \
+        || [ "$SELECTED_NE" = 1 ]; }; then
         for chosen_device in $routed; do
           /usr/bin/grep -Eq '^utun[0-9]+$' <<< "$chosen_device" || continue
           QUALIFIED_TUNNELS="$QUALIFIED_TUNNELS $chosen_device"
         done
       fi ;;
   esac
+  # Monitor/lockdown state machine for NE providers. Monitoring (provider alive
+  # with a public routed utun) omits the catch-all block because the NE enforces
+  # routing itself; lockdown keeps it. Enabling requires the monitoring state.
+  NE_LOCKDOWN=0
+  if [ "$SELECTED_NE" = 1 ] && [ "$QUALIFIED_TUNNELS" = lo0 ]; then
+    NE_LOCKDOWN=1
+    if [ "$ACTION" != restore ]; then
+      echo 'PROXY_NOT_ROOT：请先开启代理客户端的系统服务或 VPN/TUN。'
+      return 1
+    fi
+  fi
   valid_tunnel_interfaces "$QUALIFIED_TUNNELS"
 }
 
@@ -400,6 +461,9 @@ write_runtime_state() {
   local state_value detail runtime_dir temp_state
   state_value="$1"
   detail="${2:-}"
+  if [ "$state_value" = fault ] && [ "$PUBLIC_STATE_PURGE_FAILED" = 1 ]; then
+    detail="${detail:+$detail/}public-state-purge-pending"
+  fi
   runtime_dir=$(/usr/bin/dirname "$RUNTIME_STATE")
   /bin/mkdir -p "$runtime_dir" || return 1
   temp_state=$(/usr/bin/mktemp "$RUNTIME_STATE.XXXXXX") || return 1
@@ -539,8 +603,17 @@ managed_anchor_has_interface_bound_states() {
   ' "$ANCHOR_CONF"
 }
 
+# The catch-all egress block. It is omitted only for a user-space NE provider
+# in monitoring state (provider alive with a public routed utun): the NE
+# enforces routing itself while alive, and the watcher re-arms the block the
+# moment the provider or its tunnel route disappears. Root-core renders and NE
+# lockdown renders always carry it.
+block_all_rule() {
+  /usr/bin/printf '%s\n' 'block return out quick all'
+}
+
 render_managed_rules() {
-  local template destination trusted_tunnels
+  local template destination trusted_tunnels block_rule
   template="$1"
   destination="$2"
   trusted_tunnels="${3:-}"
@@ -549,10 +622,25 @@ render_managed_rules() {
     trusted_tunnels=$(detect_tunnel_interfaces) || return 1
   fi
   valid_tunnel_interfaces "$trusted_tunnels" || return 1
-  /usr/bin/sed \
-    -e "s/__TUN_INTERFACES__/$trusted_tunnels/g" \
-    "$template" > "$destination" || return 1
-  ! /usr/bin/grep -q '__TUN_INTERFACES__' "$destination"
+  if [ $# -ge 4 ]; then
+    block_rule="$4"
+  elif [ "${SELECTED_NE:-0}" = 1 ] && [ "${NE_LOCKDOWN:-0}" = 0 ]; then
+    block_rule=""
+  else
+    block_rule=$(block_all_rule)
+  fi
+  PROXYGAUGE_BLOCK_RULE="$block_rule" /usr/bin/awk -v tunnels="$trusted_tunnels" '
+    BEGIN { block = ENVIRON["PROXYGAUGE_BLOCK_RULE"] }
+    { gsub(/__TUN_INTERFACES__/, tunnels) }
+    /^__BLOCK_ALL_RULE__$/ {
+      if (block != "") print block
+      next
+    }
+    { print }
+  ' "$template" > "$destination" || return 1
+  # The retired NE endpoint token stays in the guard: an old-format persisted
+  # template (upgrade race) must fault here, never leak literal placeholders.
+  ! /usr/bin/grep -qE '__TUN_INTERFACES__|__BLOCK_ALL_RULE__|__NE_ENDPOINT_RULES__' "$destination"
 }
 
 config_has_safe_anchor() {
@@ -648,18 +736,63 @@ anchor_registration_is_safe() {
 }
 
 load_fail_closed_transition() {
-  local template temp_dir transition
-  template="$PERSIST_TEMPLATE"
-  [ -r "$template" ] || template="$PF_TEMPLATE"
+  local template temp_dir transition purge_required
+  purge_required=0
+  if [ "${1:-}" = restore-fault ]; then
+    # Loading a block does not invalidate states created while NE egress was
+    # open. Inspect the live anchor; a failed refresh can leave disk and PF
+    # holding different renders. Retry incomplete purges even after blocking.
+    if public_state_purge_pending \
+      || ! anchor_rules | /usr/bin/grep -qE '^block return out quick all'; then
+      purge_required=1
+    fi
+  fi
   temp_dir=$(/usr/bin/mktemp -d /tmp/proxygauge-pf-transition.XXXXXX) || return 1
   transition="$temp_dir/$ANCHOR"
-  if ! render_managed_rules "$template" "$transition" lo0 \
-    || ! "$PFCTL" -a "$ANCHOR" -nf "$transition" >/dev/null 2>&1 \
-    || ! "$PFCTL" -a "$ANCHOR" -f "$transition" >/dev/null 2>&1; then
+  # Try the persisted template, then the bundled one: a guard-rejected render
+  # (e.g. a retired __NE_ENDPOINT_RULES__ from an upgrade race) must not stop
+  # the safety net while any readable template still renders.
+  for template in "$PERSIST_TEMPLATE" "$PF_TEMPLATE"; do
+    [ -r "$template" ] || continue
+    if render_managed_rules "$template" "$transition" lo0 "$(block_all_rule)" \
+      && "$PFCTL" -a "$ANCHOR" -nf "$transition" >/dev/null 2>&1 \
+      && "$PFCTL" -a "$ANCHOR" -f "$transition" >/dev/null 2>&1; then
+      /bin/rm -rf "$temp_dir"
+      if [ "$purge_required" = 1 ]; then
+        clear_existing_physical_states || return 1
+      fi
+      return 0
+    fi
+  done
+  # In production PF_TEMPLATE and PERSIST_TEMPLATE are the same file, so a
+  # rejected template leaves no second file to try. Fail closed anyway with a
+  # template-independent ruleset; only pfctl itself may defeat this net.
+  /usr/bin/printf '%s\n' \
+    'table <proxygauge_lan> persist { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 224.0.0.0/24, 239.0.0.0/8, 255.255.255.255/32, fc00::/7, fe80::/10, ff02::/16 }' \
+    'trusted_tunnels = "{ lo0 }"' \
+    'pass quick on lo0 all keep state (if-bound)' \
+    'pass out quick on $trusted_tunnels all keep state (if-bound)' \
+    'pass out quick from any to <proxygauge_lan> keep state (if-bound)' \
+    'pass out quick all user = 0 keep state (if-bound)' \
+    'block return out quick all' > "$transition" || { /bin/rm -rf "$temp_dir"; return 1; }
+  if "$PFCTL" -a "$ANCHOR" -nf "$transition" >/dev/null 2>&1 \
+    && "$PFCTL" -a "$ANCHOR" -f "$transition" >/dev/null 2>&1; then
     /bin/rm -rf "$temp_dir"
-    return 1
+    if [ "$purge_required" = 1 ]; then
+      clear_existing_physical_states || return 1
+    fi
+    return 0
   fi
   /bin/rm -rf "$temp_dir"
+  return 1
+}
+
+public_state_purge_pending() {
+  [ "$PUBLIC_STATE_PURGE_FAILED" = 1 ] && return 0
+  /usr/bin/awk -F '\t' '
+    $1 == "fault" && $2 ~ /public-state-purge-pending$/ { found = 1 }
+    END { exit found ? 0 : 1 }
+  ' "$RUNTIME_STATE" 2>/dev/null
 }
 
 refresh_managed_rules() {
@@ -988,13 +1121,18 @@ ensure_pf_reference() {
 }
 
 enable_rules() {
-  local reset_public prior_hash final_hash
+  local reset_public prior_hash final_hash prior_block final_block
   reset_public=0
   if [ "$BOOTSTRAP_DEFAULT" -eq 1 ]; then reset_public=1; install_rules || return 1; fi
   if ! anchor_enabled || ! managed_anchor_has_interface_bound_states; then reset_public=1; fi
+  if public_state_purge_pending; then reset_public=1; fi
   validate_anchor_ownership || return 1
   ensure_existing_anchor_registered || return 1
   prior_hash=$(file_sha256 "$ANCHOR_CONF")
+  prior_block=0
+  if /usr/bin/grep -qE '^[[:space:]]*block return out quick all' "$ANCHOR_CONF" 2>/dev/null; then
+    prior_block=1
+  fi
   if [ "$reset_public" -eq 1 ]; then
     load_fail_closed_transition || return 1
     ensure_pf_reference || return 1
@@ -1004,10 +1142,21 @@ enable_rules() {
   refresh_managed_rules || return 1
   validate_anchor_ownership || return 1
   final_hash=$(file_sha256 "$ANCHOR_CONF")
+  final_block=0
+  if /usr/bin/grep -qE '^[[:space:]]*block return out quick all' "$ANCHOR_CONF" 2>/dev/null; then
+    final_block=1
+  fi
   # Existing if-bound states cannot migrate from a TUN to a physical interface.
   # Atomically replace only this anchor; never flush LAN sessions on handover.
   "$PFCTL" -a "$ANCHOR" -nf "$ANCHOR_CONF" >/dev/null 2>&1 || return 1
   "$PFCTL" -a "$ANCHOR" -f "$ANCHOR_CONF" >/dev/null 2>&1 || return 1
+  if [ "$prior_block" -eq 0 ] && [ "$final_block" -eq 1 ]; then
+    # Entering lockdown from a block-less monitoring anchor: physical states
+    # established while egress was open would otherwise outlive the tunnel.
+    clear_existing_physical_states || { echo '❌ 无法在进入锁定前清理物理公网状态'; return 1; }
+  fi
+  # Legacy endpoint-pinning state from older builds is never authoritative.
+  /bin/rm -f "$NE_ENDPOINTS_FILE"
   anchor_enabled || { echo '❌ Kill Switch 启用后验证失败'; return 1; }
   echo '🛡️ Kill Switch 已开启 — 保留局域网，root 系统进程仍豁免'
 }
@@ -1258,6 +1407,7 @@ ff20::/11
 ff40::/10
 ff80::/9
 PUBLIC_NETWORKS
+  PUBLIC_STATE_PURGE_FAILED="$failed"
   [ "$failed" -eq 0 ]
 }
 
@@ -1313,6 +1463,8 @@ case "$ACTION" in
       echo "❌ Kill Switch anchor 清空失败"
       exit 1
     fi
+    "$PFCTL" -a "$ANCHOR" -t proxygauge_ne_endpoints -T flush >/dev/null 2>&1 || true
+    /bin/rm -f "$NE_ENDPOINTS_FILE"
     release_owned_reference
     if ! clear_persisted_intent; then
       echo "❌ Kill Switch 已在当前启动周期关闭，但无法清除开机恢复状态"
@@ -1342,11 +1494,19 @@ case "$ACTION" in
       echo "Kill Switch 未设置为开机恢复，保持关闭"
       exit 0
     fi
-    resolve_core_selection || { write_runtime_state fault selection-failed; exit 1; }
+    # Fault paths must fail closed even when the last successful render was a
+    # block-less NE monitoring anchor; the transition is independent of the
+    # failed resolution and best-effort so the fault semantics stay intact.
+    resolve_core_selection || {
+      load_fail_closed_transition restore-fault || true
+      write_runtime_state fault selection-failed
+      exit 1
+    }
     if enable_rules; then
       persist_selection || exit 1
       write_runtime_state enabled || exit 1
     else
+      load_fail_closed_transition restore-fault || true
       write_runtime_state fault restore-failed || true
       exit 1
     fi
@@ -1360,8 +1520,15 @@ case "$ACTION" in
     pf_line=$("$PFCTL" -s info 2>/dev/null | /usr/bin/head -1)
     if anchor_enabled; then
       rule_count=$(anchor_rules | /usr/bin/awk 'NF {count++} END {print count+0}')
-      write_runtime_state enabled || true
-      echo "✅ Kill Switch: Enabled ($rule_count 条 anchor 规则)"
+      if [ -r "$PERSIST_MARKER" ] \
+        && [ "$(/usr/bin/awk '{print $1; exit}' "$RUNTIME_STATE" 2>/dev/null)" = "fault" ]; then
+        # A blocking render alone cannot prove that old public states were
+        # purged. Preserve the fault and its retry detail until restore succeeds.
+        echo "❌ Kill Switch: Fault (保护恢复尚未完成，恢复服务正在重试)"
+      else
+        write_runtime_state enabled || true
+        echo "✅ Kill Switch: Enabled ($rule_count 条 anchor 规则)"
+      fi
       echo "  $pf_line"
     elif [ -n "$(anchor_rules)" ] && ! anchor_registration_is_safe; then
       write_runtime_state fault unsafe-anchor-registration || true

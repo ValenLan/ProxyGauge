@@ -1725,9 +1725,8 @@ var unknownRouteDiscovery = foundVirtualDiscovery with
 Require(unknownRouteDiscovery.TrafficMode == "路由状态无法确认" &&
         unknownRouteDiscovery.RouteWarning is not null,
     "Connection discovery must preserve an indeterminate native route lookup.");
-Require(ConnectionDiscoveryService.FallbackMixedPorts.SequenceEqual([7890, 7897]) &&
-        !ConnectionDiscoveryService.FallbackMixedPorts.Contains(1080),
-    "The SOCKS-only convention port 1080 must not be guessed as a Mihomo mixed port.");
+Require(ConnectionDiscoveryService.FallbackMixedPorts.SequenceEqual([7890, 7897, 1082, 1080, 10808]),
+    "Fallback discovery must cover the common mixed ports of generic proxy clients.");
 using (var preCancelledTunnelProbe = new CancellationTokenSource())
 {
     preCancelledTunnelProbe.Cancel();

@@ -137,6 +137,9 @@ fi
 /usr/bin/grep -Fq '"其他 VPN 已连接"' "$CONNECTION_FORMATTER"
 /usr/bin/grep -Fq '"其他 VPN / 代理已连接"' "$CONNECTION_FORMATTER"
 /usr/bin/grep -Fq '"其他系统代理已启用"' "$CONNECTION_FORMATTER"
+/usr/bin/grep -Fq '"MacPacketTunnel"' "$CONNECTION_FORMATTER"
+/usr/bin/grep -Fq '未发现代理客户端或核心' "$PROJECT_ROOT/Scripts/proxygauge-check.sh"
+/usr/bin/grep -Fq '未发现代理客户端或核心' "$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
 /usr/bin/grep -Fq '"无网络连接"' "$PROJECT_ROOT/Sources/AppStatePolicies.swift"
 /usr/bin/grep -Fq '"当前使用直连网络"' "$PROJECT_ROOT/Sources/AppStatePolicies.swift"
 /usr/bin/grep -Fq 'model.connectionLevel.color' "$DASHBOARD_SOURCE"
@@ -182,6 +185,12 @@ if /usr/bin/grep -Fq 'Button("稍后", action: deferSetup)' "$APP_SOURCE"; then
   exit 1
 fi
 
+/usr/bin/grep -Fq '启动代理客户端（如 Shadowrocket、Clash Verge、Mihomo），ProxyGauge 会自动识别。' "$APP_SOURCE"
+if /usr/bin/grep -Fq '启动 Clash Verge 或 Mihomo' "$APP_SOURCE"; then
+  echo 'The connection setup guide must address generic proxy clients, not only Clash Verge or Mihomo.' >&2
+  exit 1
+fi
+
 if /usr/bin/grep -Fq '普通公网' \
   "$APP_SOURCE" "$DASHBOARD_SOURCE" "$WINDOWS_MAIN" \
   "$PROJECT_ROOT/Windows/ViewModels/MainViewModel.cs" \
@@ -194,6 +203,11 @@ if /usr/bin/grep -Eq 'api\.ipapi\.is/\?q=|PROXYGAUGE_EXIT_DETAIL_JSON|printf .ne
   echo 'The local IPv4/IPv6 label must not add an IP network-type request.' >&2
   exit 1
 fi
+
+/usr/bin/grep -Fq 'attr_name="${engine_name:-当前代理客户端}"' "$BACKEND"
+/usr/bin/grep -Fq 'detail="${engine_name} VPN 的可用公网路由已确认"' "$BACKEND"
+/usr/bin/grep -Fq 'detail="系统代理与 ${engine_name} VPN 均已启用"' "$BACKEND"
+/usr/bin/grep -Fq '不能归因于 ${attr_name}' "$BACKEND"
 
 /usr/bin/grep -Fq 'await withCheckedContinuation' "$APP_SOURCE"
 /usr/bin/grep -Fq 'waiter.resume()' "$APP_SOURCE"
