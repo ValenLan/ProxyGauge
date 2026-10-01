@@ -179,6 +179,15 @@ struct ConnectionDetailFormatterCheck {
             entryHealthy: true
         ) == "Shadowrocket", "A Shadowrocket path without an engine must keep the client name.")
 
+        require(detail(
+            client: "Shadowrocket",
+            core: "未识别",
+            mode: "Shadowrocket VPN",
+            entryTitle: "Shadowrocket VPN",
+            entryValue: "代表性路由已确认",
+            entryHealthy: true
+        ) == "Shadowrocket", "An unknown engine must not be fabricated as MacPacketTunnel.")
+
         print("ProxyGauge connection detail formatter tests passed.")
     }
 }

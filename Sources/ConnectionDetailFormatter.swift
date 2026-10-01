@@ -2,7 +2,7 @@ import Foundation
 
 enum ConnectionDetailFormatter {
     private static func engineDisplayName(client: String, core: String) -> String {
-        guard client == "Shadowrocket", !core.isEmpty else { return core }
+        guard client == "Shadowrocket", !core.isEmpty, core != "未识别" else { return core }
         return "MacPacketTunnel"
     }
 
