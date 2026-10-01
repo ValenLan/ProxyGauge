@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-PROJECT_ROOT=$(/usr/bin/cd "$([ -n "${BASH_SOURCE[0]:-}" ] && /usr/bin/dirname "${BASH_SOURCE[0]}" || /usr/bin/dirname "$0")/.." && /bin/pwd)
+PROJECT_ROOT=$(cd "$([ -n "${BASH_SOURCE[0]:-}" ] && /usr/bin/dirname "${BASH_SOURCE[0]}" || /usr/bin/dirname "$0")/.." && /bin/pwd)
 
 PROBE_SERVICE="$PROJECT_ROOT/Windows/Services/ProxyProbeService.cs"
 DISCOVERY_SERVICE="$PROJECT_ROOT/Windows/Services/ConnectionDiscoveryService.cs"
@@ -15,12 +15,18 @@ if [ -z "$core_names_block" ]; then
   echo 'ProxyProbeService.cs must declare the CoreProcessNames array.' >&2
   exit 1
 fi
-for coreName in '"xray"' '"v2ray"' '"v2rayN"' '"sing-box"' '"singbox"' '"Shadowsocksr"'; do
+for coreName in '"xray"' '"v2ray"' '"sing-box"' '"singbox"' '"Shadowsocksr"'; do
   if ! /usr/bin/printf '%s\n' "$core_names_block" | /usr/bin/grep -Fq "$coreName"; then
     echo "CoreProcessNames must keep the generic proxy core $coreName." >&2
     exit 1
   fi
 done
+if /usr/bin/grep -Fq '"v2rayN"' <<< "$core_names_block"; then
+  echo 'v2rayN GUI must not count as a second traffic engine alongside Xray/V2Ray.' >&2
+  exit 1
+fi
+/usr/bin/grep -Fq 'Contains("v2rayn", StringComparison.OrdinalIgnoreCase)' "$PROBE_SERVICE"
+
 for coreName in '"verge-mihomo"' '"mihomo"' '"clash-meta"'; do
   if ! /usr/bin/printf '%s\n' "$core_names_block" | /usr/bin/grep -Fq "$coreName"; then
     echo "CoreProcessNames must retain the Mihomo-family core $coreName alongside the generic cores." >&2

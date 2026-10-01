@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   macos:
-    runs-on: macos-15
+    runs-on: macos-26
     outputs:
       version: ${{ steps.package.outputs.version }}
     steps:
@@ -30,6 +30,13 @@ jobs:
           Scripts/test-windows-parity.sh
           Scripts/test-release-installers.sh
           Scripts/test-updater.sh
+          Scripts/test-check-parity.sh
+          Scripts/test-ne-direct-traffic.sh
+          Scripts/test-ne-fault-paths.sh
+          Scripts/test-ne-state-transitions.sh
+          Scripts/test-probe-matrix.sh
+          Scripts/test-provider-detection.sh
+          Scripts/test-windows-parity-extra.sh
           npm pack --dry-run --json
           Scripts/build.sh
       - name: Verify bundle

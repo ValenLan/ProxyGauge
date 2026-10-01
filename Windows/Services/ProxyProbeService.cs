@@ -206,7 +206,6 @@ public sealed class ProxyProbeService
         "clash",
         "xray",
         "v2ray",
-        "v2rayN",
         "sing-box",
         "singbox",
         "Shadowsocksr"

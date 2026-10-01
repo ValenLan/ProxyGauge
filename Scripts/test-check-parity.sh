@@ -85,7 +85,7 @@ $packet_tunnel_test_pid"
 # 保证已死的 PID：用孤儿进程（父 shell 立即退出，sleep 被 launchd 收养），
 # kill 后由 launchd 回收——本脚本的 job 表里没有它，不会触发 bash 3.2
 # "回收被杀后台任务时提前执行 EXIT trap"的坑；ps -o ucomm= 必为空。
-dead_test_pid=$(/bin/bash -c '/bin/sleep 60 & echo $!')
+dead_test_pid=$(/bin/bash -c '/bin/sleep 60 >/dev/null 2>&1 & echo $!')
 kill "$dead_test_pid" 2>/dev/null || true
 sleep 1
 
