@@ -341,9 +341,11 @@ assert_no_purge
 [ ! -e "$PERSIST_TEMPLATE" ]
 
 # --- Old-format persisted template guard on restore ---------------------------
-# The guard must fault the refresh; the fail-closed transition render is also
-# rejected, so the previously armed block-all stays loaded and no literal
-# placeholder may leak into any rendered product.
+# The guard must fault the refresh. The fail-closed transition cannot render
+# the retired template either, so it falls back to the bundled template and
+# finally to a template-independent ruleset: the block must be re-armed exactly
+# once, never left as a stale block-less render, and no literal placeholder may
+# leak into any rendered product.
 /bin/cp "$OLD_TEMPLATE" "$PERSIST_TEMPLATE"
 : > "$PFCTL_LOG"
 if PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS="$NE_RECORDS" \
@@ -353,7 +355,8 @@ if PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS="$NE_RECORDS" \
 fi
 /usr/bin/grep -Eq '^fault[[:space:]]+restore-failed$' "$RUNTIME_STATE"
 /usr/bin/grep -Fq 'block return out quick all' "$MOCK_ANCHOR"
-[ "$(/usr/bin/grep -c -- '^-a proxygauge -f ' "$PFCTL_LOG")" -eq 0 ]
+/usr/bin/grep -Fq 'trusted_tunnels = "{ lo0 }"' "$MOCK_ANCHOR"
+[ "$(/usr/bin/grep -c -- '^-a proxygauge -f ' "$PFCTL_LOG")" -eq 1 ]
 if /usr/bin/grep -qE '__TUN_INTERFACES__|__BLOCK_ALL_RULE__|__NE_ENDPOINT_RULES__' "$MOCK_ANCHOR"; then
   echo '运行时规则不得残留已退役的模板占位符' >&2
   exit 1

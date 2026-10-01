@@ -733,17 +733,38 @@ anchor_registration_is_safe() {
 
 load_fail_closed_transition() {
   local template temp_dir transition
-  template="$PERSIST_TEMPLATE"
-  [ -r "$template" ] || template="$PF_TEMPLATE"
   temp_dir=$(/usr/bin/mktemp -d /tmp/proxygauge-pf-transition.XXXXXX) || return 1
   transition="$temp_dir/$ANCHOR"
-  if ! render_managed_rules "$template" "$transition" lo0 "$(block_all_rule)" \
-    || ! "$PFCTL" -a "$ANCHOR" -nf "$transition" >/dev/null 2>&1 \
-    || ! "$PFCTL" -a "$ANCHOR" -f "$transition" >/dev/null 2>&1; then
+  # Try the persisted template, then the bundled one: a guard-rejected render
+  # (e.g. a retired __NE_ENDPOINT_RULES__ from an upgrade race) must not stop
+  # the safety net while any readable template still renders.
+  for template in "$PERSIST_TEMPLATE" "$PF_TEMPLATE"; do
+    [ -r "$template" ] || continue
+    if render_managed_rules "$template" "$transition" lo0 "$(block_all_rule)" \
+      && "$PFCTL" -a "$ANCHOR" -nf "$transition" >/dev/null 2>&1 \
+      && "$PFCTL" -a "$ANCHOR" -f "$transition" >/dev/null 2>&1; then
+      /bin/rm -rf "$temp_dir"
+      return 0
+    fi
+  done
+  # In production PF_TEMPLATE and PERSIST_TEMPLATE are the same file, so a
+  # rejected template leaves no second file to try. Fail closed anyway with a
+  # template-independent ruleset; only pfctl itself may defeat this net.
+  /usr/bin/printf '%s\n' \
+    'table <proxygauge_lan> persist { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 224.0.0.0/24, 239.0.0.0/8, 255.255.255.255/32, fc00::/7, fe80::/10, ff02::/16 }' \
+    'trusted_tunnels = "{ lo0 }"' \
+    'pass quick on lo0 all keep state (if-bound)' \
+    'pass out quick on $trusted_tunnels all keep state (if-bound)' \
+    'pass out quick from any to <proxygauge_lan> keep state (if-bound)' \
+    'pass out quick all user = 0 keep state (if-bound)' \
+    'block return out quick all' > "$transition" || { /bin/rm -rf "$temp_dir"; return 1; }
+  if "$PFCTL" -a "$ANCHOR" -nf "$transition" >/dev/null 2>&1 \
+    && "$PFCTL" -a "$ANCHOR" -f "$transition" >/dev/null 2>&1; then
     /bin/rm -rf "$temp_dir"
-    return 1
+    return 0
   fi
   /bin/rm -rf "$temp_dir"
+  return 1
 }
 
 refresh_managed_rules() {
@@ -1469,8 +1490,17 @@ case "$ACTION" in
     pf_line=$("$PFCTL" -s info 2>/dev/null | /usr/bin/head -1)
     if anchor_enabled; then
       rule_count=$(anchor_rules | /usr/bin/awk 'NF {count++} END {print count+0}')
-      write_runtime_state enabled || true
-      echo "✅ Kill Switch: Enabled ($rule_count 条 anchor 规则)"
+      if [ -r "$PERSIST_MARKER" ] \
+        && ! anchor_rules | /usr/bin/grep -qE '^block return out quick all' \
+        && [ "$(/usr/bin/awk '{print $1; exit}' "$RUNTIME_STATE" 2>/dev/null)" = "fault" ]; then
+        # A block-less anchor left over from a fault is a stale monitoring
+        # render, not protection; keep the fault visible instead of masking it.
+        write_runtime_state fault stale-monitoring-rules || true
+        echo "❌ Kill Switch: Fault (保护故障后残留监控态规则，恢复服务正在重试)"
+      else
+        write_runtime_state enabled || true
+        echo "✅ Kill Switch: Enabled ($rule_count 条 anchor 规则)"
+      fi
       echo "  $pf_line"
     elif [ -n "$(anchor_rules)" ] && ! anchor_registration_is_safe; then
       write_runtime_state fault unsafe-anchor-registration || true

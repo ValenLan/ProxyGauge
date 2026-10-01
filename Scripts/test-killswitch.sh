@@ -36,6 +36,7 @@ fi
   'state_dir="$PROXYGAUGE_KILLSWITCH_TEST_ROOT/var/run/pfctl-state"' \
   '/bin/mkdir -p "$state_dir"' \
   '/usr/bin/printf "%s\\n" "$*" >> "$PROXYGAUGE_KILLSWITCH_TEST_ROOT/var/run/pfctl.log"' \
+  'if [ -n "${PROXYGAUGE_KILLSWITCH_TEST_PFCTL_DENY:-}" ]; then case " $* " in *" $PROXYGAUGE_KILLSWITCH_TEST_PFCTL_DENY "*) exit 1 ;; esac; fi' \
   'if [ "$1" = "-s" ] && [ "${2:-}" = "info" ]; then echo "Status: Enabled"; exit 0; fi' \
   'if [ "$1" = "-E" ]; then echo "Token : 12345"; exit 0; fi' \
   'if [ "$1" = "-sr" ]; then' \
@@ -72,6 +73,7 @@ run_helper() {
   PROXYGAUGE_KILLSWITCH_TEST_STATE_ADDRESSES="${PROXYGAUGE_KILLSWITCH_TEST_STATE_ADDRESSES:-192.0.2.10 2001:db8::10}" \
   PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS="${PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS-verge-mihomo:1001:0}" \
   PROXYGAUGE_KILLSWITCH_TEST_PS_OUTPUT="${PROXYGAUGE_KILLSWITCH_TEST_PS_OUTPUT-}" \
+  PROXYGAUGE_KILLSWITCH_TEST_PFCTL_DENY="${PROXYGAUGE_KILLSWITCH_TEST_PFCTL_DENY-}" \
   PROXYGAUGE_KILLSWITCH_TEST_RUNTIME_RULES="${PROXYGAUGE_KILLSWITCH_TEST_RUNTIME_RULES:-}" \
   /bin/bash "$HELPER" "$@"
 }
@@ -86,6 +88,7 @@ run_persisted_helper() {
   PROXYGAUGE_KILLSWITCH_TEST_STATE_ADDRESSES="${PROXYGAUGE_KILLSWITCH_TEST_STATE_ADDRESSES:-192.0.2.10 2001:db8::10}" \
   PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS="${PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS-verge-mihomo:1001:0}" \
   PROXYGAUGE_KILLSWITCH_TEST_PS_OUTPUT="${PROXYGAUGE_KILLSWITCH_TEST_PS_OUTPUT-}" \
+  PROXYGAUGE_KILLSWITCH_TEST_PFCTL_DENY="${PROXYGAUGE_KILLSWITCH_TEST_PFCTL_DENY-}" \
   PROXYGAUGE_KILLSWITCH_TEST_RUNTIME_RULES="${PROXYGAUGE_KILLSWITCH_TEST_RUNTIME_RULES:-}" \
   /bin/bash "$PERSIST_HELPER" "$@"
 }
@@ -472,6 +475,75 @@ if /usr/bin/grep -Fq '__NE_ENDPOINT_RULES__' "$mock_anchor"; then
   echo '运行时规则不得残留已退役的模板占位符' >&2
   exit 1
 fi
+
+# The fail-closed transition must survive a guard-rejected persisted template.
+# First recover to a monitoring anchor with a healthy template so each fault
+# below provably re-arms the block instead of inheriting a stale locked anchor.
+/bin/cp "$SCRIPT_DIR/../PF/proxygauge.conf.template" "$PERSIST_TEMPLATE"
+PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS="$ne_records" \
+  run_persisted_helper restore >/dev/null
+if /usr/bin/grep -Fq 'block return out quick all' "$mock_anchor"; then
+  echo '模板恢复后必须回到监控态' >&2
+  exit 1
+fi
+# Fall back to the bundled template when one exists.
+/bin/cat > "$PERSIST_TEMPLATE" <<'OLD_FORMAT_TEMPLATE'
+table <proxygauge_lan> persist { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 224.0.0.0/24, 239.0.0.0/8, 255.255.255.255/32, fc00::/7, fe80::/10, ff02::/16 }
+trusted_tunnels = "{ __TUN_INTERFACES__ }"
+pass quick on lo0 all keep state (if-bound)
+pass out quick on $trusted_tunnels all keep state (if-bound)
+pass out quick from any to <proxygauge_lan> keep state (if-bound)
+pass out quick all user = 0 keep state (if-bound)
+__NE_ENDPOINT_RULES__
+block return out quick all
+OLD_FORMAT_TEMPLATE
+if PROXYGAUGE_KILLSWITCH_TEST_TEMPLATE="$SCRIPT_DIR/../PF/proxygauge.conf.template" \
+  PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS='mihomo:abc:0' \
+  run_persisted_helper restore >/dev/null 2>&1; then
+  echo '旧格式持久化模板下 selection-failed 必须仍返回非零' >&2
+  exit 1
+fi
+/usr/bin/grep -Fq 'selection-failed' "$RUNTIME_STATE"
+/usr/bin/grep -Fq 'trusted_tunnels = "{ lo0 }"' "$mock_anchor"
+/usr/bin/grep -Fq 'block return out quick all' "$mock_anchor"
+# ...and to a template-independent last resort when no second template exists
+# (production: PF_TEMPLATE and PERSIST_TEMPLATE are the same file).
+/bin/cp "$SCRIPT_DIR/../PF/proxygauge.conf.template" "$PERSIST_TEMPLATE"
+PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS="$ne_records" \
+  run_persisted_helper restore >/dev/null
+/bin/cat > "$PERSIST_TEMPLATE" <<'OLD_FORMAT_TEMPLATE'
+table <proxygauge_lan> persist { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 224.0.0.0/24, 239.0.0.0/8, 255.255.255.255/32, fc00::/7, fe80::/10, ff02::/16 }
+trusted_tunnels = "{ __TUN_INTERFACES__ }"
+pass quick on lo0 all keep state (if-bound)
+pass out quick on $trusted_tunnels all keep state (if-bound)
+pass out quick from any to <proxygauge_lan> keep state (if-bound)
+pass out quick all user = 0 keep state (if-bound)
+__NE_ENDPOINT_RULES__
+block return out quick all
+OLD_FORMAT_TEMPLATE
+if PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS='mihomo:abc:0' \
+  run_persisted_helper restore >/dev/null 2>&1; then
+  echo '无备用模板时 selection-failed 必须仍返回非零' >&2
+  exit 1
+fi
+/usr/bin/grep -Fq 'selection-failed' "$RUNTIME_STATE"
+/usr/bin/grep -Fq 'block return out quick all' "$mock_anchor"
+# Recover to a monitoring anchor again, then deny every pfctl syntax check so
+# even the last-resort net cannot load: status must keep the fault visible
+# instead of masking it as enabled.
+/bin/cp "$SCRIPT_DIR/../PF/proxygauge.conf.template" "$PERSIST_TEMPLATE"
+PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS="$ne_records" \
+  run_persisted_helper restore >/dev/null
+if PROXYGAUGE_KILLSWITCH_TEST_PFCTL_DENY='-nf' \
+  PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS="$ne_records" \
+  run_persisted_helper restore >/dev/null 2>&1; then
+  echo '注入 pfctl 故障时 restore 必须失败' >&2
+  exit 1
+fi
+/usr/bin/grep -Fq 'restore-failed' "$RUNTIME_STATE"
+fault_status_output=$(PROXYGAUGE_KILLSWITCH_TEST_PFCTL_DENY='-nf' run_helper status)
+/usr/bin/printf '%s\n' "$fault_status_output" | /usr/bin/grep -Fq 'Kill Switch: Fault'
+[ "$(/usr/bin/awk '{print $1; exit}' "$RUNTIME_STATE")" = "fault" ]
 
 # Root core behaviour stays unchanged: the catch-all block is always rendered.
 run_helper on AUTO >/dev/null
