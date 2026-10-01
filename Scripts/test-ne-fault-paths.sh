@@ -31,7 +31,7 @@ PFCTL_LOG="$TEST_ROOT/var/run/pfctl.log"
 /usr/bin/grep -Fq '__NE_ENDPOINT_RULES__' "$HELPER"
 /usr/bin/grep -Fq 'write_runtime_state fault selection-failed' "$HELPER"
 /usr/bin/grep -Fq 'write_runtime_state fault restore-failed' "$HELPER"
-/usr/bin/grep -Fq 'load_fail_closed_transition || true' "$HELPER"
+/usr/bin/grep -Fq 'load_fail_closed_transition restore-fault || true' "$HELPER"
 /usr/bin/grep -Fq '/bin/rm -f "$NE_ENDPOINTS_FILE"' "$HELPER"
 
 /bin/mkdir -p "$TEST_ROOT/etc/pf.anchors" "$TEST_ROOT/bin" "$TEST_ROOT/var/run"
@@ -45,6 +45,7 @@ PFCTL_LOG="$TEST_ROOT/var/run/pfctl.log"
   'state_dir="$PROXYGAUGE_KILLSWITCH_TEST_ROOT/var/run/pfctl-state"' \
   '/bin/mkdir -p "$state_dir"' \
   '/usr/bin/printf "%s\\n" "$*" >> "$PROXYGAUGE_KILLSWITCH_TEST_ROOT/var/run/pfctl.log"' \
+  'if [ "${PROXYGAUGE_KILLSWITCH_TEST_FAIL_PURGE:-0}" = 1 ] && [ "$1" = -k ]; then exit 1; fi' \
   'if [ "$1" = "-s" ] && [ "${2:-}" = "info" ]; then echo "Status: Enabled"; exit 0; fi' \
   'if [ "$1" = "-E" ]; then echo "Token : 12345"; exit 0; fi' \
   'if [ "$1" = "-sr" ]; then' \
@@ -256,6 +257,7 @@ if /usr/bin/grep -Fq 'block return out quick all' "$MOCK_ANCHOR"; then
   echo '故障注入前运行时 anchor 必须是无 block 的监控态' >&2
   exit 1
 fi
+: > "$PFCTL_LOG"
 if PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS="$BAD_RECORDS" \
   run_persisted_helper restore >/dev/null 2>&1; then
   echo 'restore 选择失败必须返回非零' >&2
@@ -265,6 +267,8 @@ fi
 /usr/bin/grep -Fq 'block return out quick all' "$MOCK_ANCHOR"
 /usr/bin/grep -Fq 'trusted_tunnels = "{ lo0 }"' "$MOCK_ANCHOR"
 [ -r "$PERSIST_MARKER" ]
+
+assert_single_purge_pass
 
 # --- selection-failed idempotency: repeated faults stack no side effects ----
 /bin/cp "$MOCK_ANCHOR" "$TEST_ROOT/var/run/snap-anchor"
@@ -305,6 +309,7 @@ if /usr/bin/grep -Fq 'block return out quick all' "$MOCK_ANCHOR"; then
   exit 1
 fi
 /bin/rm -f "$PERSIST_TEMPLATE"
+: > "$PFCTL_LOG"
 if PROXYGAUGE_KILLSWITCH_TEST_TEMPLATE="$SCRIPT_DIR/../PF/proxygauge.conf.template" \
   PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS="$NE_RECORDS" \
   run_persisted_helper restore >/dev/null 2>&1; then
@@ -315,6 +320,8 @@ fi
 /usr/bin/grep -Fq 'block return out quick all' "$MOCK_ANCHOR"
 /usr/bin/grep -Fq 'trusted_tunnels = "{ lo0 }"' "$MOCK_ANCHOR"
 [ -r "$PERSIST_MARKER" ]
+
+assert_single_purge_pass
 
 # --- restore-failed idempotency ----------------------------------------------
 /bin/cp "$MOCK_ANCHOR" "$TEST_ROOT/var/run/snap-anchor2"
@@ -381,6 +388,40 @@ if /usr/bin/grep -Fq 'block return out quick all' "$ANCHOR_CONF"; then
 fi
 /usr/bin/grep -Fq 'trusted_tunnels = "{ lo0 utun0 }"' "$ANCHOR_CONF"
 [ "$(/usr/bin/head -1 "$RUNTIME_STATE")" = "enabled" ]
+
+# --- A failed public-state purge stays visible and retries while blocked ----
+: > "$PFCTL_LOG"
+if PROXYGAUGE_KILLSWITCH_TEST_FAIL_PURGE=1 \
+  PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS="$BAD_RECORDS" \
+  run_persisted_helper restore >/dev/null 2>&1; then
+  echo '公网状态清理失败不得被当作恢复成功' >&2
+  exit 1
+fi
+assert_single_purge_pass
+/usr/bin/grep -Eq '^fault[[:space:]]+selection-failed/public-state-purge-pending$' "$RUNTIME_STATE"
+/usr/bin/grep -Fq 'block return out quick all' "$MOCK_ANCHOR"
+fault_status_output=$(run_helper status)
+/usr/bin/grep -Fq 'Kill Switch: Fault' <<< "$fault_status_output"
+/usr/bin/grep -Fq 'public-state-purge-pending' "$RUNTIME_STATE"
+
+# Although the anchor now blocks, retry the incomplete purge once. Subsequent
+# selection failures must leave the successfully locked state alone.
+: > "$PFCTL_LOG"
+if PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS="$BAD_RECORDS" \
+  run_persisted_helper restore >/dev/null 2>&1; then
+  echo '选择仍失败时 restore 不得报告成功' >&2
+  exit 1
+fi
+assert_single_purge_pass
+/usr/bin/grep -Eq '^fault[[:space:]]+selection-failed$' "$RUNTIME_STATE"
+: > "$PFCTL_LOG"
+if PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS="$BAD_RECORDS" \
+  run_persisted_helper restore >/dev/null 2>&1; then exit 1; fi
+assert_no_purge
+PROXYGAUGE_KILLSWITCH_TEST_CORE_RECORDS="$NE_RECORDS" \
+  run_persisted_helper restore >/dev/null
+[ "$(/usr/bin/head -1 "$RUNTIME_STATE")" = enabled ]
+! /usr/bin/grep -Fq 'block return out quick all' "$MOCK_ANCHOR"
 
 # --- Legacy ne-endpoints leftovers are cleaned on enable ----------------------
 /usr/bin/printf '%s\n' '203.0.113.9' > "$NE_ENDPOINTS_FILE"

@@ -17,6 +17,14 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Keep unconfigured fixtures independent of the host's running proxy and routes.
+# Individual scenarios below explicitly override these snapshots as needed.
+export PROXYGAUGE_CORE_PIDS=''
+export PROXYGAUGE_TUN_ROUTE_TABLE=''
+export PROXYGAUGE_ROUTE_LOOKUP_RESULTS=''
+export PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}'
+export PROXYGAUGE_MIHOMO_SOCKET="$TEMP_ROOT/missing.sock"
+
 /usr/bin/grep -Fq 'ACTIVE_AI_PROBES="${PROXYGAUGE_ACTIVE_AI_PROBES:-0}"' "$CHECK"
 /usr/bin/grep -Fq 'GEMINI_PROBE_PROXY="$MIXED_PROXY_ENDPOINT"' "$CHECK"
 /usr/bin/grep -Fq 'GEMINI_PROBE_PROXY="$GOOGLE_PROXY_ENDPOINT"' "$CHECK"
@@ -602,5 +610,25 @@ dual_entry_client_output=$(PROXYGAUGE_CONFIG=/dev/null \
   /bin/bash "$CHECK" 2>&1 || true)
 /usr/bin/grep -Fq 'Shadowrocket VPN: 代表性隧道路由已确认' <<< "$dual_entry_client_output"
 /usr/bin/grep -Fq '系统代理与 TUN 同时开启 — 通常只需保留一个流量入口' <<< "$dual_entry_client_output"
+
+# A confirmed Shadowrocket TUN with no mixed listener uses the system path.
+if ! client_tun_only_success=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
+  PROXYGAUGE_CURL="$FAKE_CURL" \
+  PROXYGAUGE_CORE_PIDS='' \
+  PROXYGAUGE_PROVIDER_PIDS="$shadowrocket_provider_pids" \
+  PROXYGAUGE_MIHOMO_SOCKET="$TEMP_ROOT/missing.sock" \
+  PROXYGAUGE_TUN_ROUTE_TABLE=$'default 10.0.0.1 UGScg utun7' \
+  PROXYGAUGE_ROUTE_LOOKUP_RESULTS="$ROUTES_UTUN7_V4" \
+  PROXYGAUGE_MIXED=127.0.0.1:9 \
+  PROXYGAUGE_DISCOVERY_PORT_ACTIVE=0 \
+  PROXYGAUGE_SECONDARY_ENABLED=0 \
+  PROXYGAUGE_TIMEOUT=1 \
+  /bin/bash "$CHECK" 2>&1); then
+  echo 'Confirmed Shadowrocket TUN-only health must pass without a mixed listener.' >&2
+  exit 1
+fi
+/usr/bin/grep -Fq '出口 IP (TUN 系统路径)' <<< "$client_tun_only_success"
+/usr/bin/grep -Fq '代理链路检查通过' <<< "$client_tun_only_success"
 
 echo "ProxyGauge low-risk health tests passed."

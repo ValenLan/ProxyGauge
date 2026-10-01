@@ -844,7 +844,8 @@ SYSTEM_PROXY_STATE=$(/usr/bin/printf '%s\n' "$RAW_SYSTEM_PROXY_STATE" \
   | top_level_system_proxy_state)
 TUN_KIND=$(classify_tunnel_route)
 PURE_TUN_ONLY=""
-if [ "$TUN_KIND" = mihomo ] && ! /usr/bin/printf '%s\n' "$SYSTEM_PROXY_STATE" \
+if { [ "$TUN_KIND" = mihomo ] || [ "$TUN_KIND" = client ]; } \
+  && ! /usr/bin/printf '%s\n' "$SYSTEM_PROXY_STATE" \
   | /usr/bin/grep -qE '(HTTP|HTTPS|SOCKS)Enable : 1|ProxyAuto(Config|Discovery)Enable : 1'; then
   PURE_TUN_ONLY=1
 fi
