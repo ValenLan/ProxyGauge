@@ -104,6 +104,53 @@ struct BackendCommandRunnerCheck {
             "A finished backend must leave the shutdown registry."
         )
 
+        // Terminate/kill storm: the runner must always come back, however the
+        // platform delivers process termination. Regression coverage for a
+        // wedge observed in the reap step after terminate/kill escalation,
+        // where the child was already gone but the runner never returned.
+        for iteration in 0..<24 {
+            let stormStart = Date()
+            let storm = await BackendCommandRunner.run(
+                scriptPath: fixture,
+                action: "hang",
+                environment: ProcessInfo.processInfo.environment,
+                timeoutSeconds: 0.1
+            )
+            try require(
+                storm.status == BackendCommandRunner.timeoutStatus,
+                "Timeout storm iteration \(iteration) must report status 124."
+            )
+            try require(
+                Date().timeIntervalSince(stormStart) < 5,
+                "Timeout storm iteration \(iteration) must not wedge after the kill escalation."
+            )
+        }
+        for iteration in 0..<24 {
+            let stormStart = Date()
+            let stormTask = Task {
+                await BackendCommandRunner.run(
+                    scriptPath: fixture,
+                    action: "hang",
+                    environment: ProcessInfo.processInfo.environment,
+                    timeoutSeconds: 30
+                )
+            }
+            stormTask.cancel()
+            let stormCancelled = await stormTask.value
+            try require(
+                stormCancelled.status == BackendCommandRunner.cancelledStatus,
+                "Cancellation storm iteration \(iteration) must report status 130."
+            )
+            try require(
+                Date().timeIntervalSince(stormStart) < 5,
+                "Cancellation storm iteration \(iteration) must not wedge after the kill escalation."
+            )
+        }
+        try require(
+            BackendCommandRunner.activeProcessCountForTesting == 0,
+            "The terminate/kill storm must leave no registered backend processes."
+        )
+
         print("ProxyGauge backend process-tree timeout tests passed.")
     }
 

@@ -46,6 +46,90 @@ enum BackendCommandRunner {
 
     private static let processRegistry = BackendProcessRegistry()
 
+    // Foundation can lose track of a terminated child: the process is already
+    // reaped, yet isRunning never clears and every waitUntilExit() spins its
+    // runloop forever (observed repeatedly on macOS 27, including from inside
+    // a bounded reap fallback). Nothing in NSTask's wait machinery is reliable
+    // here, so the whole child lifecycle is driven from the kernel instead:
+    // waitpid(WNOHANG) is the only liveness and exit-status source, and a
+    // probe that reaps the child itself keeps no zombies behind.
+    private enum KernelChildState {
+        case running
+        case exited(Int32)
+        case reaped
+    }
+
+    private static func probeChild(_ pid: pid_t) -> KernelChildState {
+        while true {
+            var status: Int32 = 0
+            let result = waitpid(pid, &status, WNOHANG)
+            if result == pid {
+                return .exited(decodeWaitStatus(status))
+            }
+            if result == 0 {
+                return .running
+            }
+            if errno == EINTR {
+                continue
+            }
+            if errno == ECHILD {
+                return .reaped
+            }
+            return .running
+        }
+    }
+
+    // Resolve the exit status without ever consulting NSTask's wait machinery.
+    // A status already decoded by an earlier probe is authoritative. When
+    // NSTask's watcher won the reap race, terminationStatus is read only once
+    // the task no longer claims to run (the accessor raises otherwise); if
+    // that state never comes, return a bounded synthetic failure instead of
+    // hanging. waitUntilExit() is deliberately never called.
+    private static func finalExitStatus(
+        of process: Process,
+        kernelExitStatus: Int32?,
+        statusIsDiscarded: Bool
+    ) async -> Int32 {
+        if let kernelExitStatus {
+            return kernelExitStatus
+        }
+        let pid = process.processIdentifier
+        let budgetDeadline = Date().addingTimeInterval(30)
+        var graceDeadline: Date?
+        while true {
+            switch probeChild(pid) {
+            case .exited(let status):
+                return status
+            case .reaped:
+                if !process.isRunning {
+                    return process.terminationStatus
+                }
+                if graceDeadline == nil {
+                    graceDeadline = Date().addingTimeInterval(1)
+                }
+                if let graceDeadline, Date() >= graceDeadline {
+                    return statusIsDiscarded ? 0 : 1
+                }
+            case .running:
+                if Date() >= budgetDeadline {
+                    return statusIsDiscarded ? 0 : 1
+                }
+            }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+    }
+
+    private static func decodeWaitStatus(_ status: Int32) -> Int32 {
+        let lowBits = status & 0x7f
+        if lowBits == 0 {
+            return (status >> 8) & 0xff
+        }
+        if lowBits != 0x7f {
+            return 128 + lowBits
+        }
+        return status
+    }
+
     static func cancelAll() {
         processRegistry.cancelAll()
     }
@@ -92,8 +176,10 @@ enum BackendCommandRunner {
                 }
                 var timedOut = false
                 var cancelled = false
+                var kernelExitStatus: Int32?
+                var childGone = false
                 let deadline = timeoutSeconds.map { Date().addingTimeInterval($0) }
-                while process.isRunning {
+                while !childGone {
                     if Task.isCancelled {
                         cancelled = true
                         break
@@ -102,9 +188,17 @@ enum BackendCommandRunner {
                         timedOut = true
                         break
                     }
-                    try? await Task.sleep(for: .milliseconds(50))
+                    switch probeChild(process.processIdentifier) {
+                    case .running:
+                        try? await Task.sleep(for: .milliseconds(50))
+                    case .exited(let status):
+                        kernelExitStatus = status
+                        childGone = true
+                    case .reaped:
+                        childGone = true
+                    }
                 }
-                if process.isRunning && (timedOut || cancelled) {
+                if !childGone && (timedOut || cancelled) {
                     if cancelled {
                         // Cancellation may arrive immediately after posix_spawn,
                         // before bash has installed its TERM trap. Give the tiny
@@ -116,14 +210,26 @@ enum BackendCommandRunner {
                     // descendants that inherited this output pipe.
                     process.terminate()
                     let terminationDeadline = Date().addingTimeInterval(1)
-                    while process.isRunning && Date() < terminationDeadline {
-                        try? await Task.sleep(for: .milliseconds(50))
+                    while !childGone && Date() < terminationDeadline {
+                        switch probeChild(process.processIdentifier) {
+                        case .running:
+                            try? await Task.sleep(for: .milliseconds(50))
+                        case .exited(let status):
+                            kernelExitStatus = status
+                            childGone = true
+                        case .reaped:
+                            childGone = true
+                        }
                     }
-                    if process.isRunning {
+                    if !childGone {
                         _ = Darwin.kill(process.processIdentifier, SIGKILL)
                     }
                 }
-                process.waitUntilExit()
+                let exitStatus = await finalExitStatus(
+                    of: process,
+                    kernelExitStatus: kernelExitStatus,
+                    statusIsDiscarded: timedOut || cancelled
+                )
                 let data = await reader.value
                 let output = String(decoding: data, as: UTF8.self)
                 if timedOut {
@@ -132,7 +238,7 @@ enum BackendCommandRunner {
                 if cancelled {
                     return (cancelledStatus, output)
                 }
-                return (process.terminationStatus, output)
+                return (exitStatus, output)
             } catch is CancellationError {
                 return (cancelledStatus, "")
             } catch {
