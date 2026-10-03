@@ -105,14 +105,14 @@ fi
 /usr/bin/grep -Fq 'CFNetworkCopySystemProxySettings()' "$APP_SOURCE"
 /usr/bin/grep -Fq 'SHA256.hash(data: Data(stableDescription(relevantSettings).utf8))' "$APP_SOURCE"
 /usr/bin/grep -Fq 'self.automaticRefreshTask = nil' "$APP_SOURCE"
-/usr/bin/grep -Fq 'guard NSApplication.shared.isActive else {' "$APP_SOURCE"
+/usr/bin/grep -Fq 'guard applicationIsActive() else {' "$APP_SOURCE"
 /usr/bin/grep -Fq 'automaticRefreshTask?.cancel()' "$APP_SOURCE"
 /usr/bin/grep -Fq '!Self.hasDetectedSystemPath(self.discovery.mode)' "$APP_SOURCE"
 /usr/bin/grep -Fq 'timeoutSeconds = 15 * 60' "$APP_SOURCE"
 /usr/bin/grep -Fq 'let result = await execute("fingerprint")' "$APP_SOURCE"
 /usr/bin/grep -Fq 'SystemNetworkChangeMonitor' "$APP_SOURCE"
 /usr/bin/grep -Fq 'SCDynamicStoreSetNotificationKeys' "$APP_SOURCE"
-/usr/bin/grep -Fq 'ExitSummaryPersistence.loadSummary()' "$APP_SOURCE"
+/usr/bin/grep -Fq 'ExitSummaryPersistence.loadSummary(defaults: exitDefaults)' "$APP_SOURCE"
 /usr/bin/grep -Fq 'func refreshExitSummary() async' "$APP_SOURCE"
 if /usr/bin/grep -Fq 'startPeriodicRefresh' "$APP_SOURCE"; then
   echo 'Opening the dashboard must not start a periodic public-exit lookup loop.' >&2
@@ -131,6 +131,9 @@ fi
 /usr/bin/grep -Fq 'if healthExecutionIncomplete { return "检测未完成" }' "$APP_SOURCE"
 /usr/bin/grep -Fq 'healthExecutionIncomplete ? min(report.score, 49) : report.score' "$APP_SOURCE"
 /usr/bin/grep -Fq '检测进程未完整结束；以下仅为已返回的部分结果。' "$APP_SOURCE"
+/usr/bin/grep -Fq 'needsInitialExitLookup = ExitRefreshTriggerPolicy.needsInitialLookup(' "$APP_SOURCE"
+/usr/bin/grep -Fq 'func networkPathDidChange(_ isSatisfied: Bool)' "$APP_SOURCE"
+/usr/bin/grep -Fq 'pathEvaluationGeneration.accepts(generation)' "$APP_SOURCE"
 /usr/bin/grep -Fq 'source: "自动检测失败"' "$PROJECT_ROOT/Sources/AppStatePolicies.swift"
 /usr/bin/grep -Fq 'DiscoveryResultPolicy.make(' "$APP_SOURCE"
 /usr/bin/grep -Fq 'markProbeUnavailable(' "$APP_SOURCE"
@@ -309,7 +312,7 @@ final class ActivationRefreshProbe {
         localRefreshCompletion = completion.stream
         localRefreshSignal = completion.continuation
     }
-    func schedulePathEvaluation() {}
+    func schedulePathEvaluation(refreshLocal: Bool = true) {}
     func scheduleExitRefresh() { publicExitRefreshes += 1 }
     func refresh() async {
         localRefreshes += 1
@@ -370,6 +373,9 @@ discovery_output_method=$(/usr/bin/sed -n '/^    private func parseDiscovery(/,/
 perform_refresh_method=$(/usr/bin/sed -n '/^    private func performRefresh(/,/^    private func startNetworkMonitoring(/p' "$APP_SOURCE" | /usr/bin/sed '$d')
 /bin/cat > "$TEMP_ROOT/discovery-refresh-check.swift" <<'SWIFT'
 import Foundation
+final class DiscoveryFixtureDefaults {
+    func string(forKey key: String) -> String? { nil }
+}
 @MainActor
 final class DiscoveryRefreshProbe {
     var showConnectionSetup = false
@@ -377,6 +383,8 @@ final class DiscoveryRefreshProbe {
     var refreshGeneration = RefreshGenerationGate()
     var discoveryGeneration = RefreshGenerationGate()
     var guardSelection: GuardSelectionSnapshot?
+    let guardSelectionReader: () -> GuardSelectionSnapshot? = { nil }
+    let exitDefaults = DiscoveryFixtureDefaults()
     var appliedProbes = 0
     var unavailableProbes = 0
     var nextProbeResult: (output: String, status: Int32) = ("valid-mock-probe", 0)

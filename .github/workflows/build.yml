@@ -24,6 +24,11 @@ jobs:
           Scripts/test-low-risk-health.sh
           Scripts/test-private-browser.sh
           Scripts/test-ui-semantics.sh
+          Scripts/test-exit-initialization.sh
+          Scripts/test-exit-lifecycle.sh
+          Scripts/test-guard-presentation.sh
+          Scripts/test-network-services.sh
+          python3 Scripts/test-network-service-attribution.py
           Scripts/test-clipboard.sh
           Scripts/test-window-capability.sh
           Scripts/test-branding.sh

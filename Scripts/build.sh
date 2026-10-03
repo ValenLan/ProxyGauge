@@ -20,12 +20,23 @@ fi
   "$APP/Contents/Resources/Rules" \
   "$MODULE_CACHE"
 
+/usr/bin/xcrun swiftc \
+  -target arm64-apple-macosx26.0 \
+  -module-cache-path "$MODULE_CACHE" \
+  -parse-as-library \
+  "$PROJECT_ROOT/HelperSources/NetworkServiceSnapshot.swift" \
+  "$PROJECT_ROOT/HelperSources/NetworkServicesMain.swift" \
+  -o "$APP/Contents/Resources/proxygauge-network-services"
+/usr/bin/codesign --force --sign - "$APP/Contents/Resources/proxygauge-network-services"
+
 BACKEND_SHA=$(/usr/bin/shasum -a 256 "$PROJECT_ROOT/Scripts/proxygauge-backend.sh" | /usr/bin/awk '{print $1}')
+NETWORK_SERVICES_SHA=$(/usr/bin/shasum -a 256 "$APP/Contents/Resources/proxygauge-network-services" | /usr/bin/awk '{print $1}')
 KILLSWITCH_SHA=$(/usr/bin/shasum -a 256 "$PROJECT_ROOT/Scripts/proxygauge-killswitch" | /usr/bin/awk '{print $1}')
 KILLSWITCH_TEMPLATE_SHA=$(/usr/bin/shasum -a 256 "$PROJECT_ROOT/PF/proxygauge.conf.template" | /usr/bin/awk '{print $1}')
 UPDATER_SHA=$(/usr/bin/shasum -a 256 "$PROJECT_ROOT/Scripts/proxygauge-updater.sh" | /usr/bin/awk '{print $1}')
 /usr/bin/sed \
   -e "s/__UPDATE_BACKEND_SHA256__/$BACKEND_SHA/" \
+  -e "s/__UPDATE_NETWORK_SERVICES_SHA256__/$NETWORK_SERVICES_SHA/" \
   -e "s/__UPDATE_KILLSWITCH_SHA256__/$KILLSWITCH_SHA/" \
   -e "s/__UPDATE_KILLSWITCH_TEMPLATE_SHA256__/$KILLSWITCH_TEMPLATE_SHA/" \
   -e "s/__UPDATE_UPDATER_SHA256__/$UPDATER_SHA/" \
@@ -46,6 +57,7 @@ fi
   "$PROJECT_ROOT/Sources/KillSwitchAdminService.swift" \
   "$PROJECT_ROOT/Sources/ProxyGaugeApp.swift" \
   "$PROJECT_ROOT/Sources/DashboardView.swift" \
+  "$PROJECT_ROOT/Sources/GuardPresentation.swift" \
   "$PROJECT_ROOT/Sources/ExitClipboard.swift" \
   "$PROJECT_ROOT/Sources/ExitSummaryService.swift" \
   "$PROJECT_ROOT/Sources/IPAddressVersion.swift" \
@@ -53,6 +65,7 @@ fi
   "$PROJECT_ROOT/Sources/WindowCapability.swift" \
   "$PROJECT_ROOT/Sources/UpdateService.swift" \
   -o "$APP/Contents/MacOS/ProxyGauge"
+
 
 /bin/cp "$PROJECT_ROOT/Info.plist" "$APP/Contents/Info.plist"
 /bin/cp "$PROJECT_ROOT/Resources/ProxyGauge.icns" "$APP/Contents/Resources/ProxyGauge.icns"
@@ -77,6 +90,7 @@ verify_packaged_digest() {
     exit 1
   fi
 }
+verify_packaged_digest "$NETWORK_SERVICES_SHA" "$APP/Contents/Resources/proxygauge-network-services"
 verify_packaged_digest "$BACKEND_SHA" "$APP/Contents/Resources/proxygauge-backend.sh"
 verify_packaged_digest "$KILLSWITCH_SHA" "$APP/Contents/Resources/proxygauge-killswitch"
 verify_packaged_digest "$KILLSWITCH_TEMPLATE_SHA" "$APP/Contents/Resources/proxygauge.conf.template"
@@ -92,6 +106,7 @@ verify_packaged_digest "$UPDATER_SHA" "$APP/Contents/Resources/proxygauge-update
   "$APP/Contents/Resources/proxygauge-updater.sh"
 
 for required_path in \
+  "$APP/Contents/Resources/proxygauge-network-services" \
   "$APP/Contents/Resources/proxygauge-check.sh" \
   "$APP/Contents/Resources/proxygauge-killswitch" \
   "$APP/Contents/Resources/proxygauge-ip-risk.jxa" \
@@ -110,5 +125,6 @@ done
 /usr/bin/plutil -lint "$APP/Contents/Info.plist"
 /usr/bin/codesign --force --deep --sign - "$APP"
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP"
+verify_packaged_digest "$NETWORK_SERVICES_SHA" "$APP/Contents/Resources/proxygauge-network-services"
 
 echo "Built $APP"

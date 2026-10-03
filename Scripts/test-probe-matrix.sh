@@ -8,39 +8,35 @@ set -euo pipefail
 SCRIPT_DIR=$(/usr/bin/dirname "$0")
 BACKEND="$SCRIPT_DIR/proxygauge-backend.sh"
 TEST_ROOT=$(/usr/bin/mktemp -d /tmp/proxygauge-probe-matrix.XXXXXX)
-SR_PIDS=""
 ASSERTIONS=0
 
 cleanup() {
-  if [ -n "$SR_PIDS" ]; then
-    /bin/kill $SR_PIDS 2>/dev/null || true
-  fi
   /bin/rm -rf "$TEST_ROOT"
 }
 trap cleanup EXIT
+# Prevent unconfigured scenarios from consulting or connecting to host proxies.
+export PROXYGAUGE_DISCOVERY_CLIENT=未识别
+export PROXYGAUGE_DISCOVERY_PORT_ACTIVE=0
+export PROXYGAUGE_DISCOVERY_LISTENER_RECORDS=''
+export PROXYGAUGE_MIHOMO_SOCKET="$TEST_ROOT/missing.sock"
+export PROXYGAUGE_DISCOVERY_SOCKET="$TEST_ROOT/missing.sock"
+export PROXYGAUGE_PF_ANCHOR="$TEST_ROOT/missing-anchor"
+
 
 fail() {
   echo "probe 矩阵断言失败: $1" >&2
   exit 1
 }
 
-# Shadowrocket 提供者需要真实进程名解析（provider_pid_name 走 ps），
-# 编译一个可改名常驻 helper，分别以 Shadowrocket / MacPacketTunnel 名字运行。
-PROVIDER_HELPER_SRC="$TEST_ROOT/provider-helper.c"
-/usr/bin/printf '%s\n' \
-  '#include <unistd.h>' \
-  'int main(void) { for (;;) pause(); }' > "$PROVIDER_HELPER_SRC"
-/usr/bin/clang -o "$TEST_ROOT/provider-helper" "$PROVIDER_HELPER_SRC"
-/bin/cp "$TEST_ROOT/provider-helper" "$TEST_ROOT/Shadowrocket"
-/bin/cp "$TEST_ROOT/provider-helper" "$TEST_ROOT/MacPacketTunnel"
-"$TEST_ROOT/Shadowrocket" &
-sr_app_pid=$!
-"$TEST_ROOT/MacPacketTunnel" &
-sr_ne_pid=$!
-SR_PIDS="$sr_app_pid $sr_ne_pid"
+# Isolated provider lifecycle records; never create proxy-named host processes.
+sr_app_pid=51001
+sr_ne_pid=51002
 SR_PROVIDER_PIDS="$sr_app_pid
 $sr_ne_pid"
-
+export PROXYGAUGE_PROVIDER_PROCESS_RECORDS=$'51001\tShadowrocket\tstart-sr\n51002\tMacPacketTunnel\tstart-ne'
+export PROXYGAUGE_NETWORK_SERVICES=$'status\tok\nservice\t11111111-1111-1111-1111-111111111111\tcom.liguangming.Shadowrocket\tconnected\tutun7\tutun7'
+export PROXYGAUGE_ROUTE_LOOKUP_RESULTS=$'inet 1.1.1.1 utun7\ninet 8.8.8.8 utun7\ninet 9.9.9.9 utun7\ninet 208.67.222.222 utun7\ninet6 2606:4700:4700::1111 unavailable\ninet6 2001:4860:4860::8888 unavailable\ninet6 2620:fe::fe unavailable\ninet6 2620:119:35::35 unavailable'
+export PROXYGAUGE_TUN_ROUTE_TABLE=''
 # mihomo 提供者用分配段内的 fake 核心 PID（probe 单核心路径不做 ps 解析）。
 FAKE_MIHOMO_CORE_PID=56001
 MATRIX_PORT=56190
@@ -167,7 +163,7 @@ expect_tail "$CELL_OUT" entry $'未启用\tidle\t流量入口\tarrow.triangle.br
 expect_tail "$CELL_OUT" system $'未启用\tidle' 'mihomo×无入口'
 expect_tail "$CELL_OUT" tun $'未接管\tidle' 'mihomo×无入口'
 
-# ---------- Shadowrocket 提供者（真实命名的常驻进程，无 mihomo 核心） ----------
+# ---------- Shadowrocket 提供者（隔离进程表，无 mihomo 核心） ----------
 
 run_cell 'Shadowrocket×仅系统代理' \
   PROXYGAUGE_CORE_PIDS='' PROXYGAUGE_PROVIDER_PIDS="$SR_PROVIDER_PIDS" \

@@ -5,6 +5,7 @@ import Foundation
 enum BundledResourceIntegrity {
     // These digests are release inputs compiled into the running executable.
     // Scripts/build.sh refuses to package resources that do not match them.
+    static let networkServicesSHA256 = "__UPDATE_NETWORK_SERVICES_SHA256__"
     static let backendSHA256 = "__UPDATE_BACKEND_SHA256__"
     static let killSwitchHelperSHA256 = "__UPDATE_KILLSWITCH_SHA256__"
     static let killSwitchTemplateSHA256 = "__UPDATE_KILLSWITCH_TEMPLATE_SHA256__"

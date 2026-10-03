@@ -157,6 +157,7 @@ else
   GOOGLE_PROXY_ENDPOINT="$GOOGLE_MIXED_HOST:$GOOGLE_MIXED_PORT"
 fi
 SCRIPT_DIR=$(/usr/bin/dirname "$0")
+RESOURCE_DIR="$SCRIPT_DIR"
 CHAIN_PARSER="${PROXYGAUGE_CHAIN_PARSER:-$SCRIPT_DIR/proxygauge-chain-check.jxa}"
 CURL="${PROXYGAUGE_CURL:-/usr/bin/curl}"
 DSCACHEUTIL="${PROXYGAUGE_DSCACHEUTIL:-/usr/bin/dscacheutil}"
@@ -179,6 +180,134 @@ core_pids() {
   } | /usr/bin/awk 'NF && !seen[$0]++'
 }
 
+raw_network_services_state() {
+  local helper output
+  if [ -n "${PROXYGAUGE_NETWORK_SERVICES+x}" ]; then
+    /usr/bin/printf '%s\n' "$PROXYGAUGE_NETWORK_SERVICES"
+    return
+  fi
+  helper="${RESOURCE_DIR:-${SCRIPT_DIR:-}}/proxygauge-network-services"
+  [ -x "$helper" ] || { /usr/bin/printf 'status\tunavailable\n'; return; }
+  # Bound this read-only SDK child; never signal a proxy or another process.
+  if output=$(/usr/bin/perl -e '
+    use strict; use warnings;
+    my $pid = open(my $pipe, "-|");
+    exit 125 unless defined $pid;
+    if (!$pid) { exec {$ARGV[0]} $ARGV[0]; exit 127; }
+    $SIG{ALRM} = sub {
+      kill "TERM", $pid;
+      select undef, undef, undef, 0.1;
+      kill "KILL", $pid;
+      waitpid($pid, 0);
+      exit 124;
+    };
+    alarm 3;
+    local $/;
+    my $output = <$pipe>;
+    close $pipe;
+    my $status = $?;
+    alarm 0;
+    exit 125 if !defined($output) || length($output) > 65536;
+    exit 1 if $status != 0;
+    print $output;
+  ' -- "$helper" 2>/dev/null); then
+    /usr/bin/printf '%s\n' "$output"
+  else
+    /usr/bin/printf 'status\tunavailable\n'
+  fi
+}
+
+network_services_state() {
+  if [ -n "${PROXYGAUGE_NETWORK_SERVICES+x}" ]; then
+    /usr/bin/printf '%s\n' "$PROXYGAUGE_NETWORK_SERVICES"
+  else
+    /usr/bin/printf '%s\n' "${NETWORK_SERVICES_SNAPSHOT:-status$'\t'unavailable}"
+  fi
+}
+
+network_services_snapshot() {
+  network_services_state | /usr/bin/perl -e '
+    use strict; use warnings;
+    local $/; my $raw = <STDIN> // "";
+    sub unavailable { print "status\tunavailable\n"; exit; }
+    unavailable() if length($raw) > 65536 || $raw =~ /\r/;
+    $raw =~ s/\n+\z//;
+    my @lines = split /\n/, $raw, -1;
+    unavailable() unless @lines && shift(@lines) eq "status\tok";
+    unavailable() if @lines > 256;
+    my %seen; my @records;
+    for my $line (@lines) {
+      my @field = split /\t/, $line, -1;
+      unavailable() unless @field == 6 && $field[0] eq "service";
+      unavailable() unless $field[1] =~ /\A[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}\z/;
+      unavailable() unless $field[2] =~ /\A[A-Za-z0-9_.-]{1,255}\z/;
+      unavailable() unless $field[3] =~ /\A(?:connected|disconnected|connecting|disconnecting|invalid|unknown)\z/;
+      unavailable() if $field[3] eq "invalid" || $field[3] eq "unknown";
+      for my $value (@field[4,5]) {
+        unavailable() unless $value eq "none" || $value =~ /\A[A-Za-z][A-Za-z0-9_.-]{0,63}\z/;
+      }
+      $field[1] = lc $field[1];
+      $field[2] = lc $field[2];
+      unavailable() if $seen{$field[1]}++;
+      push @records, join "\t", @field;
+    }
+    print "status\tok\n";
+    print "$_\n" for sort @records;
+  '
+}
+
+shadowrocket_service_identity() {
+  network_services_snapshot | /usr/bin/awk -F '\t' '
+    $1 == "service" && $4 == "connected" {
+      owner4[$2] = $5; owner6[$2] = $6
+    }
+    $1 == "service" && $3 == "com.liguangming.shadowrocket" {
+      count++
+      service = $2; state = $4; ipv4 = $5; ipv6 = $6
+    }
+    END {
+      if (count != 1 || state != "connected" ||
+          (ipv4 != "none" && ipv4 !~ /^utun[0-9]+$/) ||
+          (ipv6 != "none" && ipv6 !~ /^utun[0-9]+$/) ||
+          (ipv4 == "none" && ipv6 == "none") ||
+          (ipv4 != "none" && ipv6 != "none" && ipv4 != ipv6)) exit 1
+      for (other in owner4) {
+        if (other == service) continue
+        if ((ipv4 != "none" && (owner4[other] == ipv4 || owner6[other] == ipv4)) ||
+            (ipv6 != "none" && (owner4[other] == ipv6 || owner6[other] == ipv6))) exit 1
+      }
+      print service "\t" ipv4 "\t" ipv6
+    }
+  '
+}
+
+provider_process_start() {
+  local pid value
+  pid="$1"
+  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  if [ -n "${PROXYGAUGE_PROVIDER_PROCESS_RECORDS+x}" ]; then
+    value=$(/usr/bin/printf '%s\n' "$PROXYGAUGE_PROVIDER_PROCESS_RECORDS" \
+      | /usr/bin/awk -F '\t' -v pid="$pid" '$1 == pid && NF == 3 { print $3; found++; } END { if (found != 1) exit 1 }') || return 1
+  else
+    value=$(LC_ALL=C /bin/ps -p "$pid" -o lstart= 2>/dev/null || true)
+    value=$(/usr/bin/printf '%s' "$value" | /usr/bin/sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
+  fi
+  [ -n "$value" ] && [ "${#value}" -le 128 ] || return 1
+  /usr/bin/printf '%s\n' "$value"
+}
+
+provider_process_records() {
+  local pid name started
+  while IFS= read -r pid; do
+    case "$pid" in ''|*[!0-9]*) continue ;; esac
+    name=$(provider_pid_name "$pid" 2>/dev/null || true)
+    started=$(provider_process_start "$pid" 2>/dev/null || true)
+    /usr/bin/printf '%s\t%s\t%s\n' "$pid" "${name:-unknown}" "${started:-unknown}"
+  done < <(proxy_provider_pids) | /usr/bin/sort -u
+}
+
+NETWORK_SERVICES_SNAPSHOT=$(raw_network_services_state)
+
 proxy_provider_pids() {
   if [ -n "${PROXYGAUGE_PROVIDER_PIDS+x}" ]; then
     /usr/bin/printf '%s\n' "$PROXYGAUGE_PROVIDER_PIDS"
@@ -199,13 +328,17 @@ provider_pid_name() {
   local pid name
   pid="$1"
   case "$pid" in ''|*[!0-9]*) return 1 ;; esac
-  name=$(/bin/ps -p "$pid" -o ucomm= 2>/dev/null || true)
-  name=$(/usr/bin/printf '%s' "$name" \
-    | /usr/bin/sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
-  [ -n "$name" ] || return 1
+  if [ -n "${PROXYGAUGE_PROVIDER_PROCESS_RECORDS+x}" ]; then
+    name=$(/usr/bin/printf '%s\n' "$PROXYGAUGE_PROVIDER_PROCESS_RECORDS" \
+      | /usr/bin/awk -F '\t' -v pid="$pid" '$1 == pid && NF == 3 { print $2; found++; } END { if (found != 1) exit 1 }') || return 1
+  else
+    name=$(/bin/ps -p "$pid" -o ucomm= 2>/dev/null || true)
+    name=$(/usr/bin/printf '%s' "$name" \
+      | /usr/bin/sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
+  fi
+  [ -n "$name" ] && [ "${#name}" -le 128 ] || return 1
   /usr/bin/printf '%s\n' "$name"
 }
-
 provider_keys() {
   local pid name
   while IFS= read -r pid; do
@@ -706,15 +839,13 @@ trusted_client_tun_candidates() {
 }
 
 client_tun_candidates() {
-  tun_route_table | /usr/bin/awk '
-    tolower($1) == "default" {
-      for (column = 1; column <= NF; column++) {
-        if ($column ~ /^utun[0-9]+$/) { print $column; break }
-      }
-    }
-  ' | /usr/bin/awk 'NF && !seen[$0]++'
+  local identity service ipv4 ipv6
+  identity=$(shadowrocket_service_identity) || return 1
+  IFS=$'\t' read -r service ipv4 ipv6 <<< "$identity"
+  [ "$ipv4" = none ] || /usr/bin/printf '%s\n' "$ipv4"
+  [ "$ipv6" = none ] || [ "$ipv6" = "$ipv4" ] || /usr/bin/printf '%s\n' "$ipv6"
+  return 0
 }
-
 provider_packet_tunnel_running() {
   local pid name
   while IFS= read -r pid; do
@@ -725,36 +856,52 @@ provider_packet_tunnel_running() {
 }
 
 classify_client_tunnel_route() {
-  local label candidates inet_route inet6_route available_count route_interface
+  local label identity service ipv4 ipv6 candidates candidate
+  local inet_route inet6_route available_count route_interface expected_interface
   label=$(provider_label)
-  if [ -z "$label" ]; then
-    /usr/bin/printf '%s\n' other
-    return
-  fi
-  # Mihomo requires its controller/device evidence above. Its process alone,
-  # like a client window without its packet tunnel, cannot claim another VPN.
   if [ "$label" != Shadowrocket ] || ! provider_packet_tunnel_running; then
     /usr/bin/printf '%s\n' other
     return
   fi
-  if ! candidates=$(trusted_client_tun_candidates 2>/dev/null); then
-    candidates=$(client_tun_candidates 2>/dev/null || true)
-  fi
-  if [ -z "$candidates" ]; then
+  # The OS connection must bind this provider to its actual interface. A
+  # resident packet-tunnel process and another VPN default route are not proof.
+  identity=$(shadowrocket_service_identity) || {
     /usr/bin/printf '%s\n' other
     return
+  }
+  IFS=$'\t' read -r service ipv4 ipv6 <<< "$identity"
+  if [ -n "${PROXYGAUGE_TRUSTED_CLIENT_TUNS:-}" ]; then
+    candidates=$(trusted_client_tun_candidates) || {
+      /usr/bin/printf '%s\n' other
+      return
+    }
+    while IFS= read -r candidate; do
+      if [ "$candidate" != "$ipv4" ] && [ "$candidate" != "$ipv6" ]; then
+        /usr/bin/printf '%s\n' other
+        return
+      fi
+    done <<< "$candidates"
+  else
+    candidates=$(client_tun_candidates) || {
+      /usr/bin/printf '%s\n' other
+      return
+    }
   fi
-
   inet_route=$(representative_route_interface inet \
     1.1.1.1 8.8.8.8 9.9.9.9 208.67.222.222)
   inet6_route=$(representative_route_interface inet6 \
     2606:4700:4700::1111 2001:4860:4860::8888 2620:fe::fe 2620:119:35::35)
-
   available_count=0
-  for route_interface in "$inet_route" "$inet6_route"; do
+  for candidate in inet inet6; do
+    if [ "$candidate" = inet ]; then
+      route_interface="$inet_route"; expected_interface="$ipv4"
+    else
+      route_interface="$inet6_route"; expected_interface="$ipv6"
+    fi
     [ "$route_interface" = unavailable ] && continue
     available_count=$((available_count + 1))
-    if ! /usr/bin/grep -Fxq "$route_interface" <<< "$candidates"; then
+    if [ "$expected_interface" = none ] || [ "$route_interface" != "$expected_interface" ] \
+      || ! /usr/bin/grep -Fxq "$route_interface" <<< "$candidates"; then
       /usr/bin/printf '%s\n' other
       return
     fi
@@ -765,7 +912,6 @@ classify_client_tunnel_route() {
     /usr/bin/printf '%s\n' client
   fi
 }
-
 classify_tunnel_route() {
   local device fake_device candidate inet_route inet6_route available_count route_interface
   if ! has_tun_route; then
@@ -773,7 +919,11 @@ classify_tunnel_route() {
     return
   fi
   case "${PROXYGAUGE_TUN_KIND:-}" in
-    mihomo|mihomo-unconfirmed|split|unknown|other|client|none)
+    client)
+      classify_client_tunnel_route
+      return
+      ;;
+    mihomo|mihomo-unconfirmed|split|unknown|other|none)
       /usr/bin/printf '%s\n' "$PROXYGAUGE_TUN_KIND"
       return
       ;;

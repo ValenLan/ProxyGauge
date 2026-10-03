@@ -4,14 +4,18 @@ set -euo pipefail
 SCRIPT_DIR=$(/usr/bin/dirname "$0")
 BACKEND="$SCRIPT_DIR/proxygauge-backend.sh"
 TEST_ROOT=$(/usr/bin/mktemp -d /tmp/proxygauge-provider-detection.XXXXXX)
-HELPER_PID_LIST=""
 cleanup() {
-  if [ -n "$HELPER_PID_LIST" ]; then
-    /bin/kill $HELPER_PID_LIST 2>/dev/null || true
-  fi
   /bin/rm -rf "$TEST_ROOT"
 }
 trap cleanup EXIT
+# Prevent unconfigured scenarios from consulting or connecting to host proxies.
+export PROXYGAUGE_DISCOVERY_CLIENT=未识别
+export PROXYGAUGE_DISCOVERY_PORT_ACTIVE=0
+export PROXYGAUGE_DISCOVERY_LISTENER_RECORDS=''
+export PROXYGAUGE_MIHOMO_SOCKET="$TEST_ROOT/missing.sock"
+export PROXYGAUGE_DISCOVERY_SOCKET="$TEST_ROOT/missing.sock"
+export PROXYGAUGE_PF_ANCHOR="$TEST_ROOT/missing-anchor"
+
 
 # 静态门禁（仅辅助，行为断言见下文）：双进程名归一映射与 1082 兜底端口必须存在。
 /usr/bin/grep -Fq 'Shadowrocket|MacPacketTunnel)' "$BACKEND"
@@ -22,29 +26,15 @@ TEST_PF_CONF="$TEST_ROOT/pf.conf"
 export PROXYGAUGE_PF_CONF="$TEST_PF_CONF"
 export PROXYGAUGE_KILL_STATE="$TEST_ROOT/missing-kill-state"
 
-# macOS 会 SIGKILL 改名后的系统 binary，因此自行编译 pause() helper 并复制成
-# 各提供者进程名，用真实 ps/pgrep 名字解析验证 provider 归并与边界。
-HELPER_SRC="$TEST_ROOT/provider-helper.c"
-/usr/bin/printf '%s\n' \
-  '#include <unistd.h>' \
-  'int main(void) { for (;;) pause(); }' > "$HELPER_SRC"
-/usr/bin/clang -o "$TEST_ROOT/provider-helper" "$HELPER_SRC"
-for helper_name in Shadowrocket MacPacketTunnel mihomo pgunknownx; do
-  /bin/cp "$TEST_ROOT/provider-helper" "$TEST_ROOT/$helper_name"
-done
-
-"$TEST_ROOT/Shadowrocket" &
-SR_PID=$!
-"$TEST_ROOT/MacPacketTunnel" &
-MPT_PID=$!
-"$TEST_ROOT/pgunknownx" &
-UNKNOWN_PID=$!
-HELPER_PID_LIST="$SR_PID
-$MPT_PID
-$UNKNOWN_PID"
+# Isolated provider table; no proxy-named processes or host pgrep dependency.
+SR_PID=51001
+MPT_PID=51002
+MIHOMO_PID=51003
+UNKNOWN_PID=51004
 BOTH_PROVIDER_PIDS="$SR_PID
 $MPT_PID"
-
+export PROXYGAUGE_PROVIDER_PROCESS_RECORDS=$'51001\tShadowrocket\tstart-sr\n51002\tMacPacketTunnel\tstart-ne\n51003\tmihomo\tstart-core\n51004\tpgunknownx\tstart-unknown'
+export PROXYGAUGE_NETWORK_SERVICES=$'status\tok\nservice\t11111111-1111-1111-1111-111111111111\tcom.liguangming.Shadowrocket\tconnected\tutun5\tutun5'
 ROUTES_UTUN5_V4=$'inet 1.1.1.1 utun5\ninet 8.8.8.8 utun5\ninet 9.9.9.9 utun5\ninet 208.67.222.222 utun5\ninet6 2606:4700:4700::1111 unavailable\ninet6 2001:4860:4860::8888 unavailable\ninet6 2620:fe::fe unavailable\ninet6 2620:119:35::35 unavailable'
 ROUTE_TABLE_UTUN5='default            198.18.0.1          UGScg                 utun5'
 ROUTE_TABLE_UTUN9='default            198.18.0.1          UGScg                 utun9'
@@ -168,26 +158,25 @@ assert_client_tun_entry() {
 }
 
 assert_client_tun_entry 'utun5' "$CLIENT_VPN_ENTRY"
-assert_client_tun_entry 'utun5,utun6' "$CLIENT_VPN_ENTRY"
-assert_client_tun_entry 'utun05,utun5' "$CLIENT_VPN_ENTRY"
+assert_client_tun_entry 'utun5,utun6' "$OTHER_TUN_ENTRY"
+assert_client_tun_entry 'utun05,utun5' "$OTHER_TUN_ENTRY"
 assert_client_tun_entry '' "$CLIENT_VPN_ENTRY"
 # 合法但指向错误设备：路由必须降级为“其他”，不得归因于 Shadowrocket。
 assert_client_tun_entry 'utun6' "$OTHER_TUN_ENTRY"
-# 非法格式（空格分隔、尾随逗号、缺数字、非 utun）一律回落到路由表候选。
-assert_client_tun_entry 'utun5 utun6' "$CLIENT_VPN_ENTRY"
-assert_client_tun_entry 'utun5,' "$CLIENT_VPN_ENTRY"
-assert_client_tun_entry 'utun' "$CLIENT_VPN_ENTRY"
-assert_client_tun_entry 'en0' "$CLIENT_VPN_ENTRY"
+# 非法格式或包含服务未绑定接口必须降级，不得靠默认路由推断归属。
+assert_client_tun_entry 'utun5 utun6' "$OTHER_TUN_ENTRY"
+assert_client_tun_entry 'utun5,' "$OTHER_TUN_ENTRY"
+assert_client_tun_entry 'utun' "$OTHER_TUN_ENTRY"
+assert_client_tun_entry 'en0' "$OTHER_TUN_ENTRY"
 
 INJECTION_MARKER="$TEST_ROOT/trusted-tuns-code-executed"
-assert_client_tun_entry 'utun5;$(touch '"$INJECTION_MARKER"')' "$CLIENT_VPN_ENTRY"
+assert_client_tun_entry 'utun5;$(touch '"$INJECTION_MARKER"')' "$OTHER_TUN_ENTRY"
 [ ! -e "$INJECTION_MARKER" ]
 
-# 63 个设备是上限：63 个（含 utun5）合法；64 个被拒绝并回落到路由表候选
-# （路由表默认走 utun9，而代表性路由走 utun5，回落后必须判为“其他”）。
+# 超长或含未绑定设备的列表均不能补足服务归属证据。
 TRUSTED_LIST_63=$(/usr/bin/seq 1 63 | /usr/bin/sed 's/^/utun/' | /usr/bin/paste -sd, -)
 TRUSTED_LIST_64=$(/usr/bin/seq 1 64 | /usr/bin/sed 's/^/utun/' | /usr/bin/paste -sd, -)
-assert_client_tun_entry "$TRUSTED_LIST_63" "$CLIENT_VPN_ENTRY" "$ROUTE_TABLE_UTUN9"
+assert_client_tun_entry "$TRUSTED_LIST_63" "$OTHER_TUN_ENTRY" "$ROUTE_TABLE_UTUN9"
 assert_client_tun_entry "$TRUSTED_LIST_64" "$OTHER_TUN_ENTRY" "$ROUTE_TABLE_UTUN9"
 
 wrong_device_probe=$(PROXYGAUGE_CONFIG=/dev/null \
@@ -240,7 +229,7 @@ fallback_foreign_discovery=$(PROXYGAUGE_CONFIG=/dev/null \
 /usr/bin/grep -Fq $'source\t手动设置' <<< "$fallback_foreign_discovery"
 /usr/bin/grep -Fq $'active\tidle' <<< "$fallback_foreign_discovery"
 
-# 未识别的进程（真实 ps 名字解析后不在任何已知列表）不得被谎称 Mihomo / Clash /
+# 未识别的进程（注入进程表中的名字不在任何已知列表）不得被谎称 Mihomo / Clash /
 # Shadowrocket，其隧道也必须降级为“其他”。
 unknown_provider_probe=$(PROXYGAUGE_CONFIG=/dev/null \
   PROXYGAUGE_CORE_PIDS='' \
@@ -278,81 +267,22 @@ unknown_provider_discovery=$(PROXYGAUGE_CONFIG=/dev/null \
 /usr/bin/grep -Fq $'found\t0' <<< "$unknown_provider_discovery"
 
 # 已失效的 PID（NE 记录残留）不得解析出任何提供者。
-STALE_PIDS_FREE=1
-for stale_pid in 54020 54021; do
-  if /bin/ps -p "$stale_pid" >/dev/null 2>&1; then
-    STALE_PIDS_FREE=0
-  fi
-done
-if [ "$STALE_PIDS_FREE" = 1 ]; then
-  stale_provider_probe=$(PROXYGAUGE_CONFIG=/dev/null \
-    PROXYGAUGE_CORE_PIDS='' \
-    PROXYGAUGE_PROVIDER_PIDS=$'54020\n54021' \
-    PROXYGAUGE_MIXED=127.0.0.1:9 \
-    PROXYGAUGE_DISCOVERY_PORT_ACTIVE=0 \
-    PROXYGAUGE_SYSTEM_PROXY_ACTIVE=0 \
-    PROXYGAUGE_TUN_ROUTE_TABLE="$ROUTE_TABLE_PHYSICAL" \
-    /bin/bash "$BACKEND" probe)
-  [ "$(/usr/bin/awk -F '\t' '$1 == "overall" { print $2 }' <<< "$stale_provider_probe")" = error ]
-  [ "$(/usr/bin/awk -F '\t' '$1 == "core" { print $2 "\t" $3 }' <<< "$stale_provider_probe")" = $'未运行\terror' ]
-  if /usr/bin/grep -Eq 'Mihomo|Shadowrocket|Clash' <<< "$stale_provider_probe"; then
-    echo '失效 PID 不得被解析为任何已知代理提供者。' >&2
-    exit 1
-  fi
-else
-  echo 'SKIP: 54020/54021 被实机进程占用，跳过失效 PID 用例。'
-fi
-
-# 真实 pgrep/ps 路径（不注入 PID 列表）。实机若存在其他 mihomo 系核心进程，
-# 归一结论会被污染，此类只读实机检查条件不满足时打印 SKIP，不得 fail。
-foreign_pids() {
-  local name pid
-  {
-    for name in "$@"; do
-      /usr/bin/pgrep -x "$name" 2>/dev/null || true
-    done
-  } | /usr/bin/awk 'NF && !seen[$0]++' | while IFS= read -r pid; do
-    case "$pid" in ''|*[!0-9]*) continue ;; esac
-    if ! /usr/bin/grep -Fqx "$pid" <<< "$HELPER_PID_LIST"; then
-      /usr/bin/printf '%s\n' "$pid"
-    fi
-  done
-}
-
-if [ -z "$(foreign_pids verge-mihomo mihomo clash-meta)" ]; then
-  real_dual_probe=$(PROXYGAUGE_CONFIG=/dev/null \
-    PROXYGAUGE_MIXED=127.0.0.1:54099 \
-    PROXYGAUGE_DISCOVERY_PORT_ACTIVE=0 \
-    PROXYGAUGE_SYSTEM_PROXY_ACTIVE=0 \
-    PROXYGAUGE_TUN_ROUTE_TABLE="$ROUTE_TABLE_PHYSICAL" \
-    /bin/bash "$BACKEND" probe)
-  [ "$(/usr/bin/awk -F '\t' '$1 == "core" { print $2 "\t" $3 }' <<< "$real_dual_probe")" = $'Shadowrocket\tok' ]
-  if /usr/bin/grep -Fq '2 个核心' <<< "$real_dual_probe"; then
-    echo '真实 pgrep 路径下 Shadowrocket 双进程也必须归一为 1 个提供者。' >&2
-    exit 1
-  fi
-else
-  echo 'SKIP: 实机存在其他 mihomo 系核心进程，跳过真实 pgrep 归一用例。'
-fi
-
-if [ -z "$(foreign_pids verge-mihomo mihomo clash-meta clash sing-box singbox xray v2ray iKuuuVPNCore ikuuuvpncore)" ]; then
-  real_client_discovery=$(PROXYGAUGE_CONFIG=/dev/null \
-    PROXYGAUGE_DISCOVERY_CONFIG="$TEST_ROOT/missing.yaml" \
-    PROXYGAUGE_DISCOVERY_SOCKET="$TEST_ROOT/missing.sock" \
-    PROXYGAUGE_DISCOVERY_PORT_ACTIVE=0 \
-    PROXYGAUGE_SYSTEM_PROXY_ACTIVE=0 \
-    PROXYGAUGE_TUN_ROUTE_TABLE="$ROUTE_TABLE_PHYSICAL" \
-    /bin/bash "$BACKEND" discover)
-  /usr/bin/grep -Fq $'client\tShadowrocket' <<< "$real_client_discovery"
-else
-  echo 'SKIP: 实机存在其他代理客户端进程，跳过真实客户端识别用例。'
+stale_provider_probe=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_CORE_PIDS='' \
+  PROXYGAUGE_PROVIDER_PIDS=$'54020\n54021' \
+  PROXYGAUGE_MIXED=127.0.0.1:9 \
+  PROXYGAUGE_DISCOVERY_PORT_ACTIVE=0 \
+  PROXYGAUGE_SYSTEM_PROXY_ACTIVE=0 \
+  PROXYGAUGE_TUN_ROUTE_TABLE="$ROUTE_TABLE_PHYSICAL" \
+  /bin/bash "$BACKEND" probe)
+[ "$(/usr/bin/awk -F '\t' '$1 == "overall" { print $2 }' <<< "$stale_provider_probe")" = error ]
+[ "$(/usr/bin/awk -F '\t' '$1 == "core" { print $2 "\t" $3 }' <<< "$stale_provider_probe")" = $'未运行\terror' ]
+if /usr/bin/grep -Eq 'Mihomo|Shadowrocket|Clash' <<< "$stale_provider_probe"; then
+  echo '失效 PID 不得被解析为任何已知代理提供者。' >&2
+  exit 1
 fi
 
 # mihomo + Shadowrocket 同时运行：多个提供者必须降级为“其他”，不得猜测归因。
-"$TEST_ROOT/mihomo" &
-MIHOMO_PID=$!
-HELPER_PID_LIST="$HELPER_PID_LIST
-$MIHOMO_PID"
 MULTI_PROVIDER_PIDS="$BOTH_PROVIDER_PIDS
 $MIHOMO_PID"
 
@@ -410,33 +340,5 @@ multi_provider_tun_discovery=$(PROXYGAUGE_CONFIG=/dev/null \
   PROXYGAUGE_ROUTE_LOOKUP_RESULTS="$ROUTES_UTUN5_V4" \
   /bin/bash "$BACKEND" discover)
 /usr/bin/grep -Fq $'mode\t其他 VPN / TUN' <<< "$multi_provider_tun_discovery"
-
-# 真实路径：mihomo 核心与 Shadowrocket 并存时，detected_running_client 命中
-# 两个不同客户端，必须输出“未识别”而不是猜测其一；probe 的 core 行则由唯一
-# 核心（mihomo）优先接管。
-if [ -z "$(foreign_pids verge-mihomo mihomo clash-meta clash sing-box singbox xray v2ray iKuuuVPNCore ikuuuvpncore)" ]; then
-  real_multi_discovery=$(PROXYGAUGE_CONFIG=/dev/null \
-    PROXYGAUGE_DISCOVERY_CONFIG="$TEST_ROOT/missing.yaml" \
-    PROXYGAUGE_DISCOVERY_SOCKET="$TEST_ROOT/missing.sock" \
-    PROXYGAUGE_DISCOVERY_PORT_ACTIVE=0 \
-    PROXYGAUGE_SYSTEM_PROXY_ACTIVE=0 \
-    PROXYGAUGE_TUN_ROUTE_TABLE="$ROUTE_TABLE_PHYSICAL" \
-    /bin/bash "$BACKEND" discover)
-  /usr/bin/grep -Fq $'client\t未识别' <<< "$real_multi_discovery"
-else
-  echo 'SKIP: 实机存在其他代理客户端进程，跳过真实多客户端识别用例。'
-fi
-
-if [ -z "$(foreign_pids verge-mihomo mihomo clash-meta)" ]; then
-  real_core_probe=$(PROXYGAUGE_CONFIG=/dev/null \
-    PROXYGAUGE_MIXED=127.0.0.1:54099 \
-    PROXYGAUGE_DISCOVERY_PORT_ACTIVE=0 \
-    PROXYGAUGE_SYSTEM_PROXY_ACTIVE=0 \
-    PROXYGAUGE_TUN_ROUTE_TABLE="$ROUTE_TABLE_PHYSICAL" \
-    /bin/bash "$BACKEND" probe)
-  [ "$(/usr/bin/awk -F '\t' '$1 == "core" { print $2 "\t" $3 }' <<< "$real_core_probe")" = $'运行中\tok' ]
-else
-  echo 'SKIP: 实机存在其他 mihomo 系核心进程，跳过真实核心优先用例。'
-fi
 
 echo 'ProxyGauge provider detection tests passed.'

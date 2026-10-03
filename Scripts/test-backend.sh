@@ -5,12 +5,26 @@ SCRIPT_DIR=$(/usr/bin/dirname "$0")
 BACKEND="$SCRIPT_DIR/proxygauge-backend.sh"
 TEMP_DIR=$(/usr/bin/mktemp -d /tmp/proxygauge-backend-test.XXXXXX)
 cleanup() {
-  if [ -n "${PROVIDER_TEST_PIDS:-}" ]; then
-    /bin/kill $PROVIDER_TEST_PIDS 2>/dev/null || true
-  fi
   /bin/rm -rf "$TEMP_DIR"
 }
 trap cleanup EXIT
+# Prevent unconfigured scenarios from consulting or connecting to host proxies.
+export PROXYGAUGE_DISCOVERY_CLIENT=未识别
+export PROXYGAUGE_DISCOVERY_PORT_ACTIVE=0
+export PROXYGAUGE_DISCOVERY_LISTENER_RECORDS=''
+export PROXYGAUGE_MIHOMO_SOCKET="$TEMP_DIR/missing.sock"
+export PROXYGAUGE_DISCOVERY_SOCKET="$TEMP_DIR/missing.sock"
+export PROXYGAUGE_PF_ANCHOR="$TEMP_DIR/missing-anchor"
+
+export PROXYGAUGE_NETWORK_SERVICES=$'status\tok'
+export PROXYGAUGE_PROVIDER_PROCESS_RECORDS=''
+export PROXYGAUGE_CONFIG=/dev/null
+export PROXYGAUGE_CORE_PIDS=''
+export PROXYGAUGE_TUN_ROUTE_TABLE=''
+export PROXYGAUGE_ROUTE_LOOKUP_RESULTS=''
+export PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}'
+export PROXYGAUGE_PF_ANCHOR="$TEMP_DIR/missing-anchor"
+
 if [ "$(/usr/bin/grep -Fc '/usr/bin/curl --disable ' "$BACKEND")" -ne \
   "$(/usr/bin/grep -Fc '/usr/bin/curl ' "$BACKEND")" ]; then
   echo 'Every backend curl call must ignore user curl configuration.' >&2
@@ -49,7 +63,7 @@ unconfigured_kill=$(PROXYGAUGE_PF_CONF="$TEMP_DIR/missing-pf.conf" \
 
 configured_off_kill=$(PROXYGAUGE_KILL_TOKEN="$TEMP_DIR/missing-token" \
   /bin/bash "$BACKEND" probe | /usr/bin/awk -F '\t' '$1 == "kill" { print $2 "\t" $3 }')
-[ "$configured_off_kill" = $'已关闭\twarning' ]
+[ "$configured_off_kill" = $'待确认\tidle' ]
 
 assert_entry_state() {
   local system_active tun_active expected actual
@@ -75,12 +89,14 @@ assert_entry_state 1 1 $'同时开启\twarning\t双重入口\texclamationmark.tr
 assert_entry_state 0 0 $'未启用\tidle\t流量入口\tarrow.triangle.branch'
 
 dynamic_dual_entry=$(PROXYGAUGE_SYSTEM_PROXY_ACTIVE=1 \
+  PROXYGAUGE_TUN_ACTIVE=1 \
   PROXYGAUGE_SYSTEM_PROXY_DYNAMIC=1 \
   PROXYGAUGE_TUN_KIND=mihomo \
   /bin/bash "$BACKEND" probe | /usr/bin/awk -F '\t' '$1 == "entry" { print $2 "\t" $3 "\t" $4 }')
 [ "$dynamic_dual_entry" = $'按目标决定\twarning\tPAC / 自动代理 + Mihomo TUN' ]
 
 mismatched_dual_entry=$(PROXYGAUGE_SYSTEM_PROXY_ACTIVE=1 \
+  PROXYGAUGE_TUN_ACTIVE=1 \
   PROXYGAUGE_SYSTEM_PROXY_DYNAMIC=0 \
   PROXYGAUGE_SYSTEM_PROXY_HTTPS=1 \
   PROXYGAUGE_SYSTEM_PROXY_BYPASS=0 \
@@ -90,6 +106,7 @@ mismatched_dual_entry=$(PROXYGAUGE_SYSTEM_PROXY_ACTIVE=1 \
 [ "$mismatched_dual_entry" = $'入口不匹配\twarning\t系统代理路径 + Mihomo TUN' ]
 
 dynamic_dual_mode=$(PROXYGAUGE_SYSTEM_PROXY_ACTIVE=1 \
+  PROXYGAUGE_TUN_ACTIVE=1 \
   PROXYGAUGE_SYSTEM_PROXY_DYNAMIC=1 \
   PROXYGAUGE_TUN_KIND=mihomo \
   PROXYGAUGE_DISCOVERY_PORT_ACTIVE=0 \
@@ -626,25 +643,15 @@ fingerprint_ppp=$(PROXYGAUGE_CONFIG=/dev/null \
   exit 1
 }
 
-# 通用代理提供者（Shadowrocket）场景：编译一个可改名常驻进程充当
-# Shadowrocket / MacPacketTunnel / mihomo，用真实 ps 名字解析验证 provider 归并。
-PROVIDER_HELPER_SRC="$TEMP_DIR/provider-helper.c"
-/usr/bin/printf '%s\n' \
-  '#include <unistd.h>' \
-  'int main(void) { for (;;) pause(); }' > "$PROVIDER_HELPER_SRC"
-/usr/bin/clang -o "$TEMP_DIR/provider-helper" "$PROVIDER_HELPER_SRC"
-/bin/cp "$TEMP_DIR/provider-helper" "$TEMP_DIR/Shadowrocket"
-/bin/cp "$TEMP_DIR/provider-helper" "$TEMP_DIR/MacPacketTunnel"
-/bin/cp "$TEMP_DIR/provider-helper" "$TEMP_DIR/mihomo"
-"$TEMP_DIR/Shadowrocket" &
-shadowrocket_test_pid=$!
-"$TEMP_DIR/MacPacketTunnel" &
-packet_tunnel_test_pid=$!
-"$TEMP_DIR/mihomo" &
-mihomo_test_pid=$!
-PROVIDER_TEST_PIDS="$shadowrocket_test_pid $packet_tunnel_test_pid $mihomo_test_pid"
+# Isolated process records: never launch processes with real proxy names.
+shadowrocket_test_pid=51001
+packet_tunnel_test_pid=51002
+mihomo_test_pid=51003
 shadowrocket_provider_pids="$shadowrocket_test_pid
 $packet_tunnel_test_pid"
+export PROXYGAUGE_PROVIDER_PROCESS_RECORDS=$'51001\tShadowrocket\tstart-sr\n51002\tMacPacketTunnel\tstart-ne\n51003\tmihomo\tstart-core'
+export PROXYGAUGE_NETWORK_SERVICES=$'status\tok\nservice\t11111111-1111-1111-1111-111111111111\tcom.liguangming.Shadowrocket\tconnected\tutun5\tutun5'
+
 ROUTES_UTUN5_V4=${ROUTES_UTUN7_V4//utun7/utun5}
 SHADOWROCKET_ROUTE_TABLE='default            198.18.0.1          UGScg                 utun5'
 
@@ -758,6 +765,8 @@ shadowrocket_tun_probe=$(PROXYGAUGE_CONFIG=/dev/null \
 n127.0.0.1:1082" \
   PROXYGAUGE_SYSTEM_PROXY_ACTIVE=0 \
   PROXYGAUGE_TUN_KIND=client \
+  PROXYGAUGE_TUN_ROUTE_TABLE="$SHADOWROCKET_ROUTE_TABLE" \
+  PROXYGAUGE_ROUTE_LOOKUP_RESULTS="$ROUTES_UTUN5_V4" \
   /bin/bash "$BACKEND" probe)
 [ "$(/usr/bin/awk -F '\t' '$1 == "overall" { print $2 }' <<< "$shadowrocket_tun_probe")" = ok ]
 [ "$(/usr/bin/awk -F '\t' '$1 == "headline" { print $2 }' <<< "$shadowrocket_tun_probe")" = '代理路径已确认' ]
@@ -783,6 +792,8 @@ n127.0.0.1:1082" \
   PROXYGAUGE_SYSTEM_PROXY_BYPASS=0 \
   PROXYGAUGE_SYSTEM_PROXY_MATCHES=1 \
   PROXYGAUGE_TUN_KIND=client \
+  PROXYGAUGE_TUN_ROUTE_TABLE="$SHADOWROCKET_ROUTE_TABLE" \
+  PROXYGAUGE_ROUTE_LOOKUP_RESULTS="$ROUTES_UTUN5_V4" \
   /bin/bash "$BACKEND" probe)
 [ "$(/usr/bin/awk -F '\t' '$1 == "overall" { print $2 }' <<< "$shadowrocket_dual_probe")" = warning ]
 [ "$(/usr/bin/awk -F '\t' '$1 == "headline" { print $2 }' <<< "$shadowrocket_dual_probe")" = '入口同时开启' ]

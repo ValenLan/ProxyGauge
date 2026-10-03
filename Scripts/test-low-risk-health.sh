@@ -10,12 +10,19 @@ WINDOWS_SERVICE="$PROJECT_ROOT/Windows/Services/HealthCheckService.cs"
 WINDOWS_MAIN="$PROJECT_ROOT/Windows/MainWindow.xaml"
 TEMP_ROOT=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/proxygauge-health-ip-test.XXXXXX")
 cleanup() {
-  if [ -n "${PROVIDER_TEST_PIDS:-}" ]; then
-    kill $PROVIDER_TEST_PIDS 2>/dev/null || true
-  fi
   /bin/rm -rf "$TEMP_ROOT"
 }
 trap cleanup EXIT
+# Prevent unconfigured scenarios from consulting or connecting to host proxies.
+export PROXYGAUGE_DISCOVERY_CLIENT=未识别
+export PROXYGAUGE_DISCOVERY_PORT_ACTIVE=0
+export PROXYGAUGE_DISCOVERY_LISTENER_RECORDS=''
+export PROXYGAUGE_MIHOMO_SOCKET="$TEMP_ROOT/missing.sock"
+export PROXYGAUGE_DISCOVERY_SOCKET="$TEMP_ROOT/missing.sock"
+export PROXYGAUGE_PF_ANCHOR="$TEMP_ROOT/missing-anchor"
+
+export PROXYGAUGE_NETWORK_SERVICES=$'status\tok'
+export PROXYGAUGE_PROVIDER_PROCESS_RECORDS=''
 
 # Keep unconfigured fixtures independent of the host's running proxy and routes.
 # Individual scenarios below explicitly override these snapshots as needed.
@@ -445,26 +452,14 @@ if /usr/bin/grep -Fq '默认出口已由多个 IP 查询源确认' <<< "$tie_out
   exit 1
 fi
 
-# 通用代理提供者（Shadowrocket）夹具：编译一个可改名常驻进程充当
-# Shadowrocket / MacPacketTunnel / mihomo，用真实 ps 名字解析验证
-# check.sh 的 provider 归并、归因文案与端口归属（与 test-backend.sh 同模式）。
-PROVIDER_HELPER_SRC="$TEMP_ROOT/provider-helper.c"
-/usr/bin/printf '%s\n' \
-  '#include <unistd.h>' \
-  'int main(void) { for (;;) pause(); }' > "$PROVIDER_HELPER_SRC"
-/usr/bin/clang -o "$TEMP_ROOT/provider-helper" "$PROVIDER_HELPER_SRC"
-/bin/cp "$TEMP_ROOT/provider-helper" "$TEMP_ROOT/Shadowrocket"
-/bin/cp "$TEMP_ROOT/provider-helper" "$TEMP_ROOT/MacPacketTunnel"
-/bin/cp "$TEMP_ROOT/provider-helper" "$TEMP_ROOT/mihomo"
-"$TEMP_ROOT/Shadowrocket" &
-shadowrocket_test_pid=$!
-"$TEMP_ROOT/MacPacketTunnel" &
-packet_tunnel_test_pid=$!
-"$TEMP_ROOT/mihomo" &
-mihomo_test_pid=$!
-PROVIDER_TEST_PIDS="$shadowrocket_test_pid $packet_tunnel_test_pid $mihomo_test_pid"
+# Isolated process records: never launch processes with real proxy names.
+shadowrocket_test_pid=51001
+packet_tunnel_test_pid=51002
+mihomo_test_pid=51003
 shadowrocket_provider_pids="$shadowrocket_test_pid
 $packet_tunnel_test_pid"
+export PROXYGAUGE_PROVIDER_PROCESS_RECORDS=$'51001\tShadowrocket\tstart-sr\n51002\tMacPacketTunnel\tstart-ne\n51003\tmihomo\tstart-core'
+export PROXYGAUGE_NETWORK_SERVICES=$'status\tok\nservice\t11111111-1111-1111-1111-111111111111\tcom.liguangming.Shadowrocket\tconnected\tutun7\tutun7'
 
 mihomo_provider_output=$(PROXYGAUGE_CONFIG=/dev/null \
   PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
@@ -554,6 +549,7 @@ fi
 
 ROUTES_UTUN9_V4=${ROUTES_UTUN7_V4//utun7/utun9}
 trusted_client_route_output=$(PROXYGAUGE_CONFIG=/dev/null \
+  PROXYGAUGE_NETWORK_SERVICES=$'status\tok\nservice\t11111111-1111-1111-1111-111111111111\tcom.liguangming.Shadowrocket\tconnected\tutun9\tutun9' \
   PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}' \
   PROXYGAUGE_CURL="$FAKE_CURL" \
   PROXYGAUGE_PROVIDER_PIDS="$shadowrocket_provider_pids" \
@@ -591,6 +587,7 @@ injected_client_kind_output=$(PROXYGAUGE_CONFIG=/dev/null \
   PROXYGAUGE_PROVIDER_PIDS="$shadowrocket_provider_pids" \
   PROXYGAUGE_TUN_ACTIVE=1 \
   PROXYGAUGE_TUN_KIND=client \
+  PROXYGAUGE_ROUTE_LOOKUP_RESULTS="$ROUTES_UTUN7_V4" \
   PROXYGAUGE_MIXED=127.0.0.1:9 \
   PROXYGAUGE_SECONDARY_ENABLED=0 \
   PROXYGAUGE_TIMEOUT=1 \

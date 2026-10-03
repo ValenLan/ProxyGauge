@@ -137,9 +137,9 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("断网保护")
                     .font(CloudTypography.metricLabel)
-                Text(model.killSwitch.value == "未配置" ? "未开启" : model.killSwitch.value)
+                Text(model.guardPresentation.title)
                     .font(CloudTypography.metricValue())
-                    .foregroundStyle(model.killSwitch.level.color)
+                    .foregroundStyle(model.guardPresentation.level.color)
                 if model.guardSelection?.ambiguous == true {
                     Button(model.guardApplicationLabel) { model.chooseGuardApplication() }
                         .font(.system(size: 10, weight: .medium))
@@ -149,22 +149,38 @@ struct ContentView: View {
                 }
             }
             Spacer(minLength: 4)
-            Toggle("", isOn: Binding(
-                get: { model.killSwitch.level == .ok },
-                set: { enabled in
-                    if enabled { model.enableKillSwitch() }
-                    else { model.showDisableConfirmation = true }
-                }
-            ))
-            .labelsHidden()
-            .toggleStyle(.switch)
-            .tint(AppThemePalette.accent)
-            .controlSize(.small)
-            .disabled(model.isBusy || model.killSwitch.value == "检查中")
+            if model.guardPresentation.showsToggle {
+                Toggle("", isOn: guardToggleBinding)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .tint(AppThemePalette.accent)
+                    .controlSize(.small)
+                    .disabled(model.isBusy)
+            } else {
+                Image(systemName: model.guardPresentation.statusSymbol)
+                    .font(.system(size: 20))
+                    .foregroundStyle(model.guardPresentation.level.color)
+                    .frame(width: 44, height: 24)
+                    .accessibilityLabel(model.guardPresentation.title)
+            }
         }
         .padding(18)
         .frame(maxWidth: .infinity, minHeight: 118)
         .dashboardCard()
+        .help(model.guardPresentation.help)
+    }
+
+    private var guardToggleBinding: Binding<Bool> {
+        Binding(
+            get: { model.guardPresentation.toggleIsOn },
+            set: { enabled in
+                switch model.guardPresentation.action(requestedOn: enabled, isBusy: model.isBusy) {
+                case .enable: model.enableKillSwitch()
+                case .confirmDisable: model.showDisableConfirmation = true
+                case .none: break
+                }
+            }
+        )
     }
 
     private var guardApplicationPicker: some View {

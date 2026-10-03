@@ -374,9 +374,17 @@ struct AppStatePoliciesCheck {
     }
 
     private static func checkRefreshLifecyclePolicy() throws {
+        for cachedSummary in [false, true] {
+            for fingerprint in [nil, "path-a"] as [String?] {
+                try require(ExitRefreshTriggerPolicy.needsInitialLookup(
+                    hasCachedSummary: cachedSummary, pathFingerprint: fingerprint
+                ) == (!cachedSummary || fingerprint == nil),
+                "Only a complete correlated cache may skip initialization.")
+            }
+        }
         try require(!ExitRefreshTriggerPolicy.pathDidChange(
             previous: nil, current: "path-a"
-        ), "The first local fingerprint must establish a baseline without a public lookup.")
+        ), "A first fingerprint has no path change; incomplete-cache initialization is decided separately.")
         try require(!ExitRefreshTriggerPolicy.pathDidChange(
             previous: "path-a", current: "path-a"
         ), "An unchanged route notification must not query the actual exit.")

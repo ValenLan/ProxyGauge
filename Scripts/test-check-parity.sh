@@ -11,15 +11,22 @@ SCRIPT_DIR=$(/usr/bin/dirname "$0")
 CHECK="$SCRIPT_DIR/proxygauge-check.sh"
 BACKEND="$SCRIPT_DIR/proxygauge-backend.sh"
 TEST_ROOT=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/proxygauge-check-parity-test.XXXXXX")
-PROVIDER_TEST_PIDS=""
 cleanup() {
-  if [ -n "$PROVIDER_TEST_PIDS" ]; then
-    kill $PROVIDER_TEST_PIDS 2>/dev/null || true
-  fi
   /bin/rm -rf "$TEST_ROOT"
 }
 trap cleanup EXIT
+# Prevent unconfigured scenarios from consulting or connecting to host proxies.
+export PROXYGAUGE_DISCOVERY_CLIENT=未识别
+export PROXYGAUGE_DISCOVERY_PORT_ACTIVE=0
+export PROXYGAUGE_DISCOVERY_LISTENER_RECORDS=''
+export PROXYGAUGE_MIHOMO_SOCKET="$TEST_ROOT/missing.sock"
+export PROXYGAUGE_DISCOVERY_SOCKET="$TEST_ROOT/missing.sock"
+export PROXYGAUGE_PF_ANCHOR="$TEST_ROOT/missing-anchor"
 
+export PROXYGAUGE_NETWORK_SERVICES=$'status\tok'
+export PROXYGAUGE_PROVIDER_PROCESS_RECORDS=''
+
+NETWORK_SERVICE_FUNCTIONS='raw_network_services_state network_services_state network_services_snapshot shadowrocket_service_identity provider_process_start provider_process_records'
 PROVIDER_FUNCTIONS='proxy_provider_pids provider_pid_name provider_keys provider_count provider_label'
 CLIENT_ROUTE_FUNCTIONS='trusted_client_tun_candidates client_tun_candidates provider_packet_tunnel_running classify_client_tunnel_route tun_route_table'
 ROUTE_QUERY_FUNCTIONS='route_lookup_interface representative_route_interface'
@@ -34,7 +41,7 @@ extract_function() {
 
 # --- 第一部分：五函数源码逐字节对拍（静态门禁，辅助） ---
 # core_pids 是 proxy_provider_pids 的共享委派对象，一并纳入对拍。
-for fn in core_pids $PROVIDER_FUNCTIONS $CLIENT_ROUTE_FUNCTIONS; do
+for fn in core_pids $NETWORK_SERVICE_FUNCTIONS $PROVIDER_FUNCTIONS $CLIENT_ROUTE_FUNCTIONS; do
   [ "$(/usr/bin/grep -c "^${fn}() {" "$CHECK")" = "1" ]
   [ "$(/usr/bin/grep -c "^${fn}() {" "$BACKEND")" = "1" ]
   extract_function "$CHECK" "$fn" > "$TEST_ROOT/check.$fn"
@@ -53,43 +60,24 @@ done
 # 环境下分别执行并逐字节比较输出，保证"平行副本"永远同步演进。
 CHECK_FNS="$TEST_ROOT/check-provider-fns.sh"
 BACKEND_FNS="$TEST_ROOT/backend-provider-fns.sh"
-for fn in core_pids $PROVIDER_FUNCTIONS $CLIENT_ROUTE_FUNCTIONS $ROUTE_QUERY_FUNCTIONS; do
+for fn in core_pids $NETWORK_SERVICE_FUNCTIONS $PROVIDER_FUNCTIONS $CLIENT_ROUTE_FUNCTIONS $ROUTE_QUERY_FUNCTIONS; do
   extract_function "$CHECK" "$fn" >> "$CHECK_FNS"
   /usr/bin/printf '\n' >> "$CHECK_FNS"
   extract_function "$BACKEND" "$fn" >> "$BACKEND_FNS"
   /usr/bin/printf '\n' >> "$BACKEND_FNS"
 done
 
-# 真实命名的常驻进程充当 Shadowrocket / MacPacketTunnel / mihomo，
-# 让 provider_pid_name 走真实 ps 名字解析（与 test-backend.sh 同模式）。
-if ! /usr/bin/clang --version >/dev/null 2>&1; then
-  echo 'SKIP: clang 不可用，无法编译 provider 夹具进程。'
-  exit 0
-fi
-PROVIDER_HELPER_SRC="$TEST_ROOT/provider-helper.c"
-/usr/bin/printf '%s\n' \
-  '#include <unistd.h>' \
-  'int main(void) { for (;;) pause(); }' > "$PROVIDER_HELPER_SRC"
-/usr/bin/clang -o "$TEST_ROOT/provider-helper" "$PROVIDER_HELPER_SRC"
-/bin/cp "$TEST_ROOT/provider-helper" "$TEST_ROOT/Shadowrocket"
-/bin/cp "$TEST_ROOT/provider-helper" "$TEST_ROOT/MacPacketTunnel"
-/bin/cp "$TEST_ROOT/provider-helper" "$TEST_ROOT/mihomo"
-"$TEST_ROOT/Shadowrocket" &
-shadowrocket_test_pid=$!
-"$TEST_ROOT/MacPacketTunnel" &
-packet_tunnel_test_pid=$!
-"$TEST_ROOT/mihomo" &
-mihomo_test_pid=$!
-PROVIDER_TEST_PIDS="$shadowrocket_test_pid $packet_tunnel_test_pid $mihomo_test_pid"
+# Isolated process records: never launch processes with real proxy names.
+shadowrocket_test_pid=51001
+packet_tunnel_test_pid=51002
+mihomo_test_pid=51003
 shadowrocket_provider_pids="$shadowrocket_test_pid
 $packet_tunnel_test_pid"
+export PROXYGAUGE_PROVIDER_PROCESS_RECORDS=$'51001\tShadowrocket\tstart-sr\n51002\tMacPacketTunnel\tstart-ne\n51003\tmihomo\tstart-core'
+export PROXYGAUGE_NETWORK_SERVICES=$'status\tok\nservice\t11111111-1111-1111-1111-111111111111\tcom.liguangming.Shadowrocket\tconnected\tutun7\tutun7'
 
-# 保证已死的 PID：用孤儿进程（父 shell 立即退出，sleep 被 launchd 收养），
-# kill 后由 launchd 回收——本脚本的 job 表里没有它，不会触发 bash 3.2
-# "回收被杀后台任务时提前执行 EXIT trap"的坑；ps -o ucomm= 必为空。
-dead_test_pid=$(/bin/bash -c '/bin/sleep 60 >/dev/null 2>&1 & echo $!')
-kill "$dead_test_pid" 2>/dev/null || true
-sleep 1
+# Missing fixture PID cannot resolve to a provider.
+dead_test_pid=51099
 
 assert_fn_scenario() {
   local label="$1"

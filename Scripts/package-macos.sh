@@ -5,11 +5,12 @@ SCRIPT_DIR=$(/usr/bin/dirname "$0")
 PROJECT_ROOT=$(cd "$SCRIPT_DIR/.." && /bin/pwd)
 APP="$PROJECT_ROOT/build/ProxyGauge.app"
 VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PROJECT_ROOT/Info.plist")
+BUILD_NUMBER=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PROJECT_ROOT/Info.plist")
 DEFAULT_ARCHIVE="$PROJECT_ROOT/dist/ProxyGauge-$VERSION-macOS-arm64.zip"
 ARCHIVE=${1:-$DEFAULT_ARCHIVE}
 
 verify_release_app() {
-  local candidate bundle_identifier bundle_version architectures
+  local candidate bundle_identifier bundle_version bundle_build architectures helper_architectures
   candidate="$1"
   if [ ! -x "$candidate/Contents/MacOS/ProxyGauge" ]; then
     echo "Packaged app is missing its executable bit: $candidate" >&2
@@ -19,6 +20,20 @@ verify_release_app() {
     "$candidate/Contents/Info.plist")
   bundle_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
     "$candidate/Contents/Info.plist")
+  bundle_build=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$candidate/Contents/Info.plist")
+  if [ "$bundle_build" != "$BUILD_NUMBER" ]; then
+    echo "App build $bundle_build does not match source build $BUILD_NUMBER." >&2
+    exit 1
+  fi
+  if [ ! -x "$candidate/Contents/Resources/proxygauge-network-services" ]; then
+    echo "Packaged app is missing its network service reader." >&2
+    exit 1
+  fi
+  helper_architectures=$(/usr/bin/lipo -archs "$candidate/Contents/Resources/proxygauge-network-services")
+  if [ "$helper_architectures" != "arm64" ]; then
+    echo "The network service reader must contain only arm64 code." >&2
+    exit 1
+  fi
   architectures=$(/usr/bin/lipo -archs "$candidate/Contents/MacOS/ProxyGauge")
   if [ "$bundle_identifier" != "com.valenlan.proxygauge" ]; then
     echo "Unexpected app bundle identifier: $bundle_identifier" >&2
