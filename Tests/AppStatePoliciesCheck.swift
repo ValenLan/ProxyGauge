@@ -212,6 +212,18 @@ struct AppStatePoliciesCheck {
         try require(ExitRefreshTriggerPolicy.pathDidChange(
             previous: "path-a", current: "path-b"
         ), "A changed route fingerprint must request a new actual-exit lookup.")
+        try require(ExitRefreshTriggerPolicy.requiresLookup(
+            previous: "path-a", current: "path-a", reconnectedAfterOutage: true
+        ), "A brief outage missed by the route fingerprint must still re-verify the cleared exit.")
+        try require(!ExitRefreshTriggerPolicy.requiresLookup(
+            previous: "path-a", current: "path-a", reconnectedAfterOutage: false
+        ), "Without an outage an unchanged route fingerprint must not query the actual exit.")
+        try require(ExitRefreshTriggerPolicy.requiresLookup(
+            previous: "path-a", current: "path-b", reconnectedAfterOutage: false
+        ), "A changed route fingerprint must still request a lookup without an outage.")
+        try require(!ExitRefreshTriggerPolicy.requiresLookup(
+            previous: nil, current: "path-a", reconnectedAfterOutage: true
+        ), "The first local fingerprint must remain a baseline even after an outage.")
         try require(!ExitRefreshTriggerPolicy.shouldStartLookup(
             isApplicationActive: true, hasPendingPathChange: false
         ), "Opening or activating the dashboard alone must not query the actual exit.")

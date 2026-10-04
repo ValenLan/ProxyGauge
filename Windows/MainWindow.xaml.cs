@@ -175,7 +175,16 @@ public partial class MainWindow : Window
     {
         if (!e.IsAvailable && !_isClosed && !Dispatcher.HasShutdownStarted)
             _ = Dispatcher.BeginInvoke(new Action(_viewModel.NotifyNetworkUnavailable));
+        if (e.IsAvailable && !_isClosed && !Dispatcher.HasShutdownStarted)
+            _ = Dispatcher.BeginInvoke(new Action(ApplyRestoredNetwork));
         DispatchObservedExitPathChange();
+    }
+
+    private void ApplyRestoredNetwork()
+    {
+        if (_isClosed) return;
+        _viewModel.NotifyNetworkAvailable();
+        ObserveAndScheduleExitPathChange();
     }
 
     private void DispatchObservedExitPathChange()

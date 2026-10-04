@@ -268,6 +268,17 @@ enum ExitRefreshTriggerPolicy {
         return previous != current
     }
 
+    /// A brief outage can end before the debounced route read observes it, so the
+    /// fingerprint is unchanged while the displayed exit was already cleared.
+    static func requiresLookup(
+        previous: String?,
+        current: String,
+        reconnectedAfterOutage: Bool
+    ) -> Bool {
+        guard previous != nil else { return false }
+        return reconnectedAfterOutage || pathDidChange(previous: previous, current: current)
+    }
+
     static func shouldStartLookup(
         isApplicationActive: Bool,
         hasPendingPathChange: Bool

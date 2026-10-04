@@ -52,6 +52,17 @@ internal static class NetworkStateAssertions
             Check(model.ExitAddress == "1.1.1.1" && model.HasExitIpVersion, "A successful current-generation recovery must replace disconnected state.");
             model.InvalidateExitSummary();
             Check(model.ExitAddress == "等待重新检测", "Inactive/debounced invalidation must not claim a query is running.");
+            var unchangedPath = new string('a', 64);
+            Check(!model.ObserveExitPathFingerprint(unchangedPath), "The first route fingerprint must remain a baseline.");
+            model.NotifyNetworkAvailable();
+            Check(!model.ObserveExitPathFingerprint(unchangedPath),
+                "An outage already followed by a verified lookup must not query again.");
+            model.NotifyNetworkUnavailable();
+            model.NotifyNetworkAvailable();
+            Check(model.ExitAddress != "已断开网络连接", "A restored network must not keep claiming disconnection.");
+            Check(model.ObserveExitPathFingerprint(unchangedPath),
+                "A brief outage missed by the route fingerprint must still re-verify the cleared exit.");
+            Check(!model.ObserveExitPathFingerprint(unchangedPath), "The post-outage re-check must be requested only once.");
         }
         finally { directory.Delete(recursive: true); }
         Console.WriteLine("Network state: WFP disconnect, HTTP failure, bounded loading, storm and recovery passed.");

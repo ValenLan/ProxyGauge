@@ -39,6 +39,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private long _exitRefreshGeneration;
     private bool _refreshRequested;
     private string? _observedExitPathFingerprint;
+    private bool _networkOutageObserved;
+    private bool _exitRecheckAfterOutage;
     private bool _disposed;
     private bool _connectionHasSystemProxy;
     private bool _connectionHasVirtualAdapter;
@@ -319,13 +321,17 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         if (_disposed || fingerprint.Length != 64 || !fingerprint.All(character =>
                 character is >= '0' and <= '9' or >= 'A' and <= 'F' or >= 'a' and <= 'f'))
             return false;
+        var reconnectedAfterOutage = _exitRecheckAfterOutage;
+        _exitRecheckAfterOutage = false;
         if (_observedExitPathFingerprint is null)
         {
             _observedExitPathFingerprint = fingerprint;
             _exitSummaryStore.RecordPathFingerprint(fingerprint, clearSummary: false);
             return false;
         }
-        if (string.Equals(_observedExitPathFingerprint, fingerprint, StringComparison.OrdinalIgnoreCase))
+        // A brief outage can end before any route read observes a different fingerprint.
+        if (!reconnectedAfterOutage &&
+            string.Equals(_observedExitPathFingerprint, fingerprint, StringComparison.OrdinalIgnoreCase))
             return false;
 
         _observedExitPathFingerprint = fingerprint;
@@ -376,7 +382,12 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         _exitSettlementExpired = false;
         ApplyExit(summary);
         if (summary.State == ExitSummaryState.Available && ExitSummary.IsSupportedAddress(summary.Address))
+        {
             _exitSummaryStore.SaveSummary(summary);
+            // This lookup started after any outage, so the restored path is already verified.
+            _networkOutageObserved = false;
+            _exitRecheckAfterOutage = false;
+        }
     }
 
     private Task StartRefreshLoopIfNeeded()
@@ -407,9 +418,21 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public void NotifyNetworkUnavailable()
     {
         if (_disposed) return;
+        _networkOutageObserved = true;
+        _exitRecheckAfterOutage = false;
         _exitRefreshGeneration++;
         _activeExitRefreshCancellation?.Cancel();
         ApplyExit(ExitSummary.Disconnected());
+    }
+
+    public void NotifyNetworkAvailable()
+    {
+        if (_disposed || !_networkOutageObserved) return;
+        _networkOutageObserved = false;
+        _exitRecheckAfterOutage = true;
+        // The restored network must not keep claiming disconnection while the re-check waits.
+        if (_exitSummary.State == ExitSummaryState.Disconnected)
+            ApplyExit(_exitSettlementExpired ? ExitSummary.Unavailable() : ExitSummary.Waiting());
     }
 
     private async Task SettleExitDeadlineAsync(CancellationToken token)

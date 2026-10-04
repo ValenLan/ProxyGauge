@@ -278,6 +278,7 @@ final class ProxyModel: ObservableObject {
     private var exitRefreshGeneration = RefreshGenerationGate()
     private var observedPathFingerprint: String?
     private var needsExitRefreshWhenActive = false
+    private var exitRecheckAfterOutage = false
     private var systemNetworkChangeMonitor: SystemNetworkChangeMonitor?
 
     private let backendPath = Bundle.main.path(forResource: "proxygauge-backend", ofType: "sh")
@@ -476,6 +477,7 @@ final class ProxyModel: ObservableObject {
                 self.networkPathSatisfied = isSatisfied
                 if !isSatisfied {
                     self.automaticRefreshTask?.cancel()
+                    self.exitRecheckAfterOutage = true
                     self.invalidateExitSummary(as: .disconnected)
                     if !isInitialPath { self.schedulePathEvaluation() }
                     return
@@ -547,11 +549,17 @@ final class ProxyModel: ObservableObject {
         guard let current = await currentPathFingerprint() else { return }
         let previous = observedPathFingerprint ?? ExitSummaryPersistence.loadPathFingerprint()
         observedPathFingerprint = current
+        let reconnectedAfterOutage = exitRecheckAfterOutage && networkPathSatisfied == true
+        if reconnectedAfterOutage { exitRecheckAfterOutage = false }
         guard let previous else {
             ExitSummaryPersistence.recordPathFingerprint(current, clearSummary: false)
             return
         }
-        guard ExitRefreshTriggerPolicy.pathDidChange(previous: previous, current: current) else {
+        guard ExitRefreshTriggerPolicy.requiresLookup(
+            previous: previous,
+            current: current,
+            reconnectedAfterOutage: reconnectedAfterOutage
+        ) else {
             return
         }
 
@@ -637,6 +645,8 @@ final class ProxyModel: ObservableObject {
         finishExitLoading(result)
         if PublicIPAddress.normalize(result.address) != nil {
             ExitSummaryPersistence.saveSummary(result)
+            // This lookup started after any outage, so the restored path is already verified.
+            exitRecheckAfterOutage = false
         }
     }
 
