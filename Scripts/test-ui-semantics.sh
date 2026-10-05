@@ -197,6 +197,12 @@ fi
 
 /usr/bin/grep -Fq 'await withCheckedContinuation' "$APP_SOURCE"
 /usr/bin/grep -Fq 'waiter.resume()' "$APP_SOURCE"
+if ! /usr/bin/perl -0ne 'exit(/if !isSatisfied \{\s*self\.automaticRefreshTask\?\.cancel\(\)\s*self\.exitOutageRecheck\.observeOutage\(\)/ ? 0 : 1)' "$APP_SOURCE" \
+  || ! /usr/bin/perl -0ne 'exit(/exitOutageRecheck\.consume\(networkSatisfied: networkPathSatisfied\).*?requiresLookup\(\s*previous: previous,\s*current: current,\s*reconnectedAfterOutage: reconnectedAfterOutage\s*\)/s ? 0 : 1)' "$APP_SOURCE" \
+  || ! /usr/bin/perl -0ne 'exit(/ExitSummaryPersistence\.saveSummary\(result\)\s*(?:\/\/[^\n]*\n\s*)?exitOutageRecheck\.lookupVerified\(\)/ ? 0 : 1)' "$APP_SOURCE"; then
+  echo 'A brief macOS outage must be remembered, consumed by the next route read, and cleared by a verified lookup.' >&2
+  exit 1
+fi
 
 /usr/bin/xcrun swiftc \
   -target arm64-apple-macosx26.0 \

@@ -278,7 +278,7 @@ final class ProxyModel: ObservableObject {
     private var exitRefreshGeneration = RefreshGenerationGate()
     private var observedPathFingerprint: String?
     private var needsExitRefreshWhenActive = false
-    private var exitRecheckAfterOutage = false
+    private var exitOutageRecheck = ExitOutageRecheckGate()
     private var systemNetworkChangeMonitor: SystemNetworkChangeMonitor?
 
     private let backendPath = Bundle.main.path(forResource: "proxygauge-backend", ofType: "sh")
@@ -477,7 +477,7 @@ final class ProxyModel: ObservableObject {
                 self.networkPathSatisfied = isSatisfied
                 if !isSatisfied {
                     self.automaticRefreshTask?.cancel()
-                    self.exitRecheckAfterOutage = true
+                    self.exitOutageRecheck.observeOutage()
                     self.invalidateExitSummary(as: .disconnected)
                     if !isInitialPath { self.schedulePathEvaluation() }
                     return
@@ -549,8 +549,7 @@ final class ProxyModel: ObservableObject {
         guard let current = await currentPathFingerprint() else { return }
         let previous = observedPathFingerprint ?? ExitSummaryPersistence.loadPathFingerprint()
         observedPathFingerprint = current
-        let reconnectedAfterOutage = exitRecheckAfterOutage && networkPathSatisfied == true
-        if reconnectedAfterOutage { exitRecheckAfterOutage = false }
+        let reconnectedAfterOutage = exitOutageRecheck.consume(networkSatisfied: networkPathSatisfied)
         guard let previous else {
             ExitSummaryPersistence.recordPathFingerprint(current, clearSummary: false)
             return
@@ -646,7 +645,7 @@ final class ProxyModel: ObservableObject {
         if PublicIPAddress.normalize(result.address) != nil {
             ExitSummaryPersistence.saveSummary(result)
             // This lookup started after any outage, so the restored path is already verified.
-            exitRecheckAfterOutage = false
+            exitOutageRecheck.lookupVerified()
         }
     }
 

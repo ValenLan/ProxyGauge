@@ -224,6 +224,26 @@ struct AppStatePoliciesCheck {
         try require(!ExitRefreshTriggerPolicy.requiresLookup(
             previous: nil, current: "path-a", reconnectedAfterOutage: true
         ), "The first local fingerprint must remain a baseline even after an outage.")
+        var outage = ExitOutageRecheckGate()
+        try require(!outage.consume(networkSatisfied: true),
+                    "Without an outage a route evaluation must not force an exit lookup.")
+        outage.observeOutage()
+        try require(!outage.consume(networkSatisfied: false),
+                    "An evaluation while still offline must keep the pending re-check.")
+        try require(!outage.consume(networkSatisfied: nil),
+                    "An unknown network state must keep the pending re-check.")
+        try require(outage.consume(networkSatisfied: true),
+                    "The first evaluation after reconnecting must re-verify the exit.")
+        try require(!outage.consume(networkSatisfied: true),
+                    "The post-outage re-check must be requested only once.")
+        outage.observeOutage()
+        outage.observeOutage()
+        try require(outage.consume(networkSatisfied: true) && !outage.consume(networkSatisfied: true),
+                    "Repeated outage notices must still produce a single re-check.")
+        outage.observeOutage()
+        outage.lookupVerified()
+        try require(!outage.consume(networkSatisfied: true),
+                    "A lookup that already verified the restored path must cancel the pending re-check.")
         try require(!ExitRefreshTriggerPolicy.shouldStartLookup(
             isApplicationActive: true, hasPendingPathChange: false
         ), "Opening or activating the dashboard alone must not query the actual exit.")

@@ -64,6 +64,13 @@ fi
 /usr/bin/grep -Fq 'NetworkChange.NetworkAvailabilityChanged +=' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
 /usr/bin/grep -Fq 'NetworkChange.NetworkAvailabilityChanged -=' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
 /usr/bin/grep -Fq 'ScheduleDebouncedRefresh' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
+if ! /usr/bin/perl -0ne 'exit(/if \(e\.IsAvailable && !_isClosed && !Dispatcher\.HasShutdownStarted\)\s*_ = Dispatcher\.BeginInvoke\(new Action\(ApplyRestoredNetwork\)\);/ ? 0 : 1)' \
+    "$PROJECT_ROOT/Windows/MainWindow.xaml.cs" \
+  || ! /usr/bin/perl -0ne 'exit(/void ApplyRestoredNetwork\(\)\s*\{\s*if \(_isClosed\) return;\s*_viewModel\.NotifyNetworkAvailable\(\);\s*ObserveAndScheduleExitPathChange\(\);/ ? 0 : 1)' \
+    "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"; then
+  echo 'A restored Windows network must mark the outage before the next route read re-verifies the exit.' >&2
+  exit 1
+fi
 /usr/bin/grep -Fq '_routeChangeMonitor = new RouteChangeMonitor(DispatchObservedExitPathChange);' \
   "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"
 /usr/bin/grep -Fq '_ = _routeChangeMonitor.Start();' "$PROJECT_ROOT/Windows/MainWindow.xaml.cs"

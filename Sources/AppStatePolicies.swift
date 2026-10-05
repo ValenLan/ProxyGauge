@@ -287,6 +287,22 @@ enum ExitRefreshTriggerPolicy {
     }
 }
 
+/// Remembers an observed outage until the first route evaluation after the network
+/// returns, or until a lookup has already verified the restored path.
+struct ExitOutageRecheckGate: Sendable {
+    private(set) var isPending = false
+
+    mutating func observeOutage() { isPending = true }
+
+    mutating func consume(networkSatisfied: Bool?) -> Bool {
+        guard isPending, networkSatisfied == true else { return false }
+        isPending = false
+        return true
+    }
+
+    mutating func lookupVerified() { isPending = false }
+}
+
 enum UpdateCheckSchedule {
     static let interval: TimeInterval = 24 * 60 * 60
 
