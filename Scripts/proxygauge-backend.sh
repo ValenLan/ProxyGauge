@@ -1360,6 +1360,80 @@ kill_switch_snapshot() {
   esac
 }
 
+enabled_system_proxy_endpoints() {
+  local raw_endpoints endpoint normalized endpoints
+  raw_endpoints=$(system_proxy_state | /usr/bin/perl -e '
+    use strict; use warnings;
+    my (%value, %count); my $depth = 0;
+    while (<STDIN>) {
+      if ($depth == 1 && /^\s*(HTTPEnable|HTTPProxy|HTTPPort|HTTPSEnable|HTTPSProxy|HTTPSPort|SOCKSEnable|SOCKSProxy|SOCKSPort)\s*:\s*(.*?)\s*$/) {
+        $value{$1} = $2; $count{$1}++;
+      }
+      my $opens = () = /\{/g; my $closes = () = /\}/g;
+      $depth += $opens - $closes;
+      exit 1 if $depth < 0;
+    }
+    exit 1 if $depth != 0;
+    my @endpoints;
+    for my $protocol (qw(HTTP HTTPS SOCKS)) {
+      my $enable = $protocol . "Enable";
+      next unless $count{$enable};
+      exit 1 unless $count{$enable} == 1 && $value{$enable} =~ /\A[01]\z/;
+      next if $value{$enable} eq "0";
+      my $host = $protocol . "Proxy"; my $port = $protocol . "Port";
+      exit 1 unless ($count{$host} // 0) == 1 && ($count{$port} // 0) == 1;
+      exit 1 unless length($value{$host}) && $value{$port} =~ /\A[0-9]+\z/;
+      push @endpoints, $value{$host} . ":" . $value{$port};
+    }
+    exit 1 unless @endpoints;
+    print "$_\n" for @endpoints;
+  ') || return 1
+  endpoints=""
+  while IFS= read -r endpoint; do
+    normalized=$(normalize_local_endpoint "$endpoint" 2>/dev/null) || return 1
+    endpoints="${endpoints}${normalized}"$'\n'
+  done <<< "$raw_endpoints"
+  /usr/bin/printf '%s' "$endpoints" | /usr/bin/awk 'NF && !seen[$0]++'
+}
+
+dual_entry_owner_confirmed() {
+  local tunnel_kind endpoints endpoint host port owner_pids owner_pid owner_name current_core provider_pids
+  tunnel_kind="$1"
+  endpoints=$(enabled_system_proxy_endpoints) || return 1
+  case "$tunnel_kind" in
+    client)
+      [ "$(provider_label)" = Shadowrocket ] || return 1
+      provider_pids=$(proxy_provider_pids)
+      ;;
+    mihomo) current_core=$(core_pids | /usr/bin/awk 'NF && !seen[$0]++') ;;
+    *) return 1 ;;
+  esac
+  while IFS= read -r endpoint; do
+    host="${endpoint%:*}"
+    port="${endpoint##*:}"
+    host="${host#[}"
+    host="${host%]}"
+    owner_pids=$(matching_listener_pids "$host" "$port") || return 1
+    [ "$(/usr/bin/awk 'NF { count++ } END { print count+0 }' <<< "$owner_pids")" = 1 ] \
+      || return 1
+    owner_pid="$owner_pids"
+    case "$owner_pid" in ''|*[!0-9]*) return 1 ;; esac
+    owner_name=$(provider_pid_name "$owner_pid" 2>/dev/null) || return 1
+    case "$tunnel_kind" in
+      client)
+        case "$owner_name" in Shadowrocket|MacPacketTunnel) ;; *) return 1 ;; esac
+        /usr/bin/printf '%s\n' "$provider_pids" | /usr/bin/awk -v pid="$owner_pid" \
+          '$0 == pid { found = 1 } END { exit found ? 0 : 1 }' || return 1
+        ;;
+      mihomo)
+        [ "$current_core" = "$owner_pid" ] || return 1
+        case "$owner_name" in verge-mihomo|mihomo|clash-meta) ;; *) return 1 ;; esac
+        ;;
+    esac
+  done <<< "$endpoints"
+  return 0
+}
+
 probe() {
   local core_count core_value core_level port_value port_level
   local system_value system_level tun_value tun_level kill_value kill_level
@@ -1367,6 +1441,7 @@ probe() {
   local overall headline detail entry_ok system_active tun_active mihomo_tun_unconfirmed
   local split_tun_active unknown_tun_active other_tun_active tunnel_kind
   local engine_up engine_name provider_n client_tun_active client_label attr_name
+  local dual_entry_confirmed
 
   core_count=$(core_pids | /usr/bin/awk 'NF {count++} END {print count+0}')
   engine_up=""
@@ -1500,6 +1575,13 @@ probe() {
     port_level="idle"
   fi
 
+  dual_entry_confirmed=""
+  if [ -n "$system_active" ] && [ -n "$tun_active$client_tun_active" ] \
+    && [ -n "$engine_up" ] && [ "$port_level" = ok ] && [ -z "$entry_uncertain" ] \
+    && dual_entry_owner_confirmed "$tunnel_kind"; then
+    dual_entry_confirmed=1
+  fi
+
   if [ -n "$system_active" ] && [ -n "$other_tun_active" ]; then
     entry_title="系统代理 + 其他 VPN / TUN"
     entry_value="同时检测"
@@ -1519,8 +1601,13 @@ probe() {
       entry_title="双重入口"
       entry_value="同时开启"
     fi
-    entry_level="warning"
-    entry_symbol="exclamationmark.triangle.fill"
+    if [ -n "$dual_entry_confirmed" ]; then
+      entry_level="ok"
+      entry_symbol="arrow.triangle.2.circlepath"
+    else
+      entry_level="warning"
+      entry_symbol="exclamationmark.triangle.fill"
+    fi
     entry_ok=1
   elif [ -n "$system_active" ] && [ -n "$mihomo_tun_unconfirmed" ]; then
     entry_title="系统代理 + Mihomo TUN"
@@ -1552,8 +1639,13 @@ probe() {
       entry_title="双重入口"
       entry_value="同时开启"
     fi
-    entry_level="warning"
-    entry_symbol="exclamationmark.triangle.fill"
+    if [ -n "$dual_entry_confirmed" ]; then
+      entry_level="ok"
+      entry_symbol="arrow.triangle.2.circlepath"
+    else
+      entry_level="warning"
+      entry_symbol="exclamationmark.triangle.fill"
+    fi
     entry_ok=1
   elif [ -n "$tun_active" ]; then
     entry_title="TUN 路由"
@@ -1648,6 +1740,10 @@ probe() {
       else
         headline="入口同时开启"
         detail="系统代理与 ${engine_name} VPN 均已启用"
+        if [ -n "$dual_entry_confirmed" ]; then
+          overall="ok"
+          headline="代理路径已确认"
+        fi
       fi
     elif [ -n "$mihomo_tun_unconfirmed" ]; then
       headline="Mihomo TUN 路由待确认"
@@ -1664,6 +1760,10 @@ probe() {
     else
       headline="入口同时开启"
       detail="系统代理与 Mihomo TUN 均已启用"
+      if [ -n "$dual_entry_confirmed" ]; then
+        overall="ok"
+        headline="代理路径已确认"
+      fi
     fi
   elif [ -n "$engine_up" ] && [ "$port_level" = "ok" ] && [ -n "$entry_ok" ]; then
     if [ -n "$entry_uncertain" ]; then

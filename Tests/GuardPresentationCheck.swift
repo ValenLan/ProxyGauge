@@ -19,6 +19,16 @@ struct GuardPresentationCheck {
                 let dashboard = GuardDashboardBindingProbe(model: model)
                 require(model.guardPresentation.state == expected.state,
                         "Wrong explicit state for \(value)/\(level.rawValue).")
+                require(model.guardPresentation.level == expected.presentationLevel,
+                        "Wrong status tone for \(value)/\(level.rawValue): normal is green, recovering is orange, and fault is red.")
+                let expectedColor: Color = switch expected.presentationLevel {
+                case .ok: .green
+                case .warning: .orange
+                case .error: .red
+                case .idle: .gray
+                }
+                require(model.guardPresentation.level.color == expectedColor,
+                        "The actual Dashboard color must follow the presentation tone for \(value)/\(level.rawValue).")
                 require(dashboard.showsToggle == expected.visible,
                         "Actual Dashboard branch must hide the boolean control for \(value)/\(level.rawValue).")
                 require(dashboard.guardToggleBinding.wrappedValue == expected.isOn,
@@ -46,8 +56,8 @@ struct GuardPresentationCheck {
         }
 
         let monitoring = GuardPresentation.make(value: "监测中", level: .ok)
-        require(monitoring.title == "监测中" && monitoring.toggleIsOn && monitoring.level == .warning,
-                "NE monitoring is armed but must retain its distinct title and caution tone.")
+        require(monitoring.title == "监测中" && monitoring.toggleIsOn && monitoring.level == .ok,
+                "Normal NE monitoring must be green while retaining its distinct title and armed state.")
         require(monitoring.help.contains("监测模式") && monitoring.help.contains("未验证"),
                 "Monitoring help must not imply verified fallback blocking.")
         let enabled = GuardPresentation.make(value: "已开启", level: .ok)
@@ -79,20 +89,21 @@ struct GuardPresentationCheck {
         oldBinding.wrappedValue = true
         require(changed.enableCalls == 1, "A confirmed off state must still enable normally.")
 
-        print("Guard presentation: \(stateCases) state cases, \(actionCases) actual Dashboard binding actions, monitoring/help and dynamic-state checks passed without GUI or Guard operations.")
+        print("Guard presentation: \(stateCases) state/color cases, \(actionCases) actual Dashboard binding actions, monitoring/help and dynamic-state checks passed without GUI or Guard operations.")
     }
 
     private static func expectation(value: String, level: HealthLevel) ->
-        (state: GuardPresentation.State, visible: Bool, isOn: Bool) {
+        (state: GuardPresentation.State, visible: Bool, isOn: Bool, presentationLevel: HealthLevel) {
         switch value {
-        case "已开启" where level == .ok: return (.enabled, true, true)
-        case "监测中" where level == .ok: return (.monitoring, true, true)
-        case "已关闭" where level == .warning: return (.disabled, true, false)
-        case "未配置" where level == .idle: return (.unconfigured, true, false)
-        case "恢复中": return (.recovering, false, false)
-        case "需要修复": return (.fault, false, false)
-        case "检查中": return (.checking, false, false)
-        default: return (.unknown, false, false)
+        case "已开启" where level == .ok: return (.enabled, true, true, .ok)
+        case "监测中" where level == .ok: return (.monitoring, true, true, .ok)
+        case "已关闭" where level == .warning: return (.disabled, true, false, .warning)
+        case "未配置" where level == .idle: return (.unconfigured, true, false, .idle)
+        case "恢复中": return (.recovering, false, false, .warning)
+        case "需要修复": return (.fault, false, false, .error)
+        case "检查中": return (.checking, false, false, .idle)
+        case "状态不可用": return (.unknown, false, false, .error)
+        default: return (.unknown, false, false, .idle)
         }
     }
 

@@ -157,6 +157,8 @@ final class ProxyModel: ObservableObject {
     }
     @Published var isDiscoveringConnection = false
     @Published var discovery = ProxyDiscovery()
+    @Published private var connectionDiagnostic: ConnectionDiagnosticSnapshot?
+    @Published private var displayedDiscoveryGeneration: UInt64?
     @Published var healthPlan = HealthCheckPlan.currentTemplate
     @Published private var exitSummary = ExitSummarySnapshot.checking
     var exitAddress: String {
@@ -209,7 +211,10 @@ final class ProxyModel: ObservableObject {
         ConnectionStatusPresentation.make(
             mode: discovery.mode,
             networkAvailable: networkPathSatisfied,
-            probeAvailable: discovery.mode != "正在读取" && discovery.mode != "状态不可用"
+            probeAvailable: discovery.mode != "正在读取" && discovery.mode != "状态不可用",
+            diagnosticTone: displayedDiscoveryGeneration.flatMap {
+                connectionDiagnostic?.tone(for: $0)
+            }
         )
     }
 
@@ -349,6 +354,8 @@ final class ProxyModel: ObservableObject {
             return
         }
         discovery = parseDiscovery(result.output, status: result.status)
+        displayedDiscoveryGeneration = generation
+        connectionDiagnostic = nil
         isDiscoveringConnection = false
     }
 
@@ -437,6 +444,8 @@ final class ProxyModel: ObservableObject {
 
         if self.discoveryGeneration.accepts(discoveryGeneration) {
             discovery = parseDiscovery(discovered.output, status: discovered.status)
+            displayedDiscoveryGeneration = discoveryGeneration
+            connectionDiagnostic = nil
         }
 
         guard result.status == 0 else {
@@ -446,6 +455,15 @@ final class ProxyModel: ObservableObject {
             return
         }
         applyProbe(result.output)
+        // Only a valid probe collected with the current discovery may color its
+        // path. Failed, cancelled or superseded diagnostics stay independent.
+        if !Task.isCancelled, self.discoveryGeneration.accepts(discoveryGeneration),
+           displayedDiscoveryGeneration == discoveryGeneration {
+            connectionDiagnostic = ConnectionDiagnosticSnapshot.make(
+                status: result.status, output: result.output,
+                discoveryGeneration: discoveryGeneration
+            )
+        }
     }
 
     private func startNetworkMonitoring() {

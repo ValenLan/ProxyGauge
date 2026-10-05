@@ -11,7 +11,53 @@ struct AppStatePoliciesCheck {
         try checkUpdateSchedule()
         try checkGuardSelection()
         try checkConnectionPresentation()
+        try checkConnectionDiagnosis()
         print("ProxyGauge app-state policy tests passed.")
+    }
+
+    private static func checkConnectionDiagnosis() throws {
+        var cases = 0
+        for (overall, entry, expected): (String, String, ConnectionStatusTone) in [
+            ("ok", "ok", .ok), ("warning", "ok", .warning),
+            ("ok", "warning", .warning), ("error", "ok", .error),
+            ("ok", "error", .error), ("warning", "error", .error)
+        ] {
+            let output = "overall\t\(overall)\nheadline\tfixture\ndetail\tfixture\ncore\tMacPacketTunnel\tok\nport\t1082\tok\nentry\tfixture\t\(entry)\t双重入口\tarrow.triangle.2.circlepath\nsystem\t启用\tok\ntun\t启用\tok\nkill\t监测中\tok\n"
+            let snapshot = ConnectionDiagnosticSnapshot.make(status: 0, output: output, discoveryGeneration: 3)
+            try require(snapshot?.tone(for: 3) == expected && snapshot?.tone(for: 4) == nil,
+                        "Only a current, successfully parsed diagnosis may supply its severity.")
+            for mode in ["系统代理", "Shadowrocket VPN", "系统代理 + Shadowrocket VPN"] {
+                try require(ConnectionStatusPresentation.make(
+                    mode: mode, networkAvailable: true, probeAvailable: true,
+                    diagnosticTone: snapshot?.tone(for: 3))?.tone == expected,
+                    "An active path must use valid current overall/entry severity.")
+                try require(ConnectionStatusPresentation.make(
+                    mode: mode, networkAvailable: true, probeAvailable: true,
+                    diagnosticTone: snapshot?.tone(for: 4))?.tone == .ok,
+                    "An old diagnosis must not color a new normal path.")
+                cases += 1
+            }
+            try require(ConnectionStatusPresentation.make(
+                mode: "未开启", networkAvailable: true, probeAvailable: true,
+                diagnosticTone: expected)?.tone == .idle,
+                "Direct networking must remain neutral regardless of proxy diagnosis.")
+            try require(ConnectionStatusPresentation.make(
+                mode: "系统代理", networkAvailable: false, probeAvailable: true,
+                diagnosticTone: expected)?.tone == .error,
+                "Known disconnection must take precedence over valid diagnosis.")
+            cases += 2
+            for status: Int32 in [1, 124, 130] {
+                try require(ConnectionDiagnosticSnapshot.make(status: status, output: output, discoveryGeneration: 3) == nil,
+                            "Failed or cancelled probe output cannot supply a severity.")
+                cases += 1
+            }
+        }
+        for output in ["", "invalid", "overall\terror\n"] {
+            try require(ConnectionDiagnosticSnapshot.make(status: 0, output: output, discoveryGeneration: 3) == nil,
+                        "Malformed or incomplete status output cannot supply a severity.")
+            cases += 1
+        }
+        print("Current-generation connection diagnosis policy cases: \(cases).")
     }
 
     private static func checkConnectionPresentation() throws {
@@ -23,13 +69,17 @@ struct AppStatePoliciesCheck {
                     "An active VPN/TUN must be presented as a virtual adapter.")
         let combined = ConnectionPathPresentation.make(mode: "系统代理 + 其他 VPN / TUN")
         try require(combined.value == "系统代理 + 虚拟网卡" && combined.isCombined,
-                    "A simultaneous system proxy and virtual adapter must remain orange.")
+                    "A simultaneous system proxy and virtual adapter must retain both actual paths.")
         let clientTunnel = ConnectionPathPresentation.make(mode: "Shadowrocket VPN")
         try require(clientTunnel.value == "虚拟网卡" && clientTunnel.isActive && !clientTunnel.isCombined,
                     "An attributed client VPN path must be presented as a virtual adapter.")
         let clientCombined = ConnectionPathPresentation.make(mode: "系统代理 + Shadowrocket VPN")
         try require(clientCombined.value == "系统代理 + 虚拟网卡" && clientCombined.isCombined,
-                    "An attributed client VPN combined with a system proxy must remain orange.")
+                    "An attributed client VPN combined with a system proxy must retain both actual paths.")
+        try require(ConnectionStatusPresentation.make(
+            mode: "系统代理 + Shadowrocket VPN", networkAvailable: true, probeAvailable: true)
+                    == .init(value: "系统代理 + 虚拟网卡", detailOverride: nil, tone: .ok),
+                    "A normal system proxy plus virtual adapter must be green; two paths alone are not a problem.")
         let clientStatus = ConnectionStatusPresentation.make(
             mode: "Shadowrocket VPN", networkAvailable: true, probeAvailable: true)
         try require(clientStatus == .init(value: "虚拟网卡", detailOverride: nil, tone: .ok),
@@ -52,7 +102,15 @@ struct AppStatePoliciesCheck {
         for (mode, expectedValue, expectedTone): (String, String, ConnectionStatusTone) in [
             ("系统代理", "系统代理", .ok),
             ("Shadowrocket VPN", "虚拟网卡", .ok),
-            ("系统代理 + Shadowrocket VPN", "系统代理 + 虚拟网卡", .warning)
+            ("TUN", "虚拟网卡", .ok),
+            ("其他 VPN / TUN", "虚拟网卡", .ok),
+            ("Mihomo VPN", "虚拟网卡", .ok),
+            ("双重入口", "系统代理 + 虚拟网卡", .ok),
+            ("系统代理 + Shadowrocket VPN", "系统代理 + 虚拟网卡", .ok),
+            ("系统代理 + Mihomo VPN", "系统代理 + 虚拟网卡", .ok),
+            ("系统代理 + 其他 VPN / TUN", "系统代理 + 虚拟网卡", .ok),
+            ("PAC / 自动代理 + Mihomo TUN", "系统代理 + 虚拟网卡", .ok),
+            ("系统代理路径 + Mihomo TUN", "系统代理 + 虚拟网卡", .ok)
         ] {
             for network: Bool? in [true, false, nil] {
                 for healthProbeAvailable in [true, false] {

@@ -489,6 +489,23 @@ enum ConnectionStatusTone: Equatable, Sendable {
     case idle
 }
 
+struct ConnectionDiagnosticSnapshot: Equatable, Sendable {
+    let discoveryGeneration: UInt64
+    let tone: ConnectionStatusTone
+
+    static func make(status: Int32, output: String, discoveryGeneration: UInt64) -> ConnectionDiagnosticSnapshot? {
+        guard status == 0, let probe = ProbeOutputParser.parse(output) else { return nil }
+        let levels = [probe.overallLevel, probe.entry.level]
+        let tone: ConnectionStatusTone = levels.contains("error") ? .error
+            : levels.contains("warning") ? .warning : .ok
+        return .init(discoveryGeneration: discoveryGeneration, tone: tone)
+    }
+
+    func tone(for generation: UInt64) -> ConnectionStatusTone? {
+        discoveryGeneration == generation ? tone : nil
+    }
+}
+
 struct ConnectionStatusPresentation: Equatable, Sendable {
     let value: String
     let detailOverride: String?
@@ -497,7 +514,8 @@ struct ConnectionStatusPresentation: Equatable, Sendable {
     static func make(
         mode: String,
         networkAvailable: Bool?,
-        probeAvailable: Bool
+        probeAvailable: Bool,
+        diagnosticTone: ConnectionStatusTone? = nil
     ) -> ConnectionStatusPresentation? {
         if networkAvailable == false {
             return .init(value: "无网络连接", detailOverride: "请检查网络连接", tone: .error)
@@ -510,7 +528,7 @@ struct ConnectionStatusPresentation: Equatable, Sendable {
             return .init(
                 value: value,
                 detailOverride: nil,
-                tone: path.isCombined ? .warning : .ok
+                tone: diagnosticTone == .error ? .error : diagnosticTone == .warning ? .warning : .ok
             )
         }
         if networkAvailable == true && probeAvailable {

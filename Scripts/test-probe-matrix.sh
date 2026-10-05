@@ -33,7 +33,7 @@ sr_app_pid=51001
 sr_ne_pid=51002
 SR_PROVIDER_PIDS="$sr_app_pid
 $sr_ne_pid"
-export PROXYGAUGE_PROVIDER_PROCESS_RECORDS=$'51001\tShadowrocket\tstart-sr\n51002\tMacPacketTunnel\tstart-ne'
+export PROXYGAUGE_PROVIDER_PROCESS_RECORDS=$'51001\tShadowrocket\tstart-sr\n51002\tMacPacketTunnel\tstart-ne\n56001\tmihomo\tstart-core\n56002\tmihomo\tstart-other-core'
 export PROXYGAUGE_NETWORK_SERVICES=$'status\tok\nservice\t11111111-1111-1111-1111-111111111111\tcom.liguangming.Shadowrocket\tconnected\tutun7\tutun7'
 export PROXYGAUGE_ROUTE_LOOKUP_RESULTS=$'inet 1.1.1.1 utun7\ninet 8.8.8.8 utun7\ninet 9.9.9.9 utun7\ninet 208.67.222.222 utun7\ninet6 2606:4700:4700::1111 unavailable\ninet6 2001:4860:4860::8888 unavailable\ninet6 2620:fe::fe unavailable\ninet6 2620:119:35::35 unavailable'
 export PROXYGAUGE_TUN_ROUTE_TABLE=''
@@ -81,6 +81,15 @@ expect_no_mihomo() {
 }
 
 SYS_PROXY_OK_ENV=(
+  PROXYGAUGE_SYSTEM_PROXY_STATE="<dictionary> {
+  HTTPEnable : 1
+  HTTPProxy : 127.0.0.1
+  HTTPPort : $MATRIX_PORT
+  HTTPSEnable : 1
+  HTTPSProxy : 127.0.0.1
+  HTTPSPort : $MATRIX_PORT
+  SOCKSEnable : 0
+}"
   PROXYGAUGE_SYSTEM_PROXY_ACTIVE=1
   PROXYGAUGE_SYSTEM_PROXY_DYNAMIC=0
   PROXYGAUGE_SYSTEM_PROXY_HTTPS=1
@@ -141,13 +150,15 @@ expect_tail "$CELL_OUT" tun $'代表性路由已确认\tok' 'mihomo×仅隧道'
 run_cell 'mihomo×双入口' \
   PROXYGAUGE_CORE_PIDS=$FAKE_MIHOMO_CORE_PID \
   "${SYS_PROXY_OK_ENV[@]}" PROXYGAUGE_TUN_ACTIVE=1 PROXYGAUGE_TUN_KIND=mihomo \
+  PROXYGAUGE_DISCOVERY_LISTENER_RECORDS="p$FAKE_MIHOMO_CORE_PID
+n127.0.0.1:$MATRIX_PORT" \
   "${PORT_OPEN_ENV[@]}"
-expect_tail "$CELL_OUT" overall 'warning' 'mihomo×双入口'
-expect_tail "$CELL_OUT" headline '入口同时开启' 'mihomo×双入口'
+expect_tail "$CELL_OUT" overall 'ok' 'mihomo×双入口'
+expect_tail "$CELL_OUT" headline '代理路径已确认' 'mihomo×双入口'
 expect_tail "$CELL_OUT" detail '系统代理与 Mihomo TUN 均已启用' 'mihomo×双入口'
 expect_tail "$CELL_OUT" core $'运行中\tok' 'mihomo×双入口'
 expect_tail "$CELL_OUT" port "$MATRIX_PORT"$' 监听中\tok' 'mihomo×双入口'
-expect_tail "$CELL_OUT" entry $'同时开启\twarning\t双重入口\texclamationmark.triangle.fill' 'mihomo×双入口'
+expect_tail "$CELL_OUT" entry $'同时开启\tok\t双重入口\tarrow.triangle.2.circlepath' 'mihomo×双入口'
 expect_tail "$CELL_OUT" system $'已启用\tok' 'mihomo×双入口'
 expect_tail "$CELL_OUT" tun $'代表性路由已确认\tok' 'mihomo×双入口'
 
@@ -195,13 +206,15 @@ expect_no_mihomo "$CELL_OUT" 'Shadowrocket×仅隧道'
 run_cell 'Shadowrocket×双入口' \
   PROXYGAUGE_CORE_PIDS='' PROXYGAUGE_PROVIDER_PIDS="$SR_PROVIDER_PIDS" \
   "${SYS_PROXY_OK_ENV[@]}" PROXYGAUGE_TUN_ACTIVE=1 PROXYGAUGE_TUN_KIND=client \
+  PROXYGAUGE_DISCOVERY_LISTENER_RECORDS="p$sr_ne_pid
+n127.0.0.1:$MATRIX_PORT" \
   "${PORT_OPEN_ENV[@]}"
-expect_tail "$CELL_OUT" overall 'warning' 'Shadowrocket×双入口'
-expect_tail "$CELL_OUT" headline '入口同时开启' 'Shadowrocket×双入口'
+expect_tail "$CELL_OUT" overall 'ok' 'Shadowrocket×双入口'
+expect_tail "$CELL_OUT" headline '代理路径已确认' 'Shadowrocket×双入口'
 expect_tail "$CELL_OUT" detail '系统代理与 Shadowrocket VPN 均已启用' 'Shadowrocket×双入口'
 expect_tail "$CELL_OUT" core $'Shadowrocket\tok' 'Shadowrocket×双入口'
 expect_tail "$CELL_OUT" port "$MATRIX_PORT"$' 监听中\tok' 'Shadowrocket×双入口'
-expect_tail "$CELL_OUT" entry $'同时开启\twarning\t双重入口\texclamationmark.triangle.fill' 'Shadowrocket×双入口'
+expect_tail "$CELL_OUT" entry $'同时开启\tok\t双重入口\tarrow.triangle.2.circlepath' 'Shadowrocket×双入口'
 expect_tail "$CELL_OUT" system $'已启用\tok' 'Shadowrocket×双入口'
 expect_tail "$CELL_OUT" tun $'代表性路由已确认\tok' 'Shadowrocket×双入口'
 expect_no_mihomo "$CELL_OUT" 'Shadowrocket×双入口'
@@ -275,4 +288,129 @@ expect_tail "$CELL_OUT" tun $'未接管\tidle' '无提供者×无入口'
 expect_tail "$CELL_OUT" kill $'未配置\tidle' '无提供者×无入口'
 expect_no_mihomo "$CELL_OUT" '无提供者×无入口'
 
-echo "ProxyGauge probe 状态全矩阵测试通过（12 组合，$ASSERTIONS 条断言）。"
+
+# Dual paths are normal only when both ownership and system configuration are
+# confirmed. All these cases use isolated records, never live proxy processes.
+DUAL_BOUNDARY_CASES=0
+assert_problem_dual() {
+  local label="$1" out level
+  shift
+  out=$(run_probe "$@")
+  expect_schema "$out" "$label"
+  expect_tail "$out" overall warning "$label"
+  level=$(/usr/bin/awk -F '\t' '$1 == "entry" {print $3}' <<< "$out")
+  ASSERTIONS=$((ASSERTIONS + 1))
+  [ "$level" = warning ] || fail "$label: 未确认或有问题的双入口不能显示绿色"
+  DUAL_BOUNDARY_CASES=$((DUAL_BOUNDARY_CASES + 1))
+}
+SR_DUAL_ENV=(
+  PROXYGAUGE_CORE_PIDS=''
+  PROXYGAUGE_PROVIDER_PIDS="$SR_PROVIDER_PIDS"
+  "${SYS_PROXY_OK_ENV[@]}"
+  PROXYGAUGE_TUN_ACTIVE=1
+  PROXYGAUGE_TUN_KIND=client
+  "${PORT_OPEN_ENV[@]}"
+  PROXYGAUGE_DISCOVERY_LISTENER_RECORDS="p$sr_ne_pid
+n127.0.0.1:$MATRIX_PORT"
+)
+assert_problem_dual 'Shadowrocket×动态PAC双入口' "${SR_DUAL_ENV[@]}" PROXYGAUGE_SYSTEM_PROXY_DYNAMIC=1
+assert_problem_dual 'Shadowrocket×入口不匹配' "${SR_DUAL_ENV[@]}" PROXYGAUGE_SYSTEM_PROXY_MATCHES=0
+assert_problem_dual 'Shadowrocket×HTTPS缺失' "${SR_DUAL_ENV[@]}" PROXYGAUGE_SYSTEM_PROXY_HTTPS=0
+assert_problem_dual 'Shadowrocket×出口域名绕过' "${SR_DUAL_ENV[@]}" PROXYGAUGE_SYSTEM_PROXY_BYPASS=1
+assert_problem_dual 'Shadowrocket×监听归属不唯一' "${SR_DUAL_ENV[@]}" \
+  PROXYGAUGE_DISCOVERY_LISTENER_RECORDS="p$sr_app_pid
+n127.0.0.1:$MATRIX_PORT
+p$sr_ne_pid
+n127.0.0.1:$MATRIX_PORT"
+assert_problem_dual 'Shadowrocket×未识别监听归属' "${SR_DUAL_ENV[@]}" PROXYGAUGE_DISCOVERY_LISTENER_RECORDS=''
+assert_problem_dual 'MihomoTUN×Shadowrocket系统代理' \
+  PROXYGAUGE_CORE_PIDS=$FAKE_MIHOMO_CORE_PID \
+  PROXYGAUGE_PROVIDER_PIDS="$FAKE_MIHOMO_CORE_PID
+$sr_ne_pid" "${SYS_PROXY_OK_ENV[@]}" \
+  PROXYGAUGE_TUN_ACTIVE=1 PROXYGAUGE_TUN_KIND=mihomo "${PORT_OPEN_ENV[@]}" \
+  PROXYGAUGE_DISCOVERY_LISTENER_RECORDS="p$sr_ne_pid
+n127.0.0.1:$MATRIX_PORT"
+assert_problem_dual 'MihomoTUN×另一核心系统代理' \
+  PROXYGAUGE_CORE_PIDS=$FAKE_MIHOMO_CORE_PID PROXYGAUGE_PROVIDER_PIDS=$'56001\n56002' \
+  "${SYS_PROXY_OK_ENV[@]}" PROXYGAUGE_TUN_ACTIVE=1 PROXYGAUGE_TUN_KIND=mihomo \
+  "${PORT_OPEN_ENV[@]}" PROXYGAUGE_DISCOVERY_LISTENER_RECORDS="p56002
+n127.0.0.1:$MATRIX_PORT"
+for kind in mihomo-unconfirmed split unknown other; do
+  assert_problem_dual "Mihomo×问题路由$kind" \
+    PROXYGAUGE_CORE_PIDS=$FAKE_MIHOMO_CORE_PID "${SYS_PROXY_OK_ENV[@]}" \
+    PROXYGAUGE_TUN_ACTIVE=1 PROXYGAUGE_TUN_KIND="$kind" "${PORT_OPEN_ENV[@]}" \
+    PROXYGAUGE_DISCOVERY_LISTENER_RECORDS="p$FAKE_MIHOMO_CORE_PID
+n127.0.0.1:$MATRIX_PORT"
+done
+
+
+# Inspect all enabled protocols, not only the preferred HTTPS endpoint.
+PROTOCOL_CASES=0
+protocol_snapshot() {
+  local http_enabled="$1" http_host="$2" http_port="$3" socks_enabled="${4:-0}" socks_host="${5:-127.0.0.1}" socks_port="${6:-56192}"
+  /usr/bin/printf '<dictionary> {\n  HTTPEnable : %s\n  HTTPProxy : %s\n  HTTPPort : %s\n  HTTPSEnable : 1\n  HTTPSProxy : 127.0.0.1\n  HTTPSPort : %s\n  SOCKSEnable : %s\n  SOCKSProxy : %s\n  SOCKSPort : %s\n}\n' \
+    "$http_enabled" "$http_host" "$http_port" "$MATRIX_PORT" "$socks_enabled" "$socks_host" "$socks_port"
+}
+assert_protocol_dual() {
+  local label="$1" snapshot="$2" records="$3" expected="$4" out level
+  out=$(run_probe "${SR_DUAL_ENV[@]}" PROXYGAUGE_SYSTEM_PROXY_STATE="$snapshot" \
+    PROXYGAUGE_DISCOVERY_LISTENER_RECORDS="$records")
+  expect_schema "$out" "$label"
+  expect_tail "$out" overall "$expected" "$label"
+  level=$(/usr/bin/awk -F '\t' '$1 == "entry" {print $3}' <<< "$out")
+  ASSERTIONS=$((ASSERTIONS + 1))
+  [ "$level" = "$expected" ] || fail "$label: entry期望$expected 实际$level"
+  PROTOCOL_CASES=$((PROTOCOL_CASES + 1))
+}
+SR_PRIMARY_RECORDS="p$sr_ne_pid
+n127.0.0.1:$MATRIX_PORT"
+SR_DIFFERENT_PORT_RECORDS="$SR_PRIMARY_RECORDS
+p$sr_app_pid
+n127.0.0.1:56191"
+assert_protocol_dual 'HTTP未知owner×HTTPS当前SR' "$(protocol_snapshot 1 127.0.0.1 56191)" \
+  "$SR_PRIMARY_RECORDS
+p51999
+n127.0.0.1:56191" warning
+assert_protocol_dual 'HTTP和HTTPS同端点' "$(protocol_snapshot 1 127.0.0.1 "$MATRIX_PORT")" "$SR_PRIMARY_RECORDS" ok
+assert_protocol_dual 'HTTP不同端口同SR客户端' "$(protocol_snapshot 1 127.0.0.1 56191)" "$SR_DIFFERENT_PORT_RECORDS" ok
+assert_protocol_dual 'HTTP不同提供者×HTTPS当前SR' "$(protocol_snapshot 1 127.0.0.1 56191)" \
+  "$SR_PRIMARY_RECORDS
+p$FAKE_MIHOMO_CORE_PID
+n127.0.0.1:56191" warning
+assert_protocol_dual 'HTTP多owner×HTTPS当前SR' "$(protocol_snapshot 1 127.0.0.1 56191)" \
+  "$SR_DIFFERENT_PORT_RECORDS
+p$sr_ne_pid
+n127.0.0.1:56191" warning
+assert_protocol_dual 'HTTP远端端点' "$(protocol_snapshot 1 192.0.2.10 56191)" "$SR_PRIMARY_RECORDS" warning
+assert_protocol_dual 'HTTP缺失端点字段' "$(protocol_snapshot 1 '' 56191)" "$SR_PRIMARY_RECORDS" warning
+assert_protocol_dual 'HTTP停用残留字段' "$(protocol_snapshot 0 192.0.2.10 invalid)" "$SR_PRIMARY_RECORDS" ok
+assert_protocol_dual 'SOCKS未知owner×HTTPS当前SR' "$(protocol_snapshot 0 127.0.0.1 56191 1 127.0.0.1 56192)" \
+  "$SR_PRIMARY_RECORDS
+p51999
+n127.0.0.1:56192" warning
+assert_protocol_dual 'SOCKS不同端口同当前SR' "$(protocol_snapshot 0 127.0.0.1 56191 1 127.0.0.1 56192)" \
+  "$SR_PRIMARY_RECORDS
+p$sr_ne_pid
+n127.0.0.1:56192" ok
+
+
+# Different ports must still belong to the exact confirmed Mihomo core.
+for http_owner in "$FAKE_MIHOMO_CORE_PID" 56002; do
+  if [ "$http_owner" = "$FAKE_MIHOMO_CORE_PID" ]; then expected=ok; else expected=warning; fi
+  protocol_out=$(run_probe PROXYGAUGE_CORE_PIDS=$FAKE_MIHOMO_CORE_PID \
+    PROXYGAUGE_PROVIDER_PIDS=$'56001\n56002' "${SYS_PROXY_OK_ENV[@]}" \
+    PROXYGAUGE_TUN_ACTIVE=1 PROXYGAUGE_TUN_KIND=mihomo "${PORT_OPEN_ENV[@]}" \
+    PROXYGAUGE_SYSTEM_PROXY_STATE="$(protocol_snapshot 1 127.0.0.1 56191)" \
+    PROXYGAUGE_DISCOVERY_LISTENER_RECORDS="p$FAKE_MIHOMO_CORE_PID
+n127.0.0.1:$MATRIX_PORT
+p$http_owner
+n127.0.0.1:56191")
+  expect_schema "$protocol_out" "Mihomo多协议owner=$http_owner"
+  expect_tail "$protocol_out" overall "$expected" "Mihomo多协议owner=$http_owner"
+  protocol_level=$(/usr/bin/awk -F '\t' '$1 == "entry" {print $3}' <<< "$protocol_out")
+  ASSERTIONS=$((ASSERTIONS + 1))
+  [ "$protocol_level" = "$expected" ] || fail "Mihomo多协议owner=$http_owner: entry期望$expected 实际$protocol_level"
+  PROTOCOL_CASES=$((PROTOCOL_CASES + 1))
+done
+
+echo "ProxyGauge probe 状态全矩阵测试通过（12 组合、$DUAL_BOUNDARY_CASES 个双入口边界、$PROTOCOL_CASES 个协议边界，$ASSERTIONS 条断言）。"

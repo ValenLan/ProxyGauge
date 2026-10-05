@@ -21,6 +21,8 @@ for label in '监控代理连接、出口 IP 与浏览器隐私' '代理状态' 
   /usr/bin/grep -Fq "$label" "$WINDOWS_MAIN"
 done
 /usr/bin/grep -Fq '系统实际出口' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq 'Circle().fill(model.connectionLevel.color)' "$DASHBOARD_SOURCE"
+/usr/bin/grep -Fq '.foregroundStyle(model.connectionLevel.color)' "$DASHBOARD_SOURCE"
 /usr/bin/grep -Fq 'x:Name="ExitCardTitle" Text="系统实际出口"' "$WINDOWS_MAIN"
 
 /usr/bin/grep -Fq '@AppStorage("proxygauge.appearance.v1")' "$DASHBOARD_SOURCE"
@@ -382,6 +384,8 @@ final class DiscoveryRefreshProbe {
     var isDiscoveringConnection = false
     var refreshGeneration = RefreshGenerationGate()
     var discoveryGeneration = RefreshGenerationGate()
+    var connectionDiagnostic: ConnectionDiagnosticSnapshot?
+    var displayedDiscoveryGeneration: UInt64?
     var guardSelection: GuardSelectionSnapshot?
     let guardSelectionReader: () -> GuardSelectionSnapshot? = { nil }
     let exitDefaults = DiscoveryFixtureDefaults()
@@ -537,5 +541,23 @@ SWIFT
   "$TEMP_ROOT/discovery-refresh-check.swift" \
   -o "$TEMP_ROOT/discovery-refresh-check"
 "$TEMP_ROOT/discovery-refresh-check"
+
+# Compile the actual model with volatile preferences and injected commands.
+# The shared initialization fixtures expose no real defaults, route, provider,
+# protection command or public-exit resolver to this color regression suite.
+/usr/bin/xcrun swiftc -D SNAPSHOT -D LIFECYCLE_TESTS \
+  -target arm64-apple-macosx26.0 -module-cache-path "$TEMP_ROOT/module-cache" \
+  -parse-as-library "$PROJECT_ROOT"/Sources/*.swift \
+  "$PROJECT_ROOT/Tests/ExitInitializationCheck.swift" \
+  "$PROJECT_ROOT/Tests/ConnectionStatusDiagnosticCheck.swift" \
+  -o "$TEMP_ROOT/connection-diagnostic-check"
+python3 - "$TEMP_ROOT/connection-diagnostic-check" <<'PYRUN'
+import subprocess, sys
+try:
+    sys.exit(subprocess.run([sys.argv[1]], timeout=30).returncode)
+except subprocess.TimeoutExpired:
+    print("Actual model color check exceeded its bounded deadline.", file=sys.stderr)
+    sys.exit(124)
+PYRUN
 
 echo 'ProxyGauge dashboard semantics tests passed.'

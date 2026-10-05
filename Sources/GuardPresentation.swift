@@ -67,7 +67,7 @@ struct GuardPresentation: Equatable, Sendable {
         case ("已开启", .ok):
             return .init(state: .enabled, title: value, level: .ok)
         case ("监测中", .ok):
-            return .init(state: .monitoring, title: value, level: .warning)
+            return .init(state: .monitoring, title: value, level: .ok)
         case ("已关闭", .warning):
             return .init(state: .disabled, title: value, level: .warning)
         case ("未配置", .idle):

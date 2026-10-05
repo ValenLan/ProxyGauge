@@ -730,7 +730,7 @@ $mihomo_test_pid" \
 /usr/bin/grep -Fq $'mode\t系统代理 + 其他 VPN / TUN' <<< "$multi_provider_discovery"
 
 # Shadowrocket probe 总状态：系统代理归属确认 → ok；client 隧道独占 → ok；
-# 双入口 → warning（与 mihomo 同规则，文案用客户端名）；无 provider → error。
+# 同客户端正常双入口 → ok；未知归属或异常仍保留诊断；无 provider → error。
 shadowrocket_system_probe=$(PROXYGAUGE_CONFIG=/dev/null \
   PROXYGAUGE_CORE_PIDS='' \
   PROXYGAUGE_PROVIDER_PIDS="$shadowrocket_provider_pids" \
@@ -786,6 +786,7 @@ shadowrocket_dual_probe=$(PROXYGAUGE_CONFIG=/dev/null \
   PROXYGAUGE_DISCOVERY_PORT_ACTIVE=1 \
   PROXYGAUGE_DISCOVERY_LISTENER_RECORDS="p$packet_tunnel_test_pid
 n127.0.0.1:1082" \
+  PROXYGAUGE_SYSTEM_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 1\n  HTTPProxy : 127.0.0.1\n  HTTPPort : 1082\n  HTTPSEnable : 1\n  HTTPSProxy : 127.0.0.1\n  HTTPSPort : 1082\n}' \
   PROXYGAUGE_SYSTEM_PROXY_ACTIVE=1 \
   PROXYGAUGE_SYSTEM_PROXY_DYNAMIC=0 \
   PROXYGAUGE_SYSTEM_PROXY_HTTPS=1 \
@@ -795,10 +796,11 @@ n127.0.0.1:1082" \
   PROXYGAUGE_TUN_ROUTE_TABLE="$SHADOWROCKET_ROUTE_TABLE" \
   PROXYGAUGE_ROUTE_LOOKUP_RESULTS="$ROUTES_UTUN5_V4" \
   /bin/bash "$BACKEND" probe)
-[ "$(/usr/bin/awk -F '\t' '$1 == "overall" { print $2 }' <<< "$shadowrocket_dual_probe")" = warning ]
-[ "$(/usr/bin/awk -F '\t' '$1 == "headline" { print $2 }' <<< "$shadowrocket_dual_probe")" = '入口同时开启' ]
+[ "$(/usr/bin/awk -F '\t' '$1 == "overall" { print $2 }' <<< "$shadowrocket_dual_probe")" = ok ]
+[ "$(/usr/bin/awk -F '\t' '$1 == "headline" { print $2 }' <<< "$shadowrocket_dual_probe")" = '代理路径已确认' ]
 [ "$(/usr/bin/awk -F '\t' '$1 == "detail" { print $2 }' <<< "$shadowrocket_dual_probe")" = '系统代理与 Shadowrocket VPN 均已启用' ]
-[ "$(/usr/bin/awk -F '\t' '$1 == "entry" { print $2 "\t" $3 "\t" $4 }' <<< "$shadowrocket_dual_probe")" = $'同时开启\twarning\t双重入口' ]
+[ "$(/usr/bin/awk -F '\t' '$1 == "entry" { print $2 "\t" $3 "\t" $4 }' <<< "$shadowrocket_dual_probe")" = $'同时开启\tok\t双重入口' ]
+[ "$(/usr/bin/awk -F '\t' '$1 == "entry" { print $5 }' <<< "$shadowrocket_dual_probe")" = 'arrow.triangle.2.circlepath' ]
 if /usr/bin/grep -Fq 'Mihomo' <<< "$shadowrocket_dual_probe"; then
   echo 'A client dual-entry probe must not attribute the route to Mihomo.' >&2
   exit 1
