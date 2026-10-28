@@ -321,6 +321,8 @@ proxy_provider_pids() {
     core_pids
     /usr/bin/pgrep -x Shadowrocket 2>/dev/null || true
     /usr/bin/pgrep -x MacPacketTunnel 2>/dev/null || true
+    /usr/bin/pgrep -x iKuuuVPNCore 2>/dev/null || true
+    /usr/bin/pgrep -x ikuuuvpncore 2>/dev/null || true
   } | /usr/bin/awk 'NF && !seen[$0]++'
 }
 
@@ -344,9 +346,15 @@ provider_keys() {
   while IFS= read -r pid; do
     case "$pid" in ''|*[!0-9]*) continue ;; esac
     name=$(provider_pid_name "$pid" 2>/dev/null || true)
+    # A live pgrep hit that exits before ps answers is gone, not a second
+    # provider; only injected fixture PIDs are kept as unknown.
+    if [ -z "$name" ] && [ -z "${PROXYGAUGE_PROVIDER_PIDS+x}${PROXYGAUGE_CORE_PIDS+x}" ]; then
+      continue
+    fi
     case "$name" in
       Shadowrocket|MacPacketTunnel) /usr/bin/printf '%s\n' shadowrocket ;;
       verge-mihomo|mihomo|clash-meta) /usr/bin/printf 'mihomo:%s\n' "$pid" ;;
+      iKuuuVPNCore|ikuuuvpncore) /usr/bin/printf 'ikuuuvpn:%s\n' "$pid" ;;
       *) /usr/bin/printf 'unknown:%s\n' "$pid" ;;
     esac
   done < <(proxy_provider_pids) | /usr/bin/awk 'NF && !seen[$0]++'
@@ -364,6 +372,7 @@ provider_label() {
   case "$(/usr/bin/awk 'NF { print; exit }' <<< "$keys")" in
     shadowrocket) /usr/bin/printf '%s\n' Shadowrocket ;;
     mihomo:*) /usr/bin/printf '%s\n' Mihomo ;;
+    ikuuuvpn:*) /usr/bin/printf '%s\n' iKuuuVPN ;;
   esac
 }
 

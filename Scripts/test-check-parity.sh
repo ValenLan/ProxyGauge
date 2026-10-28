@@ -194,6 +194,38 @@ if /usr/bin/grep -Fq "mihomo:$mihomo_test_pid" <<< "$fn_out"; then
   exit 1
 fi
 
+# 场景 H：iKuuuVPNCore 是独立 provider：单独运行归因 iKuuuVPN，与 Shadowrocket 并存计为 2 个。
+ikuuu_test_pid=51005
+ikuuu_records="$PROXYGAUGE_PROVIDER_PROCESS_RECORDS"$'\n51005\tiKuuuVPNCore\tstart-ikuuu'
+fn_out=$(assert_fn_scenario 'ikuuuvpn-only' \
+  PROXYGAUGE_PROVIDER_PROCESS_RECORDS="$ikuuu_records" \
+  PROXYGAUGE_PROVIDER_PIDS="$ikuuu_test_pid")
+/usr/bin/grep -Fxq "ikuuuvpn:$ikuuu_test_pid" <<< "$fn_out"
+/usr/bin/grep -Fxq 'count: 1' <<< "$fn_out"
+/usr/bin/grep -Fxq 'label: iKuuuVPN' <<< "$fn_out"
+fn_out=$(assert_fn_scenario 'ikuuuvpn-with-shadowrocket' \
+  PROXYGAUGE_PROVIDER_PROCESS_RECORDS="$ikuuu_records" \
+  PROXYGAUGE_PROVIDER_PIDS="$shadowrocket_provider_pids
+$ikuuu_test_pid")
+/usr/bin/grep -Fxq 'count: 2' <<< "$fn_out"
+/usr/bin/grep -Fxq 'label: ' <<< "$fn_out"
+
+# 场景 I：实时枚举（未注入 PID）时，pgrep 之后、ps 之前退出的进程（如切换
+# Shadowrocket VPN 时重启的 MacPacketTunnel）已不在运行，不得被计为第二个
+# unknown provider 而误报多核心冲突。
+for fns in "$CHECK_FNS" "$BACKEND_FNS"; do
+  live_race=$(/usr/bin/env -u PROXYGAUGE_PROVIDER_PIDS -u PROXYGAUGE_CORE_PIDS /bin/bash -c '
+    . "$1"
+    live_pid="$2"
+    vanished_pid="$3"
+    proxy_provider_pids() { /usr/bin/printf "%s\n" "$live_pid" "$vanished_pid"; }
+    echo "keys: $(provider_keys | /usr/bin/paste -sd, -)"
+    echo "count: $(provider_count)"
+    echo "label: $(provider_label)"
+  ' -- "$fns" "$shadowrocket_test_pid" "$dead_test_pid")
+  [ "$live_race" = $'keys: shadowrocket\ncount: 1\nlabel: Shadowrocket' ]
+done
+
 # --- 共用端到端夹具：注入系统代理/端口/路由，fake curl 保证零真实网络访问 ---
 INACTIVE_PROXY_STATE=$'<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n}'
 FAKE_CURL="$TEST_ROOT/fake-curl"
@@ -284,10 +316,27 @@ no_provider_probe=$(run_probe \
   PROXYGAUGE_TUN_KIND=none)
 [ "$(probe_field core <<< "$no_provider_probe")" = $'未运行\terror' ]
 
+# 仅 iKuuuVPN：check.sh ✅ iKuuuVPN ⇔ backend core=iKuuuVPN/ok。
+ikuuu_check=$(run_check \
+  PROXYGAUGE_PROVIDER_PROCESS_RECORDS="$ikuuu_records" \
+  PROXYGAUGE_CORE_PIDS='' \
+  PROXYGAUGE_PROVIDER_PIDS="$ikuuu_test_pid" \
+  PROXYGAUGE_SECONDARY_ENABLED=0 \
+  PROXYGAUGE_TUN_KIND=none)
+/usr/bin/grep -Fq "✅ 代理客户端运行中 (iKuuuVPN, PID $ikuuu_test_pid)" <<< "$ikuuu_check"
+ikuuu_probe=$(run_probe \
+  PROXYGAUGE_PROVIDER_PROCESS_RECORDS="$ikuuu_records" \
+  PROXYGAUGE_CORE_PIDS='' \
+  PROXYGAUGE_PROVIDER_PIDS="$ikuuu_test_pid" \
+  PROXYGAUGE_TUN_KIND=none)
+[ "$(probe_field core <<< "$ikuuu_probe")" = $'iKuuuVPN\tok' ]
+
 # --- 第四部分：check.sh 第 1 节计数三态 ---
 # 恰 1 → ok（上面的 Mihomo / Shadowrocket / 仅 NE 三个 ✅ 断言已覆盖两种形态）；
-# >1 → no：Shadowrocket 与 Mihomo 并存必须判多核心冲突。
+# >1 → no：Shadowrocket 与 Mihomo 并存必须判多核心冲突，首页 probe 也必须同判。
+# 实时枚举中 mihomo 同时出现在 core_pids 与 provider 列表里，夹具按此注入。
 multi_provider_check=$(run_check \
+  PROXYGAUGE_CORE_PIDS="$mihomo_test_pid" \
   PROXYGAUGE_PROVIDER_PIDS="$shadowrocket_provider_pids
 $mihomo_test_pid" \
   PROXYGAUGE_SECONDARY_ENABLED=0 \
@@ -298,6 +347,34 @@ if /usr/bin/grep -Fq '✅ 代理客户端运行中' <<< "$multi_provider_check" 
   echo '多 provider 并存时第 1 节不得判 ok。' >&2
   exit 1
 fi
+multi_provider_probe=$(run_probe \
+  PROXYGAUGE_CORE_PIDS="$mihomo_test_pid" \
+  PROXYGAUGE_PROVIDER_PIDS="$shadowrocket_provider_pids
+$mihomo_test_pid" \
+  PROXYGAUGE_TUN_KIND=none)
+[ "$(probe_field core <<< "$multi_provider_probe")" = $'2 个核心\twarning' ]
+[ "$(/usr/bin/awk -F '\t' '$1 == "headline" { print $2 }' <<< "$multi_provider_probe")" = '状态异常' ]
+if /usr/bin/grep -Fq 'Mihomo' <<< "$multi_provider_probe"; then
+  echo 'Mihomo 与 Shadowrocket 并存时首页不得归因 Mihomo。' >&2
+  exit 1
+fi
+
+# iKuuuVPN 与 Shadowrocket 并存同样是多核心冲突。
+ikuuu_multi_check=$(run_check \
+  PROXYGAUGE_PROVIDER_PROCESS_RECORDS="$ikuuu_records" \
+  PROXYGAUGE_CORE_PIDS='' \
+  PROXYGAUGE_PROVIDER_PIDS="$shadowrocket_provider_pids
+$ikuuu_test_pid" \
+  PROXYGAUGE_SECONDARY_ENABLED=0 \
+  PROXYGAUGE_TUN_KIND=none)
+/usr/bin/grep -Fq '❌ 发现 2 个代理客户端或核心 — 可能存在多核心冲突' <<< "$ikuuu_multi_check"
+ikuuu_multi_probe=$(run_probe \
+  PROXYGAUGE_PROVIDER_PROCESS_RECORDS="$ikuuu_records" \
+  PROXYGAUGE_CORE_PIDS='' \
+  PROXYGAUGE_PROVIDER_PIDS="$shadowrocket_provider_pids
+$ikuuu_test_pid" \
+  PROXYGAUGE_TUN_KIND=none)
+[ "$(probe_field core <<< "$ikuuu_multi_probe")" = $'2 个核心\twarning' ]
 # 0 → no（上面零 provider 的 ❌ 断言已覆盖）。
 
 # --- 第五部分：第 3 节 client 隧道归因 ---

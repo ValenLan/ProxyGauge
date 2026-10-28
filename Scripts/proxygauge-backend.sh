@@ -342,6 +342,8 @@ proxy_provider_pids() {
     core_pids
     /usr/bin/pgrep -x Shadowrocket 2>/dev/null || true
     /usr/bin/pgrep -x MacPacketTunnel 2>/dev/null || true
+    /usr/bin/pgrep -x iKuuuVPNCore 2>/dev/null || true
+    /usr/bin/pgrep -x ikuuuvpncore 2>/dev/null || true
   } | /usr/bin/awk 'NF && !seen[$0]++'
 }
 
@@ -365,9 +367,15 @@ provider_keys() {
   while IFS= read -r pid; do
     case "$pid" in ''|*[!0-9]*) continue ;; esac
     name=$(provider_pid_name "$pid" 2>/dev/null || true)
+    # A live pgrep hit that exits before ps answers is gone, not a second
+    # provider; only injected fixture PIDs are kept as unknown.
+    if [ -z "$name" ] && [ -z "${PROXYGAUGE_PROVIDER_PIDS+x}${PROXYGAUGE_CORE_PIDS+x}" ]; then
+      continue
+    fi
     case "$name" in
       Shadowrocket|MacPacketTunnel) /usr/bin/printf '%s\n' shadowrocket ;;
       verge-mihomo|mihomo|clash-meta) /usr/bin/printf 'mihomo:%s\n' "$pid" ;;
+      iKuuuVPNCore|ikuuuvpncore) /usr/bin/printf 'ikuuuvpn:%s\n' "$pid" ;;
       *) /usr/bin/printf 'unknown:%s\n' "$pid" ;;
     esac
   done < <(proxy_provider_pids) | /usr/bin/awk 'NF && !seen[$0]++'
@@ -385,6 +393,7 @@ provider_label() {
   case "$(/usr/bin/awk 'NF { print; exit }' <<< "$keys")" in
     shadowrocket) /usr/bin/printf '%s\n' Shadowrocket ;;
     mihomo:*) /usr/bin/printf '%s\n' Mihomo ;;
+    ikuuuvpn:*) /usr/bin/printf '%s\n' iKuuuVPN ;;
   esac
 }
 
@@ -1441,37 +1450,39 @@ probe() {
   local overall headline detail entry_ok system_active tun_active mihomo_tun_unconfirmed
   local split_tun_active unknown_tun_active other_tun_active tunnel_kind
   local engine_up engine_name provider_n client_tun_active client_label attr_name
-  local dual_entry_confirmed
+  local dual_entry_confirmed conflict_count
 
   core_count=$(core_pids | /usr/bin/awk 'NF {count++} END {print count+0}')
+  # Count Mihomo cores together with every other identified provider, so Mihomo
+  # plus Shadowrocket conflicts here exactly as it does in the health check.
+  conflict_count=$({
+    core_pids | /usr/bin/awk 'NF { print "mihomo:" $0 }'
+    provider_keys | /usr/bin/awk '!/^unknown:/'
+  } | /usr/bin/awk 'NF && !seen[$0]++ { count++ } END { print count+0 }')
   engine_up=""
   engine_name=""
-  case "$core_count" in
-    0)
-      provider_n=$(provider_count)
-      if [ "$provider_n" = "1" ]; then
-        engine_name=$(provider_label)
-      fi
-      if [ -n "$engine_name" ]; then
-        engine_up=1
-        core_value="$engine_name"
-        core_level="ok"
-      else
-        core_value="未运行"
-        core_level="error"
-      fi
-      ;;
-    1)
+  if [ "$conflict_count" -gt 1 ]; then
+    core_value="${conflict_count} 个核心"
+    core_level="warning"
+  elif [ "$core_count" = 1 ]; then
+    engine_up=1
+    engine_name="Mihomo"
+    core_value="运行中"
+    core_level="ok"
+  else
+    provider_n=$(provider_count)
+    if [ "$provider_n" = "1" ]; then
+      engine_name=$(provider_label)
+    fi
+    if [ -n "$engine_name" ]; then
       engine_up=1
-      engine_name="Mihomo"
-      core_value="运行中"
+      core_value="$engine_name"
       core_level="ok"
-      ;;
-    *)
-      core_value="${core_count} 个核心"
-      core_level="warning"
-      ;;
-  esac
+    else
+      core_value="未运行"
+      core_level="error"
+    fi
+  fi
   attr_name="${engine_name:-当前代理客户端}"
 
   if [ -n "$MIXED_CONFIG_INVALID" ]; then
@@ -1789,7 +1800,7 @@ probe() {
       headline="代理已接管"
       detail="流量入口当前工作正常"
     fi
-  elif [ "$core_count" -gt 1 ] 2>/dev/null; then
+  elif [ "$conflict_count" -gt 1 ]; then
     overall="warning"
     headline="状态异常"
     detail="检测到多个代理核心，请关闭重复核心后刷新状态"

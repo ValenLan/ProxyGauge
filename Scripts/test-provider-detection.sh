@@ -282,12 +282,13 @@ if /usr/bin/grep -Eq 'Mihomo|Shadowrocket|Clash' <<< "$stale_provider_probe"; th
   exit 1
 fi
 
-# mihomo + Shadowrocket 同时运行：多个提供者必须降级为“其他”，不得猜测归因。
+# mihomo + Shadowrocket 同时运行：与链路检测一致判为多核心冲突，且不得猜测归因。
+# 实时枚举中 mihomo 同时出现在 core_pids 与 provider 列表里，夹具按此注入。
 MULTI_PROVIDER_PIDS="$BOTH_PROVIDER_PIDS
 $MIHOMO_PID"
 
 multi_provider_probe=$(PROXYGAUGE_CONFIG=/dev/null \
-  PROXYGAUGE_CORE_PIDS='' \
+  PROXYGAUGE_CORE_PIDS="$MIHOMO_PID" \
   PROXYGAUGE_PROVIDER_PIDS="$MULTI_PROVIDER_PIDS" \
   PROXYGAUGE_MIXED=127.0.0.1:1082 \
   PROXYGAUGE_DISCOVERY_PORT_ACTIVE=0 \
@@ -298,9 +299,9 @@ multi_provider_probe=$(PROXYGAUGE_CONFIG=/dev/null \
   PROXYGAUGE_ROUTE_LOOKUP_RESULTS="$ROUTES_UTUN5_V4" \
   /bin/bash "$BACKEND" probe)
 [ "$(/usr/bin/awk -F '\t' '$1 == "overall" { print $2 }' <<< "$multi_provider_probe")" = warning ]
-[ "$(/usr/bin/awk -F '\t' '$1 == "headline" { print $2 }' <<< "$multi_provider_probe")" = '检测到其他 VPN/TUN' ]
-[ "$(/usr/bin/awk -F '\t' '$1 == "detail" { print $2 }' <<< "$multi_provider_probe")" = '系统存在活动隧道路由，但不能归因于 当前代理客户端；请以系统实际出口为准' ]
-[ "$(/usr/bin/awk -F '\t' '$1 == "core" { print $2 "\t" $3 }' <<< "$multi_provider_probe")" = $'未运行\terror' ]
+[ "$(/usr/bin/awk -F '\t' '$1 == "headline" { print $2 }' <<< "$multi_provider_probe")" = '状态异常' ]
+[ "$(/usr/bin/awk -F '\t' '$1 == "detail" { print $2 }' <<< "$multi_provider_probe")" = '检测到多个代理核心，请关闭重复核心后刷新状态' ]
+[ "$(/usr/bin/awk -F '\t' '$1 == "core" { print $2 "\t" $3 }' <<< "$multi_provider_probe")" = $'2 个核心\twarning' ]
 [ "$(/usr/bin/awk -F '\t' '$1 == "entry" { print $2 "\t" $3 "\t" $4 }' <<< "$multi_provider_probe")" = "$OTHER_TUN_ENTRY" ]
 if /usr/bin/grep -Eq 'Mihomo|Shadowrocket' <<< "$multi_provider_probe"; then
   echo '多提供者并存时必须降级为其他，不得猜测归因。' >&2

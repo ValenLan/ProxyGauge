@@ -394,11 +394,13 @@ p$sr_ne_pid
 n127.0.0.1:56192" ok
 
 
-# Different ports must still belong to the exact confirmed Mihomo core.
+# Different ports must still belong to the exact confirmed Mihomo core. A second
+# running Mihomo provider is a duplicate-core conflict on its own, so 56002 is
+# only a stray listener here, not a provider.
 for http_owner in "$FAKE_MIHOMO_CORE_PID" 56002; do
   if [ "$http_owner" = "$FAKE_MIHOMO_CORE_PID" ]; then expected=ok; else expected=warning; fi
   protocol_out=$(run_probe PROXYGAUGE_CORE_PIDS=$FAKE_MIHOMO_CORE_PID \
-    PROXYGAUGE_PROVIDER_PIDS=$'56001\n56002' "${SYS_PROXY_OK_ENV[@]}" \
+    PROXYGAUGE_PROVIDER_PIDS=$FAKE_MIHOMO_CORE_PID "${SYS_PROXY_OK_ENV[@]}" \
     PROXYGAUGE_TUN_ACTIVE=1 PROXYGAUGE_TUN_KIND=mihomo "${PORT_OPEN_ENV[@]}" \
     PROXYGAUGE_SYSTEM_PROXY_STATE="$(protocol_snapshot 1 127.0.0.1 56191)" \
     PROXYGAUGE_DISCOVERY_LISTENER_RECORDS="p$FAKE_MIHOMO_CORE_PID
