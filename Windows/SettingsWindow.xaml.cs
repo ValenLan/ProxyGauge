@@ -9,23 +9,27 @@ namespace ProxyGauge;
 public partial class SettingsWindow : Window
 {
     private readonly ConnectionDiscoveryService _discoveryService;
+    private readonly UpdateService _updateService;
     private readonly bool _runDiscoveryOnLoad;
     private bool _isDiscovering;
 
     public SettingsWindow(
         AppConfig config,
         ConnectionDiscoveryService discoveryService,
+        UpdateService updateService,
         bool runDiscoveryOnLoad = false)
     {
         InitializeComponent();
-        WindowCornerRounding.Apply(this, 10);
+        WindowCornerRounding.Apply(this, 20);
         _discoveryService = discoveryService;
+        _updateService = updateService;
         _runDiscoveryOnLoad = runDiscoveryOnLoad;
         Config = config.Clone();
         HostTextBox.Text = Config.MixedHost;
         PortTextBox.Text = Config.MixedPort.ToString();
         ExpectedIpTextBox.Text = Config.ExpectedIp;
         TimeoutTextBox.Text = Config.TimeoutSeconds.ToString();
+        VersionText.Text = $"当前版本 v{UpdateService.CurrentVersion}";
         if (runDiscoveryOnLoad)
         {
             HeaderText.Text = "确认本地连接";
@@ -45,6 +49,53 @@ public partial class SettingsWindow : Window
 
     private async void DiscoverButton_Click(object sender, RoutedEventArgs e) =>
         await DiscoverAsync();
+
+    private async void CheckUpdateButton_Click(object sender, RoutedEventArgs e)
+    {
+        CheckUpdateButton.IsEnabled = false;
+        CheckUpdateButton.Content = "正在检查…";
+        try
+        {
+            var release = await _updateService.CheckAsync();
+            if (release is null)
+            {
+                BubbleDialogWindow.Show(
+                    this,
+                    "软件更新",
+                    $"当前 v{UpdateService.CurrentVersion} 已是最新版。");
+                return;
+            }
+
+            var answer = BubbleDialogWindow.Show(
+                this,
+                "发现新版本",
+                $"发现 ProxyGauge v{release.Version}。\n\n下载安装包并完成校验后开始更新吗？",
+                "下载并更新",
+                "稍后");
+            if (!answer)
+            {
+                return;
+            }
+
+            CheckUpdateButton.Content = "正在下载…";
+            var downloaded = await _updateService.DownloadAsync(release);
+            UpdateService.LaunchInstaller(downloaded);
+            Application.Current.Shutdown();
+        }
+        catch (Exception exception)
+        {
+            BubbleDialogWindow.Show(
+                this,
+                "软件更新",
+                $"暂时无法完成更新检查。\n\n{exception.Message}",
+                kind: BubbleDialogKind.Warning);
+        }
+        finally
+        {
+            CheckUpdateButton.Content = "检查更新";
+            CheckUpdateButton.IsEnabled = true;
+        }
+    }
 
     private async Task DiscoverAsync()
     {

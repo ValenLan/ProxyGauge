@@ -13,11 +13,11 @@ public partial class App : Application
 
         if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
         {
-            MessageBox.Show(
-                "ProxyGauge 仅支持 Windows 11，不支持 Windows 10。",
+            BubbleDialogWindow.Show(
+                null,
                 "ProxyGauge",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+                "ProxyGauge 仅支持 Windows 11，不支持 Windows 10。",
+                kind: BubbleDialogKind.Error);
             Shutdown(1);
             return;
         }
@@ -26,7 +26,7 @@ public partial class App : Application
         _themeService.Start();
 
         ShutdownMode = ShutdownMode.OnMainWindowClose;
-        MainWindow = new MainWindow();
+        MainWindow = new MainWindow(_themeService);
         MainWindow.Show();
     }
 

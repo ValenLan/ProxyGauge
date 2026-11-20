@@ -4,42 +4,42 @@
     <Application.Resources>
         <!--
           ThemeService replaces these color tokens before the first window opens and
-          whenever Windows changes appearance. Brushes keep DynamicResource bindings
+          whenever the user switches appearance. Brushes keep DynamicResource bindings
           so every open window updates without being recreated.
         -->
-        <Color x:Key="CanvasColor">#242424</Color>
-        <Color x:Key="SurfaceColor">#1C1C1C</Color>
-        <Color x:Key="SurfaceRaisedColor">#2A2A2A</Color>
-        <Color x:Key="SurfaceSubtleColor">#202020</Color>
-        <Color x:Key="ControlColor">#2C2C2E</Color>
-        <Color x:Key="ControlHoverColor">#3A3A3C</Color>
-        <Color x:Key="FieldColor">#141414</Color>
-        <Color x:Key="BorderColor">#14FFFFFF</Color>
-        <Color x:Key="TextColor">#ECECEC</Color>
-        <Color x:Key="MutedTextColor">#9C9CA1</Color>
-        <Color x:Key="SubtleTextColor">#62748A</Color>
-        <Color x:Key="AccentColor">#218CFF</Color>
-        <Color x:Key="AccentStrongColor">#0A84FF</Color>
-        <Color x:Key="AccentHoverColor">#3D9DFF</Color>
-        <Color x:Key="AccentFocusColor">#D9EBFF</Color>
-        <Color x:Key="OnAccentColor">#FFFFFF</Color>
-        <Color x:Key="AccentSurfaceColor">#20375A</Color>
-        <Color x:Key="AccentTintColor">#223D76AD</Color>
-        <Color x:Key="SuccessColor">#33C759</Color>
+        <Color x:Key="CanvasColor">#181A1C</Color>
+        <Color x:Key="SurfaceColor">#202324</Color>
+        <Color x:Key="SurfaceRaisedColor">#25292A</Color>
+        <Color x:Key="SurfaceSubtleColor">#1D2022</Color>
+        <Color x:Key="ControlColor">#25292A</Color>
+        <Color x:Key="ControlHoverColor">#2C3130</Color>
+        <Color x:Key="FieldColor">#151719</Color>
+        <Color x:Key="BorderColor">#343A38</Color>
+        <Color x:Key="TextColor">#E7EAE9</Color>
+        <Color x:Key="MutedTextColor">#989E9B</Color>
+        <Color x:Key="SubtleTextColor">#626866</Color>
+        <Color x:Key="AccentColor">#36EC8F</Color>
+        <Color x:Key="AccentStrongColor">#25D87B</Color>
+        <Color x:Key="AccentHoverColor">#57F3A2</Color>
+        <Color x:Key="AccentFocusColor">#C5FFE0</Color>
+        <Color x:Key="OnAccentColor">#0D1712</Color>
+        <Color x:Key="AccentSurfaceColor">#1E352A</Color>
+        <Color x:Key="AccentTintColor">#2236EC8F</Color>
+        <Color x:Key="SuccessColor">#36EC8F</Color>
         <Color x:Key="WarningColor">#FF9F0A</Color>
         <Color x:Key="ErrorColor">#FF453A</Color>
         <Color x:Key="IdleColor">#8E8E93</Color>
-        <Color x:Key="SuccessBackgroundColor">#2433C759</Color>
+        <Color x:Key="SuccessBackgroundColor">#2436EC8F</Color>
         <Color x:Key="WarningBackgroundColor">#24FF9F0A</Color>
         <Color x:Key="ErrorBackgroundColor">#24FF453A</Color>
         <Color x:Key="IdleBackgroundColor">#248E8E93</Color>
-        <Color x:Key="RulesColor">#8A6BF5</Color>
-        <Color x:Key="RulesSurfaceColor">#262040</Color>
-        <Color x:Key="AdvancedColor">#33B8D1</Color>
-        <Color x:Key="AdvancedSurfaceColor">#1D3038</Color>
-        <Color x:Key="SwitchTrackColor">#3A3A3C</Color>
-        <Color x:Key="SwitchThumbColor">#F5F5F7</Color>
-        <Color x:Key="ProgressTrackColor">#26354A</Color>
+        <Color x:Key="RulesColor">#36EC8F</Color>
+        <Color x:Key="RulesSurfaceColor">#1E352A</Color>
+        <Color x:Key="AdvancedColor">#36EC8F</Color>
+        <Color x:Key="AdvancedSurfaceColor">#1E352A</Color>
+        <Color x:Key="SwitchTrackColor">#343A38</Color>
+        <Color x:Key="SwitchThumbColor">#E7EAE9</Color>
+        <Color x:Key="ProgressTrackColor">#25312C</Color>
 
         <SolidColorBrush x:Key="CanvasBrush" Color="{DynamicResource CanvasColor}" />
         <SolidColorBrush x:Key="SurfaceBrush" Color="{DynamicResource SurfaceColor}" />

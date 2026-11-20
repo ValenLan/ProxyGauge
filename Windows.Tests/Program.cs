@@ -28,12 +28,33 @@ static double ContrastRatio(string first, string second)
         (Math.Min(firstLuminance, secondLuminance) + 0.05);
 }
 
-Require(ThemeService.ResolveTheme(false, 0) == AppThemeKind.Dark,
-    "Windows dark appearance must select the dark palette.");
-Require(ThemeService.ResolveTheme(false, 1) == AppThemeKind.Light,
-    "Windows light appearance must select the light palette.");
-Require(ThemeService.ResolveTheme(true, 0) == AppThemeKind.HighContrast,
-    "High contrast must take priority over light or dark appearance.");
+Require(ThemeService.ResolveTheme(false, "dark") == AppThemeKind.Dark,
+    "A saved dark choice must select the dark palette.");
+Require(ThemeService.ResolveTheme(false, "light") == AppThemeKind.Light,
+    "A saved light choice must select the light palette.");
+Require(ThemeService.ResolveTheme(false, null) == AppThemeKind.Light,
+    "The first launch must use the light palette without following Windows.");
+Require(ThemeService.ResolveTheme(true, "dark") == AppThemeKind.HighContrast,
+    "High contrast must take priority over the manual appearance choice.");
+
+Require(UpdateService.CompareVersions("1.6.0", "1.5.7") > 0,
+    "A newer semantic version must be detected.");
+Require(UpdateService.CompareVersions("1.5.7", "1.5.7") == 0,
+    "Equal semantic versions must not trigger an update.");
+var checksum = new string('a', 64);
+Require(UpdateService.FindChecksum($"{checksum}  ProxyGauge-1.6.0-win-x64.msi\n", "ProxyGauge-1.6.0-win-x64.msi") == checksum,
+    "The updater must select the exact MSI checksum.");
+
+var flatExitSummary = ExitSummaryService.ParseResponse(
+    """{"ip":"203.0.113.8","is_datacenter":false,"is_proxy":false,"is_vpn":false,"company_name":"Example Network","asn_num":64500,"asn_org":"Example ASN","cc":"US"}""",
+    """{"ip":"203.0.113.8","city":"Los Angeles","country":"US","country_name":"United States","asn":"AS64500","org":"Example ASN"}""");
+Require(flatExitSummary is not null, "The current flat ipapi.is payload must produce an exit summary.");
+Require(flatExitSummary!.Location == "United States · Los Angeles",
+    "The secondary location response must enrich the flat anonymous payload.");
+Require(flatExitSummary.Network == "AS64500 · Example ASN",
+    "The current flat ASN fields must remain visible.");
+Require(flatExitSummary.NetworkType == "普通公网",
+    "A complete negative set of network flags must not remain unknown.");
 
 var darkPalette = ThemeService.GetPalette(AppThemeKind.Dark);
 var lightPalette = ThemeService.GetPalette(AppThemeKind.Light);

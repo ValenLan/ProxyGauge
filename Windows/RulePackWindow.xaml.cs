@@ -12,7 +12,7 @@ public partial class RulePackWindow : Window
     public RulePackWindow(RulePackService service)
     {
         InitializeComponent();
-        WindowCornerRounding.Apply(this, 10);
+        WindowCornerRounding.Apply(this, 20);
         _service = service;
         RuleText = _service.Read();
         DataContext = this;
