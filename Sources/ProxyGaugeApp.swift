@@ -290,13 +290,16 @@ final class ProxyModel: ObservableObject {
         defer { isCheckingUpdate = false }
         do {
             if let release = try await updateService.check(currentVersion: currentVersion) {
+                PGLog.info("update", "found newer release v\(release.version) (current v\(currentVersion))")
                 availableUpdate = release
                 showUpdatePrompt = true
             } else if !silent {
+                PGLog.info("update", "check ok, v\(currentVersion) is latest")
                 updateMessage = "当前 v\(currentVersion) 已是最新版。"
                 showUpdateResult = true
             }
         } catch {
+            PGLog.error("update", "check failed: \(error.localizedDescription)")
             if !silent {
                 updateMessage = "暂时无法完成更新检查。\n\n\(error.localizedDescription)"
                 showUpdateResult = true
@@ -2170,6 +2173,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard ownsSingletonLock else { return }
+        PGLog.sessionStart()
         NSApp.setActivationPolicy(.regular)
         applyApplicationIcon()
         NSApp.activate(ignoringOtherApps: true)
@@ -2191,6 +2195,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        PGLog.info("lifecycle", "session end")
         if singletonLockFD >= 0 {
             flock(singletonLockFD, LOCK_UN)
             Darwin.close(singletonLockFD)

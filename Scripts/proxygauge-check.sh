@@ -6,6 +6,24 @@
 DEFAULT_CONFIG="$HOME/.config/proxygauge/config"
 
 CONFIG_FILE="${PROXYGAUGE_CONFIG:-$DEFAULT_CONFIG}"
+
+# Health summary log, mirroring backend.sh's pg_log (this script may run
+# standalone after an exec, so the helper is defined here too). Never writes
+# to stdout/stderr; bounded the same way as the backend log.
+PG_LOG_FILE="${PROXYGAUGE_LOG_FILE:-$HOME/Library/Logs/ProxyGauge/backend.log}"
+pg_log() {
+  /bin/mkdir -p "${PG_LOG_FILE%/*}" 2>/dev/null || return 0
+  local size
+  size=$(/usr/bin/stat -f '%z' "$PG_LOG_FILE" 2>/dev/null || printf '0')
+  case "$size" in ''|*[!0-9]*) size=0 ;; esac
+  if [ "$size" -gt 262144 ]; then
+    /usr/bin/tail -c 65536 "$PG_LOG_FILE" > "$PG_LOG_FILE.trunc" 2>/dev/null \
+      && /bin/mv "$PG_LOG_FILE.trunc" "$PG_LOG_FILE"
+  fi
+  /usr/bin/printf '%s %s\n' "$(/bin/date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" \
+    >> "$PG_LOG_FILE" 2>/dev/null || true
+}
+
 ENV_PROXYGAUGE_MIXED="${PROXYGAUGE_MIXED:-}"
 ENV_SECONDARY_ENABLED="${PROXYGAUGE_SECONDARY_ENABLED:-}"
 ENV_SECONDARY_LABEL="${PROXYGAUGE_SECONDARY_LABEL:-}"
@@ -376,6 +394,7 @@ fi
 
 echo
 echo "===== 结果: $pass 通过 / $warn 提示 / $fail 失败 ====="
+pg_log "health summary pass=$pass warn=$warn fail=$fail endpoint=$MIXED"
 if [ "$fail" -eq 0 ]; then
   echo "🎉 代理链路检查通过"
   exit 0

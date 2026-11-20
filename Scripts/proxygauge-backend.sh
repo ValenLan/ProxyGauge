@@ -43,6 +43,24 @@ export PROXYGAUGE_MIXED="$MIXED"
 export PROXYGAUGE_SECONDARY_ENABLED PROXYGAUGE_SECONDARY_LABEL PROXYGAUGE_SECONDARY_GROUP
 export PROXYGAUGE_DEFAULT_GROUP PROXYGAUGE_SECONDARY_MIXED PROXYGAUGE_SECONDARY_DOMAINS
 
+# Diagnostic log: one line per backend invocation, mirroring the Swift-side
+# PGLog file layout. Never writes to stdout/stderr, so parsed output stays
+# byte-identical. Bounded: when the file passes 256KB only the newest 64KB
+# is kept, so an unattended machine cannot fill its disk with diagnostics.
+PG_LOG_FILE="${PROXYGAUGE_LOG_FILE:-$HOME/Library/Logs/ProxyGauge/backend.log}"
+pg_log() {
+  /bin/mkdir -p "${PG_LOG_FILE%/*}" 2>/dev/null || return 0
+  local size
+  size=$(/usr/bin/stat -f '%z' "$PG_LOG_FILE" 2>/dev/null || printf '0')
+  case "$size" in ''|*[!0-9]*) size=0 ;; esac
+  if [ "$size" -gt 262144 ]; then
+    /usr/bin/tail -c 65536 "$PG_LOG_FILE" > "$PG_LOG_FILE.trunc" 2>/dev/null \
+      && /bin/mv "$PG_LOG_FILE.trunc" "$PG_LOG_FILE"
+  fi
+  /usr/bin/printf '%s %s\n' "$(/bin/date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" \
+    >> "$PG_LOG_FILE" 2>/dev/null || true
+}
+
 has_tun_route() {
   case "${PROXYGAUGE_TUN_ACTIVE:-}" in
     1|true|yes) return 0 ;;
@@ -632,12 +650,15 @@ run_admin() {
 
 case "${1:-}" in
   discover)
+    pg_log "backend discover invoked ppid=$$"
     discover
     ;;
   probe)
+    pg_log "backend probe invoked ppid=$$"
     probe
     ;;
   health)
+    pg_log "backend health invoked ppid=$$"
     if [ ! -x "$CHECK" ]; then
       echo "缺少链路检测脚本: $CHECK"
       exit 1
@@ -645,18 +666,23 @@ case "${1:-}" in
     exec /bin/bash "$CHECK"
     ;;
   exit-ip)
+    pg_log "backend exit-ip invoked ppid=$$"
     resolve_default_exit_ip
     ;;
   exit-summary)
+    pg_log "backend exit-summary invoked ppid=$$"
     exit_summary
     ;;
   kill-status)
+    pg_log "backend kill-status invoked ppid=$$"
     run_admin status
     ;;
   kill-on)
+    pg_log "backend kill-on invoked ppid=$$"
     run_admin on
     ;;
   kill-off)
+    pg_log "backend kill-off invoked ppid=$$"
     run_admin off
     ;;
   *)

@@ -24,6 +24,7 @@ fi
   -module-cache-path "$MODULE_CACHE" \
   -parse-as-library \
   "$PROJECT_ROOT/Sources/ProxyGaugeApp.swift" \
+  "$PROJECT_ROOT/Sources/PGLog.swift" \
   "$PROJECT_ROOT/Sources/DashboardView.swift" \
   "$PROJECT_ROOT/Sources/ExitClipboard.swift" \
   "$PROJECT_ROOT/Sources/WindowCapability.swift" \
