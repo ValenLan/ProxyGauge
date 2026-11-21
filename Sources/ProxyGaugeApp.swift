@@ -315,7 +315,7 @@ final class ProxyModel: ObservableObject {
             guard let self else { return }
             do {
                 let downloaded = try await self.updateService.download(release)
-                try self.updateService.installDownloadedUpdate(
+                try await self.updateService.installDownloadedUpdate(
                     release,
                     archive: downloaded.archive,
                     checksum: downloaded.checksum

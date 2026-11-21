@@ -86,7 +86,7 @@ enum PGLog {
         }
         defer { try? handle.close() }
         do {
-            _ = try handle.seekToEndOffset()
+            _ = handle.seekToEndOfFile()
             try handle.write(contentsOf: data)
         } catch {
             reportFailure(error)

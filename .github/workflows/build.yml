@@ -176,14 +176,27 @@ jobs:
           skip-decompress: true
       - name: Generate checksums
         run: |
-          shopt -s nullglob
-          ASSETS=(release-assets/ProxyGauge-*.zip release-assets/ProxyGauge-*.msi)
-          if [ "${#ASSETS[@]}" -ne 3 ]; then
-            echo "Expected 3 release packages, found ${#ASSETS[@]}." >&2
+          VERSION="${GITHUB_REF_NAME#v}"
+          EXPECTED_ASSETS=(
+            "ProxyGauge-$VERSION-macOS-arm64.zip"
+            "ProxyGauge-$VERSION-win-x64.msi"
+            "ProxyGauge-$VERSION-win-arm64.msi"
+          )
+          cd release-assets
+          for asset in "${EXPECTED_ASSETS[@]}"; do
+            if [ ! -f "$asset" ] || [ -L "$asset" ]; then
+              echo "Missing or unsafe release asset: $asset" >&2
+              exit 1
+            fi
+          done
+          found=$(find . -maxdepth 1 -type f \( -name 'ProxyGauge-*.zip' -o -name 'ProxyGauge-*.msi' \) -print0 | xargs -0 -n1 basename | sort)
+          expected=$(printf '%s\n' "${EXPECTED_ASSETS[@]}" | sort)
+          if [ "$found" != "$expected" ]; then
+            echo "Release asset set mismatch." >&2
+            printf 'Found:\n%s\nExpected:\n%s\n' "$found" "$expected" >&2
             exit 1
           fi
-          cd release-assets
-          sha256sum ProxyGauge-*.zip ProxyGauge-*.msi > SHA256SUMS.txt
+          sha256sum "${EXPECTED_ASSETS[@]}" > SHA256SUMS.txt
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

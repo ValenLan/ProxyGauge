@@ -20,6 +20,7 @@ cd "$PROJECT_ROOT"
   -parse-as-library \
   Sources/ProxyGaugeApp.swift \
   Sources/PGLog.swift \
+  Sources/BundledResourceIntegrity.swift \
   Sources/DashboardView.swift \
   Sources/ExitClipboard.swift \
   Sources/WindowCapability.swift \
