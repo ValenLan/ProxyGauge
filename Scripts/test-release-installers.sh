@@ -28,7 +28,7 @@ APP_UPDATER="$PROJECT_ROOT/Scripts/proxygauge-updater.sh"
 /usr/bin/grep -Fq 'ProxyGauge.previous.app' "$APP_UPDATER"
 /usr/bin/grep -Fq 'SHA256.HashDataAsync' "$PROJECT_ROOT/Windows/Services/UpdateService.cs"
 /usr/bin/grep -Fq 'msiexec.exe' "$PROJECT_ROOT/Windows/Services/UpdateService.cs"
-/usr/bin/grep -Fq 'SHA256.hash' "$PROJECT_ROOT/Sources/UpdateService.swift"
+/usr/bin/grep -Fq 'BundledResourceIntegrity' "$PROJECT_ROOT/Sources/UpdateService.swift"
 /usr/bin/grep -Fq 'releases/latest' "$PROJECT_ROOT/Sources/UpdateService.swift"
 
 if /usr/bin/grep -Eiq \

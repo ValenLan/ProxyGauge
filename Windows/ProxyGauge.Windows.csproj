@@ -11,8 +11,8 @@
     <RootNamespace>ProxyGauge</RootNamespace>
     <ApplicationIcon>Assets\ProxyGauge.ico</ApplicationIcon>
     <Version>1.7.0</Version>
-    <AssemblyVersion>1.5.7.0</AssemblyVersion>
-    <FileVersion>1.5.7.0</FileVersion>
+    <AssemblyVersion>1.7.0.0</AssemblyVersion>
+    <FileVersion>1.7.0.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
