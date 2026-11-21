@@ -19,6 +19,7 @@ cd "$PROJECT_ROOT"
   -module-cache-path "$TEMP_ROOT/module-cache" \
   -parse-as-library \
   Sources/ProxyGaugeApp.swift \
+  Sources/PGLog.swift \
   Sources/DashboardView.swift \
   Sources/ExitClipboard.swift \
   Sources/WindowCapability.swift \

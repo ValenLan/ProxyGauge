@@ -2196,6 +2196,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         PGLog.info("lifecycle", "session end")
+        PGLog.flush()
         if singletonLockFD >= 0 {
             flock(singletonLockFD, LOCK_UN)
             Darwin.close(singletonLockFD)

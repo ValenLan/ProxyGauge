@@ -9,19 +9,37 @@ CONFIG_FILE="${PROXYGAUGE_CONFIG:-$DEFAULT_CONFIG}"
 
 # Health summary log, mirroring backend.sh's pg_log (this script may run
 # standalone after an exec, so the helper is defined here too). Never writes
-# to stdout/stderr; bounded the same way as the backend log.
+# to stdout/stderr; stderr-isolated, shlock-guarded, line-aligned truncation.
 PG_LOG_FILE="${PROXYGAUGE_LOG_FILE:-$HOME/Library/Logs/ProxyGauge/backend.log}"
 pg_log() {
-  /bin/mkdir -p "${PG_LOG_FILE%/*}" 2>/dev/null || return 0
-  local size
-  size=$(/usr/bin/stat -f '%z' "$PG_LOG_FILE" 2>/dev/null || printf '0')
-  case "$size" in ''|*[!0-9]*) size=0 ;; esac
-  if [ "$size" -gt 262144 ]; then
-    /usr/bin/tail -c 65536 "$PG_LOG_FILE" > "$PG_LOG_FILE.trunc" 2>/dev/null \
-      && /bin/mv "$PG_LOG_FILE.trunc" "$PG_LOG_FILE"
-  fi
-  /usr/bin/printf '%s %s\n' "$(/bin/date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" \
-    >> "$PG_LOG_FILE" 2>/dev/null || true
+  {
+    case "$PG_LOG_FILE" in /*) ;; *) return 0 ;; esac
+    /bin/mkdir -p "${PG_LOG_FILE%/*}" 2>/dev/null || return 0
+    local lock tries size tmp
+    lock="${PG_LOG_FILE}.lock"
+    tries=0
+    until /usr/bin/shlock -p $$ -f "$lock" 2>/dev/null; do
+      tries=$((tries + 1))
+      [ "$tries" -ge 50 ] && return 0
+      /bin/sleep 0.02
+    done
+    size=$(/usr/bin/stat -f '%z' "$PG_LOG_FILE" 2>/dev/null || printf '0')
+    case "$size" in ''|*[!0-9]*) size=0 ;; esac
+    if [ "$size" -gt 262144 ]; then
+      tmp=$(/usr/bin/mktemp "${PG_LOG_FILE}.XXXXXX" 2>/dev/null) || tmp=""
+      if [ -n "$tmp" ]; then
+        /usr/bin/tail -c 65536 "$PG_LOG_FILE" 2>/dev/null \
+          | /usr/bin/sed -n '2,$p' > "$tmp" 2>/dev/null
+        if [ -s "$tmp" ]; then
+          /bin/cat "$tmp" > "$PG_LOG_FILE" 2>/dev/null
+        fi
+        /bin/rm -f "$tmp"
+      fi
+    fi
+    /usr/bin/printf '%s %s\n' "$(/bin/date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" \
+      >> "$PG_LOG_FILE" 2>/dev/null || true
+    /bin/rm -f "$lock"
+  } 2>/dev/null
 }
 
 ENV_PROXYGAUGE_MIXED="${PROXYGAUGE_MIXED:-}"

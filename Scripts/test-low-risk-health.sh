@@ -1,4 +1,6 @@
 #!/bin/bash
+# Tests must never write to the real diagnostic log.
+export PROXYGAUGE_LOG_FILE="${TMPDIR:-/tmp}/proxygauge-test-backend.log"
 set -euo pipefail
 
 SCRIPT_DIR=$(/usr/bin/dirname "$0")

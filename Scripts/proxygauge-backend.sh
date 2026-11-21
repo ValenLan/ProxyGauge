@@ -45,20 +45,53 @@ export PROXYGAUGE_DEFAULT_GROUP PROXYGAUGE_SECONDARY_MIXED PROXYGAUGE_SECONDARY_
 
 # Diagnostic log: one line per backend invocation, mirroring the Swift-side
 # PGLog file layout. Never writes to stdout/stderr, so parsed output stays
-# byte-identical. Bounded: when the file passes 256KB only the newest 64KB
-# is kept, so an unattended machine cannot fill its disk with diagnostics.
+# byte-identical (the whole body is stderr-isolated: redirect failures must
+# not leak into the parsed pipe). Cross-process mutual exclusion via shlock,
+# unique mktemp temp file, line-aligned truncation, absolute-path guard.
 PG_LOG_FILE="${PROXYGAUGE_LOG_FILE:-$HOME/Library/Logs/ProxyGauge/backend.log}"
 pg_log() {
-  /bin/mkdir -p "${PG_LOG_FILE%/*}" 2>/dev/null || return 0
-  local size
-  size=$(/usr/bin/stat -f '%z' "$PG_LOG_FILE" 2>/dev/null || printf '0')
-  case "$size" in ''|*[!0-9]*) size=0 ;; esac
-  if [ "$size" -gt 262144 ]; then
-    /usr/bin/tail -c 65536 "$PG_LOG_FILE" > "$PG_LOG_FILE.trunc" 2>/dev/null \
-      && /bin/mv "$PG_LOG_FILE.trunc" "$PG_LOG_FILE"
-  fi
-  /usr/bin/printf '%s %s\n' "$(/bin/date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" \
-    >> "$PG_LOG_FILE" 2>/dev/null || true
+  {
+    case "$PG_LOG_FILE" in /*) ;; *) return 0 ;; esac
+    /bin/mkdir -p "${PG_LOG_FILE%/*}" 2>/dev/null || return 0
+    local lock tries size tmp
+    lock="${PG_LOG_FILE}.lock"
+    tries=0
+    until /usr/bin/shlock -p $$ -f "$lock" 2>/dev/null; do
+      tries=$((tries + 1))
+      [ "$tries" -ge 50 ] && return 0
+      /bin/sleep 0.02
+    done
+    size=$(/usr/bin/stat -f '%z' "$PG_LOG_FILE" 2>/dev/null || printf '0')
+    case "$size" in ''|*[!0-9]*) size=0 ;; esac
+    if [ "$size" -gt 262144 ]; then
+      tmp=$(/usr/bin/mktemp "${PG_LOG_FILE}.XXXXXX" 2>/dev/null) || tmp=""
+      if [ -n "$tmp" ]; then
+        # sed drops the first (possibly partial) line so the kept block is
+        # line-aligned even when tail -c starts mid-line or mid-UTF-8-char.
+        /usr/bin/tail -c 65536 "$PG_LOG_FILE" 2>/dev/null \
+          | /usr/bin/sed -n '2,$p' > "$tmp" 2>/dev/null
+        if [ -s "$tmp" ]; then
+          /bin/cat "$tmp" > "$PG_LOG_FILE" 2>/dev/null
+        fi
+        /bin/rm -f "$tmp"
+      fi
+    fi
+    /usr/bin/printf '%s %s\n' "$(/bin/date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" \
+      >> "$PG_LOG_FILE" 2>/dev/null || true
+    /bin/rm -f "$lock"
+  } 2>/dev/null
+}
+
+# Run a subcommand with start/result logging and propagate its exit status.
+run_logged() {
+  local name status
+  name="$1"
+  shift
+  pg_log "backend $name start pid=$$ ppid=${PPID:-unknown}"
+  "$@"
+  status=$?
+  pg_log "backend $name done status=$status"
+  exit "$status"
 }
 
 has_tun_route() {
@@ -650,15 +683,13 @@ run_admin() {
 
 case "${1:-}" in
   discover)
-    pg_log "backend discover invoked ppid=$$"
-    discover
+    run_logged discover discover
     ;;
   probe)
-    pg_log "backend probe invoked ppid=$$"
-    probe
+    run_logged probe probe
     ;;
   health)
-    pg_log "backend health invoked ppid=$$"
+    pg_log "backend health start pid=$$ ppid=${PPID:-unknown}"
     if [ ! -x "$CHECK" ]; then
       echo "缺少链路检测脚本: $CHECK"
       exit 1
@@ -666,24 +697,19 @@ case "${1:-}" in
     exec /bin/bash "$CHECK"
     ;;
   exit-ip)
-    pg_log "backend exit-ip invoked ppid=$$"
-    resolve_default_exit_ip
+    run_logged exit-ip resolve_default_exit_ip
     ;;
   exit-summary)
-    pg_log "backend exit-summary invoked ppid=$$"
-    exit_summary
+    run_logged exit-summary exit_summary
     ;;
   kill-status)
-    pg_log "backend kill-status invoked ppid=$$"
-    run_admin status
+    run_logged kill-status run_admin status
     ;;
   kill-on)
-    pg_log "backend kill-on invoked ppid=$$"
-    run_admin on
+    run_logged kill-on run_admin on
     ;;
   kill-off)
-    pg_log "backend kill-off invoked ppid=$$"
-    run_admin off
+    run_logged kill-off run_admin off
     ;;
   *)
     echo "用法: $0 {discover|probe|health|exit-ip|exit-summary|kill-status|kill-on|kill-off}"
